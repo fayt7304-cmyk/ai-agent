@@ -1,0 +1,3 @@
+name = "mistral-agent-chat"
+main = "src/index.ts"
+compatibility_date = "2026-07-31"

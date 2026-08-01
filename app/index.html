@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mistral Agent Chat</title>
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Agent</h1>
+    <p>Powered by Mistral</p>
+  </header>
+
+  <div id="messages" class="messages"></div>
+
+  <form id="chat-form" class="chat-form">
+    <textarea id="chat-input" placeholder="Message the agent…" rows="1" autofocus></textarea>
+    <button type="submit" id="send-btn">Send</button>
+  </form>
+</div>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
