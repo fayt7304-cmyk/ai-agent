@@ -1,5 +1,5 @@
 // Replace with your deployed Worker URL (see README).
-export const CHAT_ENDPOINT = "https://mistral-agent-chat.YOUR-SUBDOMAIN.workers.dev/api/chat";
+export const CHAT_ENDPOINT = "https://mistral-agent-chat.fayt7304.workers.dev/api/chat";
 
 const messagesEl = document.getElementById("messages") as HTMLDivElement;
 const formEl = document.getElementById("chat-form") as HTMLFormElement;
