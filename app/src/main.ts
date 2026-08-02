@@ -1,69 +1,72 @@
-// Replace with your deployed Worker URL (see README).
-export const CHAT_ENDPOINT = "https://mistral-agent-chat.fayt7304.workers.dev/api/chat";
+import { api, type User } from "./api";
+import { initTheme, setTheme } from "./theme";
+import { showAuthScreen, hideAuthScreen, initAuthView } from "./auth-view";
+import { initChatView, updateChatUser, resetChatView } from "./chat-view";
+import { initSettingsView, openSettings } from "./settings-view";
 
-const messagesEl = document.getElementById("messages") as HTMLDivElement;
-const formEl = document.getElementById("chat-form") as HTMLFormElement;
-const inputEl = document.getElementById("chat-input") as HTMLTextAreaElement;
-const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
+// Apply a theme immediately so there's no flash before we know if anyone is logged in.
+initTheme();
 
-let conversationId: string | undefined;
+const appShell = document.getElementById("app-shell") as HTMLDivElement;
+const userMenuBtn = document.getElementById("user-menu-btn") as HTMLButtonElement;
+const userMenu = document.getElementById("user-menu") as HTMLDivElement;
+const openSettingsBtn = document.getElementById("open-settings-btn") as HTMLButtonElement;
+const logoutBtn = document.getElementById("logout-btn") as HTMLButtonElement;
 
-function addBubble(text: string, kind: "user" | "agent" | "error" | "thinking"): HTMLDivElement {
-  const div = document.createElement("div");
-  div.className = `msg ${kind}`;
-  div.textContent = text;
-  messagesEl.appendChild(div);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-  return div;
+let currentUser: User | null = null;
+let chatInitialized = false;
+
+function enterApp(user: User) {
+  currentUser = user;
+  setTheme(user.theme);
+  hideAuthScreen();
+  appShell.style.display = "flex";
+  if (!chatInitialized) {
+    initChatView(user);
+    chatInitialized = true;
+  } else {
+    updateChatUser(user);
+  }
 }
 
-// Grow the textarea as the user types, up to the CSS max-height.
-inputEl.addEventListener("input", () => {
-  inputEl.style.height = "auto";
-  inputEl.style.height = `${inputEl.scrollHeight}px`;
+function exitApp() {
+  currentUser = null;
+  appShell.style.display = "none";
+  resetChatView();
+  chatInitialized = false;
+  showAuthScreen();
+}
+
+userMenuBtn.addEventListener("click", () => {
+  userMenu.style.display = userMenu.style.display === "none" ? "block" : "none";
 });
 
-// Enter sends, Shift+Enter makes a newline.
-inputEl.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    formEl.requestSubmit();
+document.addEventListener("click", (e) => {
+  if (!userMenuBtn.contains(e.target as Node) && !userMenu.contains(e.target as Node)) {
+    userMenu.style.display = "none";
   }
 });
 
-formEl.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const text = inputEl.value.trim();
-  if (!text) return;
-
-  addBubble(text, "user");
-  inputEl.value = "";
-  inputEl.style.height = "auto";
-  sendBtn.disabled = true;
-  const thinking = addBubble("…", "thinking");
-
-  try {
-    const resp = await fetch(CHAT_ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text, conversation_id: conversationId }),
-    });
-
-    const data = (await resp.json()) as { reply?: string; conversation_id?: string; error?: string };
-    thinking.remove();
-
-    if (!resp.ok || data.error) {
-      addBubble(data.error || "Something went wrong.", "error");
-      return;
-    }
-
-    conversationId = data.conversation_id;
-    addBubble(data.reply || "(empty response)", "agent");
-  } catch (err: any) {
-    thinking.remove();
-    addBubble(err?.message || "Network error", "error");
-  } finally {
-    sendBtn.disabled = false;
-    inputEl.focus();
-  }
+openSettingsBtn.addEventListener("click", () => {
+  userMenu.style.display = "none";
+  if (currentUser) openSettings(currentUser);
 });
+
+logoutBtn.addEventListener("click", async () => {
+  userMenu.style.display = "none";
+  await api.logout().catch(() => {});
+  exitApp();
+});
+
+initAuthView((user) => enterApp(user));
+initSettingsView((user) => {
+  currentUser = user;
+  setTheme(user.theme);
+  updateChatUser(user);
+});
+
+// Bootstrap: is there already a valid session cookie?
+api
+  .me()
+  .then(({ user }) => enterApp(user))
+  .catch(() => showAuthScreen());
