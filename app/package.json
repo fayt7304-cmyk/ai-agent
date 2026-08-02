@@ -7,12 +7,15 @@
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
-  "dependencies": {
-    "@imgly/background-removal": "^1.5.8",
-    "docx": "^9.0.2"
-  },
   "devDependencies": {
     "typescript": "^5.5.4",
     "vite": "^5.4.3"
+  },
+  "allowScripts": {
+    "esbuild@0.21.5": true
+  },
+  "dependencies": {
+    "@imgly/background-removal": "^1.7.0",
+    "docx": "^9.7.1"
   }
 }

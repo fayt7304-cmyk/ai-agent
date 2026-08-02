@@ -4,13 +4,22 @@ export interface Env {
   /** Optional: comma-separated list of allowed frontend origins for CORS + cookies.
    *  If unset, the Worker reflects whatever Origin sent the request (fine for personal use). */
   ALLOWED_ORIGINS?: string;
+  FRONTEND_URL: string;
+  GOOGLE_CLIENT_ID: string;
+  GOOGLE_CLIENT_SECRET: string;
+  GOOGLE_REDIRECT_URI: string;
+  RESEND_API_KEY: string;
+  RESEND_FROM: string;
 }
 
 export interface UserRow {
   id: string;
   username: string;
+  email: string | null;
   password_hash: string;
   password_salt: string;
+  oauth_provider: string | null;
+  oauth_id: string | null;
   theme: string;
   model: string;
   instructions: string;
@@ -20,6 +29,8 @@ export interface UserRow {
 export interface PublicUser {
   id: string;
   username: string;
+  email: string | null;
+  has_password: boolean;
   theme: string;
   model: string;
   instructions: string;
@@ -54,6 +65,8 @@ export function toPublicUser(u: UserRow): PublicUser {
   return {
     id: u.id,
     username: u.username,
+    email: u.email,
+    has_password: !!u.password_hash,
     theme: u.theme,
     model: u.model,
     instructions: u.instructions,

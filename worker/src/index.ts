@@ -6,11 +6,20 @@ import {
   verifyPassword,
   createSession,
   destroySession,
+  destroyAllSessionsForUser,
   getUserFromRequest,
   readSessionToken,
   sessionCookieHeader,
   clearSessionCookieHeader,
+  createPasswordResetToken,
+  consumePasswordResetToken,
+  oauthStateCookieHeader,
+  clearOauthStateCookieHeader,
+  readOauthState,
+  randomToken,
 } from "./auth";
+import { buildGoogleAuthUrl, exchangeCodeForAccessToken, fetchGoogleUserInfo } from "./oauth-google";
+import { sendPasswordResetEmail } from "./email";
 import { callMistral } from "./mistral";
 
 // ---- Customize your agent defaults here ----------------------------
@@ -36,8 +45,11 @@ function err(message: string, status = 400) {
 }
 
 async function handleSignup(request: Request, env: Env): Promise<Response> {
-  const body = (await request.json().catch(() => null)) as { username?: string; password?: string } | null;
+  const body = (await request.json().catch(() => null)) as
+    | { username?: string; email?: string; password?: string }
+    | null;
   const username = body?.username?.trim();
+  const email = body?.email?.trim().toLowerCase();
   const password = body?.password;
 
   if (!username || username.length < 3 || username.length > 32) {
@@ -46,25 +58,38 @@ async function handleSignup(request: Request, env: Env): Promise<Response> {
   if (!/^[a-zA-Z0-9_.-]+$/.test(username)) {
     return err("Username can only contain letters, numbers, underscores, dots and dashes.");
   }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return err("A valid email is required.");
+  }
   if (!password || password.length < 8) {
     return err("Password must be at least 8 characters.");
   }
 
-  const existing = await env.DB.prepare("SELECT id FROM users WHERE username = ?").bind(username).first();
-  if (existing) return err("That username is already taken.", 409);
+  const existingUsername = await env.DB.prepare("SELECT id FROM users WHERE username = ?").bind(username).first();
+  if (existingUsername) return err("That username is already taken.", 409);
+  const existingEmail = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first();
+  if (existingEmail) return err("That email is already registered.", 409);
 
   const { hash, salt } = await hashPassword(password);
   const id = crypto.randomUUID();
   await env.DB.prepare(
-    `INSERT INTO users (id, username, password_hash, password_salt, theme, model, instructions, created_at)
-     VALUES (?, ?, ?, ?, 'system', ?, ?, ?)`
+    `INSERT INTO users (id, username, email, password_hash, password_salt, theme, model, instructions, created_at)
+     VALUES (?, ?, ?, ?, ?, 'system', ?, ?, ?)`
   )
-    .bind(id, username, hash, salt, DEFAULT_MODEL, DEFAULT_INSTRUCTIONS, nowIso())
+    .bind(id, username, email, hash, salt, DEFAULT_MODEL, DEFAULT_INSTRUCTIONS, nowIso())
     .run();
 
   const { token, maxAge } = await createSession(env, id);
   const resp = json({
-    user: { id, username, theme: "system", model: DEFAULT_MODEL, instructions: DEFAULT_INSTRUCTIONS },
+    user: {
+      id,
+      username,
+      email,
+      has_password: true,
+      theme: "system",
+      model: DEFAULT_MODEL,
+      instructions: DEFAULT_INSTRUCTIONS,
+    },
   });
   resp.headers.set("Set-Cookie", sessionCookieHeader(token, maxAge));
   return resp;
@@ -78,6 +103,10 @@ async function handleLogin(request: Request, env: Env): Promise<Response> {
 
   const user = await env.DB.prepare("SELECT * FROM users WHERE username = ?").bind(username).first<any>();
   if (!user) return err("Invalid username or password.", 401);
+
+  if (!user.password_hash) {
+    return err("This account uses Google sign-in. Please continue with Google instead.", 401);
+  }
 
   const ok = await verifyPassword(password, user.password_hash, user.password_salt);
   if (!ok) return err("Invalid username or password.", 401);
@@ -131,6 +160,101 @@ async function handleUpdateSettings(request: Request, env: Env): Promise<Respons
   }
 
   return json({ user: { id: user.id, username: user.username, theme, model, instructions } });
+}
+
+async function handleGoogleStart(env: Env): Promise<Response> {
+  const state = randomToken(16);
+  const url = buildGoogleAuthUrl(env, state);
+  const resp = new Response(null, { status: 302, headers: { Location: url } });
+  resp.headers.append("Set-Cookie", oauthStateCookieHeader(state));
+  return resp;
+}
+
+async function handleGoogleCallback(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const savedState = readOauthState(request);
+
+  if (!code || !state || !savedState || state !== savedState) {
+    return new Response("Invalid OAuth state.", { status: 400 });
+  }
+
+  const accessToken = await exchangeCodeForAccessToken(env, code);
+  const info = await fetchGoogleUserInfo(accessToken);
+
+  let user = await env.DB.prepare("SELECT * FROM users WHERE oauth_provider = 'google' AND oauth_id = ?")
+    .bind(info.sub)
+    .first<any>();
+
+  if (!user && info.email && info.email_verified) {
+    user = await env.DB.prepare("SELECT * FROM users WHERE email = ?").bind(info.email.toLowerCase()).first<any>();
+    if (user) {
+      await env.DB.prepare("UPDATE users SET oauth_provider = 'google', oauth_id = ? WHERE id = ?")
+        .bind(info.sub, user.id)
+        .run();
+    }
+  }
+
+  if (!user) {
+    const id = crypto.randomUUID();
+    const base = (info.email?.split("@")[0] || "user").replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 24) || "user";
+    let candidate = base;
+    let suffix = 0;
+    while (await env.DB.prepare("SELECT id FROM users WHERE username = ?").bind(candidate).first()) {
+      suffix += 1;
+      candidate = `${base}${suffix}`;
+    }
+    await env.DB.prepare(
+      `INSERT INTO users (id, username, email, password_hash, password_salt, oauth_provider, oauth_id, theme, model, instructions, created_at)
+       VALUES (?, ?, ?, '', '', 'google', ?, 'system', ?, ?, ?)`
+    )
+      .bind(id, candidate, info.email?.toLowerCase() || null, info.sub, DEFAULT_MODEL, DEFAULT_INSTRUCTIONS, nowIso())
+      .run();
+    user = { id };
+  }
+
+  const { token, maxAge } = await createSession(env, user.id);
+  const resp = new Response(null, { status: 302, headers: { Location: env.FRONTEND_URL } });
+  resp.headers.append("Set-Cookie", sessionCookieHeader(token, maxAge));
+  resp.headers.append("Set-Cookie", clearOauthStateCookieHeader());
+  return resp;
+}
+
+async function handleForgotPassword(request: Request, env: Env): Promise<Response> {
+  const body = (await request.json().catch(() => null)) as { email?: string } | null;
+  const email = body?.email?.trim().toLowerCase();
+  if (email) {
+    const user = await env.DB.prepare("SELECT id, email FROM users WHERE email = ?").bind(email).first<any>();
+    if (user?.email) {
+      const rawToken = await createPasswordResetToken(env, user.id);
+      const resetUrl = `${env.FRONTEND_URL}/?reset_token=${rawToken}`;
+      try {
+        await sendPasswordResetEmail(env, user.email, resetUrl);
+      } catch (e) {
+        console.error("Failed to send reset email", e);
+      }
+    }
+  }
+  // Always return ok, whether or not the email exists — avoids leaking which emails are registered.
+  return json({ ok: true });
+}
+
+async function handleResetPassword(request: Request, env: Env): Promise<Response> {
+  const body = (await request.json().catch(() => null)) as { token?: string; password?: string } | null;
+  if (!body?.token || !body?.password) return err("Missing token or password.");
+  if (body.password.length < 8) return err("Password must be at least 8 characters.");
+
+  const userId = await consumePasswordResetToken(env, body.token);
+  if (!userId) return err("This reset link is invalid or has expired.", 400);
+
+  const { hash, salt } = await hashPassword(body.password);
+  await env.DB.prepare("UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?")
+    .bind(hash, salt, userId)
+    .run();
+  await destroyAllSessionsForUser(env, userId);
+
+  return json({ ok: true });
 }
 
 async function handleListConversations(request: Request, env: Env): Promise<Response> {
@@ -339,6 +463,14 @@ export default {
         resp = await handleLogout(request, env);
       } else if (path === "/api/auth/me" && request.method === "GET") {
         resp = await handleMe(request, env);
+      } else if (path === "/api/auth/google" && request.method === "GET") {
+        resp = await handleGoogleStart(env);
+      } else if (path === "/api/auth/google/callback" && request.method === "GET") {
+        resp = await handleGoogleCallback(request, env);
+      } else if (path === "/api/auth/forgot-password" && request.method === "POST") {
+        resp = await handleForgotPassword(request, env);
+      } else if (path === "/api/auth/reset-password" && request.method === "POST") {
+        resp = await handleResetPassword(request, env);
       } else if (path === "/api/settings" && request.method === "PATCH") {
         resp = await handleUpdateSettings(request, env);
       } else if (path === "/api/conversations" && request.method === "GET") {

@@ -89,3 +89,55 @@ export async function getUserFromRequest(env: Env, request: Request): Promise<Us
     .first<UserRow>();
   return row || null;
 }
+
+async function sha256Hex(input: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+const RESET_TOKEN_MINUTES = 60;
+
+export async function createPasswordResetToken(env: Env, userId: string): Promise<string> {
+  const raw = randomToken(32);
+  const tokenHash = await sha256Hex(raw);
+  const now = new Date();
+  const expires = new Date(now.getTime() + RESET_TOKEN_MINUTES * 60 * 1000);
+  await env.DB.prepare(
+    "INSERT INTO password_reset_tokens (token_hash, user_id, created_at, expires_at, used) VALUES (?, ?, ?, ?, 0)"
+  )
+    .bind(tokenHash, userId, now.toISOString(), expires.toISOString())
+    .run();
+  return raw;
+}
+
+export async function consumePasswordResetToken(env: Env, rawToken: string): Promise<string | null> {
+  const tokenHash = await sha256Hex(rawToken);
+  const row = await env.DB.prepare(
+    "SELECT user_id FROM password_reset_tokens WHERE token_hash = ? AND used = 0 AND expires_at > ?"
+  )
+    .bind(tokenHash, new Date().toISOString())
+    .first<{ user_id: string }>();
+  if (!row) return null;
+  await env.DB.prepare("UPDATE password_reset_tokens SET used = 1 WHERE token_hash = ?").bind(tokenHash).run();
+  return row.user_id;
+}
+
+export async function destroyAllSessionsForUser(env: Env, userId: string): Promise<void> {
+  await env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(userId).run();
+}
+
+const OAUTH_STATE_COOKIE = "oauth_state";
+
+export function oauthStateCookieHeader(state: string): string {
+  return `${OAUTH_STATE_COOKIE}=${state}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`;
+}
+
+export function clearOauthStateCookieHeader(): string {
+  return `${OAUTH_STATE_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
+}
+
+export function readOauthState(request: Request): string | null {
+  const cookie = request.headers.get("Cookie") || "";
+  const match = cookie.match(new RegExp(`(?:^|;\\s*)${OAUTH_STATE_COOKIE}=([^;]+)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
