@@ -1,5 +1,6 @@
 import { api, ApiError, type User } from "./api";
 import { setTheme, type Theme } from "./theme";
+import { setLang, getStoredLang, type Lang } from "./lib/i18n";
 import { refreshConversations } from "./chat-view";
 import { applyAvatar } from "./lib/avatar";
 import { readImageAsAvatarDataUrl } from "./files";
@@ -7,6 +8,7 @@ import { readImageAsAvatarDataUrl } from "./files";
 const overlay = document.getElementById("settings-overlay") as HTMLDivElement;
 const closeBtn = document.getElementById("settings-close-btn") as HTMLButtonElement;
 const themeSegmented = document.getElementById("theme-segmented") as HTMLDivElement;
+const languageSelect = document.getElementById("language-select") as HTMLSelectElement;
 const passwordInput = document.getElementById("new-password-input") as HTMLInputElement;
 const setPasswordBtn = document.getElementById("set-password-btn") as HTMLButtonElement;
 const settingsError = document.getElementById("settings-error") as HTMLDivElement;
@@ -86,6 +88,13 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
 
   settingsNav.querySelectorAll<HTMLButtonElement>(".settings-nav-btn").forEach((btn) => {
     btn.addEventListener("click", () => showTab(btn.dataset.settingsTab!));
+  });
+
+  // Language applies (and saves locally) the moment it's picked — same pattern as theme,
+  // but kept device-local (localStorage) rather than synced to the account for now.
+  languageSelect.value = getStoredLang();
+  languageSelect.addEventListener("change", () => {
+    setLang(languageSelect.value as Lang);
   });
 
   copyUserIdBtn.addEventListener("click", async () => {

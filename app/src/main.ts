@@ -1,11 +1,16 @@
 import { api, type User } from "./api";
 import { initTheme, setTheme } from "./theme";
+import { initI18n } from "./lib/i18n";
 import { showAuthScreen, hideAuthScreen, initAuthView, openClaimScreen, openLoginScreen } from "./auth-view";
 import { initChatView, updateChatUser, resetChatView } from "./chat-view";
 import { initSettingsView, openSettings } from "./settings-view";
 import { initLeadView } from "./lead-view";
 import { initToolsView } from "./tools-view";
 import { applyAvatar } from "./lib/avatar";
+
+// Apply the language + text direction immediately, before anything else touches the
+// DOM, so there's no flash of English/LTR before we know the stored preference.
+initI18n();
 
 initLeadView();
 initToolsView();

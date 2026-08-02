@@ -3,19 +3,21 @@ import { readFileAsDataUrl, formatBytes, fileIcon, MAX_FILE_BYTES } from "./file
 import { renderMarkdown } from "./lib/markdown";
 import { openLeadModal } from "./lead-view";
 import { applyAvatar } from "./lib/avatar";
+import { t } from "./lib/i18n";
 
 interface QuickAction {
-  label: string;
-  prompt?: string;
+  labelKey: string;
+  promptKey?: string;
   openLead?: boolean;
 }
 
 // A-F Marbre specific shortcuts. Edit freely — "openLead" opens the quote-request
-// modal instead of sending a chat message.
+// modal instead of sending a chat message. Labels/prompts are translated via the
+// i18n keys in src/lib/i18n.ts.
 const QUICK_ACTIONS: QuickAction[] = [
-  { label: "Store hours", prompt: "What are your store hours?" },
-  { label: "Where are you located?", prompt: "Where are you located?" },
-  { label: "📋 Get a quote", openLead: true },
+  { labelKey: "quick.storeHours", promptKey: "quick.storeHours.prompt" },
+  { labelKey: "quick.location", promptKey: "quick.location.prompt" },
+  { labelKey: "quick.getQuote", openLead: true },
 ];
 
 // Mobile browsers (especially over cellular, with tighter memory limits) can fail to
@@ -91,7 +93,7 @@ function renderConvoList() {
       if (currentConversationId === c.id) {
         currentConversationId = null;
         renderMessages([]);
-        chatTitle.textContent = "New chat";
+        chatTitle.textContent = t("chat.newChat");
       }
       renderConvoList();
     });
@@ -222,7 +224,7 @@ function renderMessages(messages: Message[]) {
 async function selectConversation(id: string) {
   currentConversationId = id;
   const convo = conversations.find((c) => c.id === id);
-  chatTitle.textContent = convo?.title || "Chat";
+  chatTitle.textContent = convo?.title || t("chat.newChat");
   renderConvoList();
   messagesEl.innerHTML = "";
   const { messages } = await api.getMessages(id);
@@ -233,7 +235,7 @@ async function selectConversation(id: string) {
 
 function startNewConversation() {
   currentConversationId = null;
-  chatTitle.textContent = "New chat";
+  chatTitle.textContent = t("chat.newChat");
   lastUserText = "";
   lastUserAttachments = [];
   lastAgentRow = null;
@@ -250,18 +252,20 @@ function renderQuickActions() {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "quick-action-btn";
-    btn.textContent = qa.label;
+    btn.textContent = t(qa.labelKey);
     btn.addEventListener("click", () => {
       if (qa.openLead) {
         openLeadModal(currentConversationId);
-      } else if (qa.prompt) {
-        chatInput.value = qa.prompt;
+      } else if (qa.promptKey) {
+        chatInput.value = t(qa.promptKey);
         chatForm.requestSubmit();
       }
     });
     quickActionsEl.appendChild(btn);
   }
 }
+
+document.addEventListener("langchange", renderQuickActions);
 
 function renderAttachmentChips() {
   attachmentChips.innerHTML = "";
@@ -449,7 +453,7 @@ export function updateChatUser(user: User) {
 export async function refreshConversations() {
   currentConversationId = null;
   renderMessages([]);
-  chatTitle.textContent = "New chat";
+  chatTitle.textContent = t("chat.newChat");
   await loadConversations();
 }
 

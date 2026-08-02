@@ -1607,3 +1607,42 @@ canvas#graph-canvas {
   .tool-pane-uconvert .swap-btn { justify-self: center; align-self: center; transform: rotate(90deg); }
   .day-row { grid-template-columns: 64px 24px 1fr auto; font-size: 12px; }
 }
+/* ---------------- RTL (Arabic) ----------------
+   `direction` is CSS-inherited, and the <html dir="rtl"> attribute set by
+   src/lib/i18n.ts triggers it automatically — so flex layouts (sidebar/main
+   order, message bubble alignment, button rows, etc.) mirror on their own.
+   What's left here are the handful of things that use *physical* (left/right)
+   properties instead of direction-aware ones, plus content that should stay
+   left-to-right regardless of language (numbers, codes, phone numbers). */
+
+html[dir="rtl"] .sidebar {
+  border-right: none;
+  border-left: 1px solid var(--border);
+}
+
+html[dir="rtl"] .sidebar.collapsed { margin-left: 0; margin-right: -260px; }
+
+html[dir="rtl"] .auth-close-btn { right: auto; left: -6px; }
+
+html[dir="rtl"] .avatar-upload-btn { right: auto; left: -4px; }
+
+/* The "back to tools" chevron should point the way "back" actually is in RTL. */
+html[dir="rtl"] #tools-back-btn { transform: scaleX(-1); }
+
+/* Numbers, codes, and phone numbers read more naturally kept left-to-right. */
+html[dir="rtl"] input[type="tel"],
+html[dir="rtl"] input[type="number"],
+html[dir="rtl"] #lead-phone,
+html[dir="rtl"] #graph-expr,
+html[dir="rtl"] .calc-display,
+html[dir="rtl"] #calc-sci-display,
+html[dir="rtl"] code {
+  direction: ltr;
+  text-align: right;
+}
+
+@media (max-width: 720px) {
+  html[dir="rtl"] .sidebar { inset: 0 0 0 auto; }
+  html[dir="rtl"] .sidebar.collapsed { transform: translateX(100%); }
+  html[dir="rtl"] .sidebar:not(.collapsed) { transform: translateX(0); }
+}
