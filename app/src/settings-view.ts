@@ -1,6 +1,8 @@
 import { api, ApiError, type User } from "./api";
 import { setTheme, type Theme } from "./theme";
 import { refreshConversations } from "./chat-view";
+import { applyAvatar } from "./lib/avatar";
+import { readImageAsAvatarDataUrl } from "./files";
 
 const overlay = document.getElementById("settings-overlay") as HTMLDivElement;
 const closeBtn = document.getElementById("settings-close-btn") as HTMLButtonElement;
@@ -23,13 +25,23 @@ const profileUserId = document.getElementById("profile-user-id") as HTMLElement;
 const copyUserIdBtn = document.getElementById("copy-user-id-btn") as HTMLButtonElement;
 const deleteAllChatsBtn = document.getElementById("delete-all-chats-btn") as HTMLButtonElement;
 
+const editProfileAvatar = document.getElementById("edit-profile-avatar") as HTMLDivElement;
+const avatarUploadBtn = document.getElementById("avatar-upload-btn") as HTMLButtonElement;
+const avatarFileInput = document.getElementById("avatar-file-input") as HTMLInputElement;
+const avatarRemoveBtn = document.getElementById("avatar-remove-btn") as HTMLButtonElement;
+const displayNameInput = document.getElementById("display-name-input") as HTMLInputElement;
+const usernameInput = document.getElementById("username-input") as HTMLInputElement;
+const saveProfileBtn = document.getElementById("save-profile-btn") as HTMLButtonElement;
+
 let currentUser: User | null = null;
+let pendingAvatar: string | null | undefined = undefined; // undefined = unchanged, null = remove
 
 function close() {
   overlay.style.display = "none";
   settingsError.textContent = "";
   settingsSuccess.textContent = "";
   passwordInput.value = "";
+  pendingAvatar = undefined;
 }
 
 function showTab(tab: string) {
@@ -54,11 +66,16 @@ function renderGoogleLinkState(user: User) {
 }
 
 function renderProfile(user: User) {
-  const initials = user.username.slice(0, 2).toUpperCase();
-  navProfileAvatar.textContent = initials;
+  applyAvatar(navProfileAvatar, user);
   navProfileUsername.textContent = user.username;
   navProfileEmail.textContent = user.email || "No email on file";
   profileUserId.textContent = user.id;
+
+  applyAvatar(editProfileAvatar, user);
+  avatarRemoveBtn.style.display = user.avatar ? "inline" : "none";
+  displayNameInput.value = user.display_name || "";
+  usernameInput.value = user.username;
+  pendingAvatar = undefined;
 }
 
 export function initSettingsView(onUserUpdated: (user: User) => void) {
@@ -154,6 +171,55 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
       settingsError.textContent = err instanceof ApiError ? err.message : "Could not delete all chats.";
     } finally {
       deleteAllChatsBtn.disabled = false;
+    }
+  });
+
+  avatarUploadBtn.addEventListener("click", () => avatarFileInput.click());
+
+  avatarFileInput.addEventListener("change", async () => {
+    const file = avatarFileInput.files?.[0];
+    avatarFileInput.value = "";
+    if (!file) return;
+    settingsError.textContent = "";
+    try {
+      const dataUrl = await readImageAsAvatarDataUrl(file);
+      pendingAvatar = dataUrl;
+      applyAvatar(editProfileAvatar, { username: currentUser?.username || "?", avatar: dataUrl });
+      avatarRemoveBtn.style.display = "inline";
+    } catch {
+      settingsError.textContent = "Could not read that image. Please try a different photo.";
+    }
+  });
+
+  avatarRemoveBtn.addEventListener("click", () => {
+    pendingAvatar = null;
+    applyAvatar(editProfileAvatar, { username: currentUser?.username || "?", avatar: null });
+    avatarRemoveBtn.style.display = "none";
+  });
+
+  saveProfileBtn.addEventListener("click", async () => {
+    settingsError.textContent = "";
+    settingsSuccess.textContent = "";
+    const username = usernameInput.value.trim();
+    if (username.length < 3 || username.length > 32) {
+      settingsError.textContent = "Username must be 3-32 characters.";
+      return;
+    }
+    saveProfileBtn.disabled = true;
+    try {
+      const { user } = await api.updateSettings({
+        username,
+        display_name: displayNameInput.value.trim(),
+        ...(pendingAvatar !== undefined ? { avatar: pendingAvatar } : {}),
+      });
+      currentUser = user;
+      onUserUpdated(user);
+      renderProfile(user);
+      settingsSuccess.textContent = "Profile updated.";
+    } catch (err) {
+      settingsError.textContent = err instanceof ApiError ? err.message : "Could not update profile.";
+    } finally {
+      saveProfileBtn.disabled = false;
     }
   });
 }

@@ -19,6 +19,8 @@ export interface User {
   google_linked: boolean;
   theme: "light" | "dark" | "system";
   is_guest: boolean;
+  display_name: string | null;
+  avatar: string | null;
 }
 
 export interface Conversation {
@@ -112,8 +114,9 @@ export const api = {
 
   me: () => request<{ user: User }>("/api/auth/me", { method: "GET" }),
 
-  updateSettings: (patch: Partial<Pick<User, "theme">> & { password?: string }) =>
-    request<{ user: User }>("/api/settings", { method: "PATCH", body: JSON.stringify(patch) }),
+  updateSettings: (
+    patch: Partial<Pick<User, "theme" | "username" | "display_name" | "avatar">> & { password?: string }
+  ) => request<{ user: User }>("/api/settings", { method: "PATCH", body: JSON.stringify(patch) }),
 
   listConversations: () => request<{ conversations: Conversation[] }>("/api/conversations", { method: "GET" }),
 

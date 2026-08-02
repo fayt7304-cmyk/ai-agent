@@ -73,6 +73,27 @@ export function openClaimScreen(user: User, message?: string, onCancelled?: () =
   showForm("signup");
 }
 
+// Lets someone already in the app (almost always a guest) reach the normal
+// log in / sign up form on purpose — e.g. they already have a separate real
+// account and want to switch to it. Distinct from openClaimScreen: this signs
+// into a *different* account rather than upgrading the current session, and
+// it can be dismissed (via the ✕) to go right back to whatever they were doing.
+export function openLoginScreen(onCancelled?: () => void) {
+  mode = "login";
+  onClaimCancelled = onCancelled || null;
+  loginError.textContent = "";
+  signupError.textContent = "";
+  guestContinueBtn.style.display = "none";
+  authCloseBtn.style.display = "inline-flex";
+  authTitle.textContent = "Log in";
+  authSubtitle.textContent = "Log in to an existing account, or create a new one.";
+  signupSubmitBtn.textContent = "Create account";
+  authTabs.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+  authTabs.querySelector('[data-auth-tab="login"]')?.classList.add("active");
+  showAuthScreen();
+  showForm("login");
+}
+
 export function initAuthView(onAuthenticated: (user: User) => void, onContinueAsGuest: () => void) {
   googleBtn.href = api.googleLoginUrl();
 

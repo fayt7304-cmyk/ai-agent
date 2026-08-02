@@ -17,6 +17,16 @@ function renderInline(text: string): string {
   let out = escapeHtml(text);
   // inline code
   out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+  // images: ![alt](url) — handle before the plain-link rule below, since a plain "!"
+  // in front of a link would otherwise just fall through untouched. Real generated
+  // images already arrive as attachments on the message, so a reference here is only
+  // ever the model naming a file — render it if it's an actual loadable URL, otherwise
+  // drop the dead markdown (a bare filename) rather than showing it as broken text.
+  out = out.replace(/!\[([^\]]*)\]\((https?:|data:)([^\s)]+)\)/g, (_m, scheme, rest) => {
+    const src = `${scheme}${rest}`;
+    return `<img src="${src}" alt="" class="msg-inline-image" loading="lazy">`;
+  });
+  out = out.replace(/!\[([^\]]*)\]\([^)]*\)/g, "");
   // bold + italic (order matters: bold before single-star italic)
   out = out.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
   out = out.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, "<em>$1</em>");

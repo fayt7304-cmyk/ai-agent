@@ -2,6 +2,7 @@ import { api, ApiError, type Conversation, type Message, type Attachment, type U
 import { readFileAsDataUrl, formatBytes, fileIcon, MAX_FILE_BYTES } from "./files";
 import { renderMarkdown } from "./lib/markdown";
 import { openLeadModal } from "./lead-view";
+import { applyAvatar } from "./lib/avatar";
 
 interface QuickAction {
   label: string;
@@ -346,8 +347,8 @@ function syncSidebarBackdrop() {
 
 export function initChatView(user: User) {
   currentUser = user;
-  sidebarUsername.textContent = user.username;
-  userAvatar.textContent = user.username.slice(0, 2).toUpperCase();
+  sidebarUsername.textContent = user.display_name || user.username;
+  applyAvatar(userAvatar, user);
 
   // On small screens the sidebar overlays the chat, so it should start closed.
   if (window.innerWidth <= 720) sidebar.classList.add("collapsed");
@@ -408,6 +409,8 @@ export function initChatView(user: User) {
 
 export function updateChatUser(user: User) {
   currentUser = user;
+  sidebarUsername.textContent = user.display_name || user.username;
+  applyAvatar(userAvatar, user);
 }
 
 // Lets other views (e.g. Settings → Privacy → "Delete all chats") refresh the

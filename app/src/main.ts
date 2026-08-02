@@ -1,10 +1,11 @@
 import { api, type User } from "./api";
 import { initTheme, setTheme } from "./theme";
-import { showAuthScreen, hideAuthScreen, initAuthView, openClaimScreen } from "./auth-view";
+import { showAuthScreen, hideAuthScreen, initAuthView, openClaimScreen, openLoginScreen } from "./auth-view";
 import { initChatView, updateChatUser, resetChatView } from "./chat-view";
 import { initSettingsView, openSettings } from "./settings-view";
 import { initLeadView } from "./lead-view";
 import { initToolsView } from "./tools-view";
+import { applyAvatar } from "./lib/avatar";
 
 initLeadView();
 initToolsView();
@@ -49,6 +50,7 @@ const themeIconBtns = document.querySelectorAll<HTMLButtonElement>(".theme-icon-
 const openSettingsBtn = document.getElementById("open-settings-btn") as HTMLButtonElement;
 const logoutBtn = document.getElementById("logout-btn") as HTMLButtonElement;
 const saveAccountBtn = document.getElementById("save-account-btn") as HTMLButtonElement;
+const loginMenuBtn = document.getElementById("login-menu-btn") as HTMLButtonElement;
 const guestBadge = document.getElementById("guest-badge") as HTMLSpanElement;
 const guestBanner = document.getElementById("guest-banner") as HTMLDivElement;
 const guestBannerSaveBtn = document.getElementById("guest-banner-save-btn") as HTMLButtonElement;
@@ -61,13 +63,14 @@ let chatInitialized = false;
 function refreshGuestUi(user: User) {
   guestBadge.style.display = user.is_guest ? "inline-flex" : "none";
   saveAccountBtn.style.display = user.is_guest ? "block" : "none";
+  loginMenuBtn.style.display = user.is_guest ? "block" : "none";
   const dismissed = sessionStorage.getItem(GUEST_BANNER_DISMISSED_KEY) === "1";
   guestBanner.style.display = user.is_guest && !dismissed ? "flex" : "none";
 }
 
 function refreshUserMenu(user: User) {
-  menuAvatar.textContent = user.username.slice(0, 2).toUpperCase();
-  menuUsername.textContent = user.username;
+  applyAvatar(menuAvatar, user);
+  menuUsername.textContent = user.display_name || user.username;
   menuEmail.textContent = user.email || (user.is_guest ? "Guest session" : "No email on file");
   themeIconBtns.forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.themeOption === user.theme);
@@ -149,6 +152,12 @@ saveAccountBtn.addEventListener("click", () => {
     appShell.style.display = "none";
     openClaimScreen(currentUser, undefined, () => (appShell.style.display = "flex"));
   }
+});
+
+loginMenuBtn.addEventListener("click", () => {
+  userMenu.style.display = "none";
+  appShell.style.display = "none";
+  openLoginScreen(() => (appShell.style.display = "flex"));
 });
 
 guestBannerSaveBtn.addEventListener("click", () => {

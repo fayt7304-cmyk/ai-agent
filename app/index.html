@@ -104,6 +104,7 @@
         </div>
         <div class="user-menu-items">
           <button id="save-account-btn" style="display:none;"><span class="menu-icon">💾</span>Save my account</button>
+          <button id="login-menu-btn" style="display:none;"><span class="menu-icon">🔑</span>Log in</button>
           <button id="open-settings-btn"><span class="menu-icon">⚙️</span>Settings</button>
           <button id="logout-btn"><span class="menu-icon">↪️</span>Log out</button>
         </div>
@@ -178,6 +179,32 @@
         <section class="settings-panel active" data-settings-panel="profile">
           <h2 class="settings-panel-title">Profile</h2>
           <div class="settings-card">
+            <div class="settings-card-title">Picture &amp; name</div>
+            <div class="settings-card-desc">This is what other people (and you) see around the app.</div>
+            <div class="avatar-edit-row">
+              <div class="avatar-edit-photo">
+                <div class="profile-avatar profile-avatar-lg" id="edit-profile-avatar">?</div>
+                <button type="button" id="avatar-upload-btn" class="avatar-upload-btn" title="Change photo">📷</button>
+                <input type="file" id="avatar-file-input" accept="image/*" style="display:none;">
+              </div>
+              <div class="avatar-edit-actions">
+                <button type="button" id="avatar-remove-btn" class="link-btn" style="display:none;">Remove photo</button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="display-name-input">Display name</label>
+              <input type="text" id="display-name-input" placeholder="How your name shows up in the app" maxlength="60">
+            </div>
+            <div class="field">
+              <label for="username-input">Username</label>
+              <input type="text" id="username-input" placeholder="Used to log in" minlength="3" maxlength="32">
+              <div class="hint">Letters, numbers, underscores, dots and dashes only.</div>
+            </div>
+            <div>
+              <button type="button" id="save-profile-btn" class="primary">Save profile</button>
+            </div>
+          </div>
+          <div class="settings-card">
             <div class="settings-card-row">
               <div class="settings-card-title">User ID</div>
               <div class="user-id-row">
@@ -193,7 +220,7 @@
           <h2 class="settings-panel-title">Preferences</h2>
           <div class="settings-card">
             <div class="settings-card-title">Theme</div>
-            <div class="settings-card-desc">Select the theme for the user interface.</div>
+            <div class="settings-card-desc">Choose how the app looks on this device.</div>
             <div class="segmented" id="theme-segmented">
               <button data-theme-option="light">Light</button>
               <button data-theme-option="dark">Dark</button>
@@ -209,7 +236,7 @@
             <div class="settings-card-row">
               <div>
                 <div class="settings-card-title">Password</div>
-                <div class="settings-card-desc">Set a new password for your account.</div>
+                <div class="settings-card-desc">Set or update the password you log in with.</div>
               </div>
             </div>
             <div class="inline-action-row">
@@ -222,7 +249,7 @@
             <div class="settings-card-row">
               <div>
                 <div class="settings-card-title">Google account</div>
-                <div class="settings-card-desc">Manage your login through Google.</div>
+                <div class="settings-card-desc">Sign in faster by connecting your Google account.</div>
               </div>
               <div class="google-link-row" id="google-link-row">
                 <span id="google-link-status">Not connected</span>
