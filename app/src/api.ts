@@ -128,7 +128,7 @@ export const api = {
   getMessages: (id: string) => request<{ messages: Message[] }>(`/api/conversations/${id}/messages`, { method: "GET" }),
 
   sendMessage: (payload: { conversation_id?: string; message: string; attachments?: Attachment[] }) =>
-    request<{ conversation_id: string; title: string; reply: string }>("/api/chat", {
+    request<{ conversation_id: string; title: string; reply: string; attachments?: Attachment[] }>("/api/chat", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

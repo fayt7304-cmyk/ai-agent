@@ -104,10 +104,23 @@ function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: strin
     const chipsWrap = document.createElement("div");
     chipsWrap.className = "msg-attachments";
     for (const a of attachments) {
-      const chip = document.createElement("div");
-      chip.className = "msg-attachment-chip";
-      chip.textContent = `${fileIcon(a.mime)} ${a.name}`;
-      chipsWrap.appendChild(chip);
+      if (a.mime.startsWith("image/") && a.dataUrl) {
+        const link = document.createElement("a");
+        link.href = a.dataUrl;
+        link.target = "_blank";
+        link.rel = "noopener";
+        const img = document.createElement("img");
+        img.className = "msg-image";
+        img.src = a.dataUrl;
+        img.alt = a.name;
+        link.appendChild(img);
+        chipsWrap.appendChild(link);
+      } else {
+        const chip = document.createElement("div");
+        chip.className = "msg-attachment-chip";
+        chip.textContent = `${fileIcon(a.mime)} ${a.name}`;
+        chipsWrap.appendChild(chip);
+      }
     }
     row.appendChild(chipsWrap);
   }
@@ -276,7 +289,7 @@ async function performSend(text: string, attachments: (Attachment & { dataUrl: s
       attachments,
     });
     thinking.remove();
-    const agentRow = addMsgRow("agent", result.reply || "(empty response)");
+    const agentRow = addMsgRow("agent", result.reply || "(empty response)", result.attachments || []);
     attachRegenerateButton(agentRow);
 
     const isNewConvo = !currentConversationId;

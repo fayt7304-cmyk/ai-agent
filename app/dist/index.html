@@ -8,8 +8,8 @@
 <meta name="theme-color" content="#185fa5">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
 <link rel="icon" href="/icons/icon-192.png">
-  <script type="module" crossorigin src="/assets/index-eiAH08h9.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-BP5kws21.css">
+  <script type="module" crossorigin src="/assets/index-fD9Vn1so.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-D9uDZWzW.css">
 </head>
 <body>
 
@@ -96,9 +96,23 @@
         <span class="guest-badge" id="guest-badge" style="display:none;">Guest</span>
       </button>
       <div class="user-menu" id="user-menu" style="display:none;">
-        <button id="save-account-btn" style="display:none;">💾 Save my account</button>
-        <button id="open-settings-btn">Settings</button>
-        <button id="logout-btn">Log out</button>
+        <div class="user-menu-header">
+          <span class="avatar" id="menu-avatar"></span>
+          <div class="user-menu-id">
+            <div class="user-menu-name" id="menu-username"></div>
+            <div class="user-menu-email" id="menu-email"></div>
+          </div>
+        </div>
+        <div class="user-menu-items">
+          <button id="save-account-btn" style="display:none;"><span class="menu-icon">💾</span>Save my account</button>
+          <button id="open-settings-btn"><span class="menu-icon">⚙️</span>Settings</button>
+          <button id="logout-btn"><span class="menu-icon">↪️</span>Log out</button>
+        </div>
+        <div class="user-menu-theme-row" id="user-menu-theme-row">
+          <button type="button" class="theme-icon-btn" data-theme-option="light" title="Light theme">☀️</button>
+          <button type="button" class="theme-icon-btn" data-theme-option="dark" title="Dark theme">🌙</button>
+          <button type="button" class="theme-icon-btn" data-theme-option="system" title="Match system">🖥️</button>
+        </div>
       </div>
     </div>
   </aside>

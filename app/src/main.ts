@@ -42,6 +42,10 @@ window.addEventListener("appinstalled", () => {
 const appShell = document.getElementById("app-shell") as HTMLDivElement;
 const userMenuBtn = document.getElementById("user-menu-btn") as HTMLButtonElement;
 const userMenu = document.getElementById("user-menu") as HTMLDivElement;
+const menuAvatar = document.getElementById("menu-avatar") as HTMLSpanElement;
+const menuUsername = document.getElementById("menu-username") as HTMLDivElement;
+const menuEmail = document.getElementById("menu-email") as HTMLDivElement;
+const themeIconBtns = document.querySelectorAll<HTMLButtonElement>(".theme-icon-btn");
 const openSettingsBtn = document.getElementById("open-settings-btn") as HTMLButtonElement;
 const logoutBtn = document.getElementById("logout-btn") as HTMLButtonElement;
 const saveAccountBtn = document.getElementById("save-account-btn") as HTMLButtonElement;
@@ -61,12 +65,22 @@ function refreshGuestUi(user: User) {
   guestBanner.style.display = user.is_guest && !dismissed ? "flex" : "none";
 }
 
+function refreshUserMenu(user: User) {
+  menuAvatar.textContent = user.username.slice(0, 2).toUpperCase();
+  menuUsername.textContent = user.username;
+  menuEmail.textContent = user.email || (user.is_guest ? "Guest session" : "No email on file");
+  themeIconBtns.forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.themeOption === user.theme);
+  });
+}
+
 function enterApp(user: User) {
   currentUser = user;
   setTheme(user.theme);
   hideAuthScreen();
   appShell.style.display = "flex";
   refreshGuestUi(user);
+  refreshUserMenu(user);
   if (!chatInitialized) {
     initChatView(user);
     chatInitialized = true;
@@ -107,6 +121,22 @@ openSettingsBtn.addEventListener("click", () => {
   if (currentUser) openSettings(currentUser);
 });
 
+themeIconBtns.forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const theme = btn.dataset.themeOption as "light" | "dark" | "system";
+    themeIconBtns.forEach((b) => b.classList.toggle("active", b === btn));
+    setTheme(theme);
+    if (!currentUser) return;
+    try {
+      const { user } = await api.updateSettings({ theme });
+      currentUser = user;
+      refreshUserMenu(user);
+    } catch {
+      // Best-effort — the theme is already applied locally even if the save fails.
+    }
+  });
+});
+
 logoutBtn.addEventListener("click", async () => {
   userMenu.style.display = "none";
   await api.logout().catch(() => {});
@@ -141,6 +171,7 @@ initSettingsView((user) => {
   currentUser = user;
   setTheme(user.theme);
   refreshGuestUi(user);
+  refreshUserMenu(user);
   updateChatUser(user);
 });
 
