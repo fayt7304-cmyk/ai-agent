@@ -5,6 +5,11 @@ export interface Env {
    *  If unset, the Worker reflects whatever Origin sent the request (fine for personal use). */
   ALLOWED_ORIGINS?: string;
   FRONTEND_URL: string;
+  /** Optional: shared registrable domain for the session cookie, e.g. ".yourdomain.com".
+   *  Set this once the Worker and frontend live on subdomains of the same domain — it
+   *  lets the login cookie be sent reliably on mobile browsers. Leave unset to keep the
+   *  old cross-site cookie behavior (works less reliably on phones). */
+  COOKIE_DOMAIN?: string;
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
   GOOGLE_REDIRECT_URI: string;
@@ -31,6 +36,7 @@ export interface PublicUser {
   username: string;
   email: string | null;
   has_password: boolean;
+  google_linked: boolean;
   theme: string;
   model: string;
   instructions: string;
@@ -67,6 +73,7 @@ export function toPublicUser(u: UserRow): PublicUser {
     username: u.username,
     email: u.email,
     has_password: !!u.password_hash,
+    google_linked: u.oauth_provider === "google",
     theme: u.theme,
     model: u.model,
     instructions: u.instructions,

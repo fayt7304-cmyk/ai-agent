@@ -11,6 +11,10 @@ database_id = "fa199031-8adc-4005-a228-c365eef5c515"
 
 
 [vars]
-GOOGLE_REDIRECT_URI = "https://mistral-agent-chat.fayt7304.workers.dev/api/auth/google/callback"
+GOOGLE_REDIRECT_URI = "https://api.afmarbre.com/api/auth/google/callback"
 RESEND_FROM = "Agent <noreply@afmarbre.com>"
 FRONTEND_URL = "https://ai.afmarbre.com"
+# Shares the cookie across ai.afmarbre.com and api.afmarbre.com so it survives on mobile
+# browsers. Needs api.afmarbre.com added as a custom domain for this Worker in the
+# Cloudflare dashboard, and this new redirect URI added in Google Cloud Console.
+COOKIE_DOMAIN = ".afmarbre.com"

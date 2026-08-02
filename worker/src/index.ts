@@ -86,12 +86,13 @@ async function handleSignup(request: Request, env: Env): Promise<Response> {
       username,
       email,
       has_password: true,
+      google_linked: false,
       theme: "system",
       model: DEFAULT_MODEL,
       instructions: DEFAULT_INSTRUCTIONS,
     },
   });
-  resp.headers.set("Set-Cookie", sessionCookieHeader(token, maxAge));
+  resp.headers.set("Set-Cookie", sessionCookieHeader(token, maxAge, env.COOKIE_DOMAIN));
   return resp;
 }
 
@@ -113,7 +114,7 @@ async function handleLogin(request: Request, env: Env): Promise<Response> {
 
   const { token, maxAge } = await createSession(env, user.id);
   const resp = json({ user: toPublicUser(user) });
-  resp.headers.set("Set-Cookie", sessionCookieHeader(token, maxAge));
+  resp.headers.set("Set-Cookie", sessionCookieHeader(token, maxAge, env.COOKIE_DOMAIN));
   return resp;
 }
 
@@ -121,7 +122,7 @@ async function handleLogout(request: Request, env: Env): Promise<Response> {
   const token = readSessionToken(request);
   if (token) await destroySession(env, token);
   const resp = json({ ok: true });
-  resp.headers.set("Set-Cookie", clearSessionCookieHeader());
+  resp.headers.set("Set-Cookie", clearSessionCookieHeader(env.COOKIE_DOMAIN));
   return resp;
 }
 
@@ -162,10 +163,28 @@ async function handleUpdateSettings(request: Request, env: Env): Promise<Respons
   return json({ user: { id: user.id, username: user.username, theme, model, instructions } });
 }
 
-async function handleGoogleStart(env: Env): Promise<Response> {
-  const state = randomToken(16);
-  const url = buildGoogleAuthUrl(env, state);
-  const resp = new Response(null, { status: 302, headers: { Location: url } });
+async function handleGoogleStart(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const mode = url.searchParams.get("mode") === "link" ? "link" : "login";
+
+  if (mode === "link") {
+    // Linking requires an existing session — bail out early with a clear error
+    // rather than sending someone to Google only to fail at the callback.
+    const user = await getUserFromRequest(env, request);
+    if (!user) {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: `${env.FRONTEND_URL}?link_error=not_authenticated` },
+      });
+    }
+  }
+
+  // The mode travels inside the opaque state value itself, so it round-trips
+  // through Google untouched and can't be tampered with independently of the
+  // state check that already happens on callback.
+  const state = `${mode}:${randomToken(16)}`;
+  const authUrl = buildGoogleAuthUrl(env, state);
+  const resp = new Response(null, { status: 302, headers: { Location: authUrl } });
   resp.headers.append("Set-Cookie", oauthStateCookieHeader(state));
   return resp;
 }
@@ -179,10 +198,50 @@ async function handleGoogleCallback(request: Request, env: Env): Promise<Respons
   if (!code || !state || !savedState || state !== savedState) {
     return new Response("Invalid OAuth state.", { status: 400 });
   }
+  const mode = state.startsWith("link:") ? "link" : "login";
 
   const accessToken = await exchangeCodeForAccessToken(env, code);
   const info = await fetchGoogleUserInfo(accessToken);
 
+  // ---- Linking a Google account to the currently logged-in user ----
+  if (mode === "link") {
+    const clearState = clearOauthStateCookieHeader();
+    const currentUser = await getUserFromRequest(env, request);
+    if (!currentUser) {
+      const resp = new Response(null, {
+        status: 302,
+        headers: { Location: `${env.FRONTEND_URL}?link_error=not_authenticated` },
+      });
+      resp.headers.append("Set-Cookie", clearState);
+      return resp;
+    }
+
+    const conflict = await env.DB.prepare(
+      "SELECT id FROM users WHERE oauth_provider = 'google' AND oauth_id = ? AND id != ?"
+    )
+      .bind(info.sub, currentUser.id)
+      .first();
+    if (conflict) {
+      const resp = new Response(null, {
+        status: 302,
+        headers: { Location: `${env.FRONTEND_URL}?link_error=already_linked` },
+      });
+      resp.headers.append("Set-Cookie", clearState);
+      return resp;
+    }
+
+    await env.DB.prepare(
+      "UPDATE users SET oauth_provider = 'google', oauth_id = ?, email = COALESCE(email, ?) WHERE id = ?"
+    )
+      .bind(info.sub, info.email?.toLowerCase() || null, currentUser.id)
+      .run();
+
+    const resp = new Response(null, { status: 302, headers: { Location: `${env.FRONTEND_URL}?linked=google` } });
+    resp.headers.append("Set-Cookie", clearState);
+    return resp;
+  }
+
+  // ---- Normal Google sign-in / sign-up ----
   let user = await env.DB.prepare("SELECT * FROM users WHERE oauth_provider = 'google' AND oauth_id = ?")
     .bind(info.sub)
     .first<any>();
@@ -216,9 +275,20 @@ async function handleGoogleCallback(request: Request, env: Env): Promise<Respons
 
   const { token, maxAge } = await createSession(env, user.id);
   const resp = new Response(null, { status: 302, headers: { Location: env.FRONTEND_URL } });
-  resp.headers.append("Set-Cookie", sessionCookieHeader(token, maxAge));
+  resp.headers.append("Set-Cookie", sessionCookieHeader(token, maxAge, env.COOKIE_DOMAIN));
   resp.headers.append("Set-Cookie", clearOauthStateCookieHeader());
   return resp;
+}
+
+async function handleUnlinkGoogle(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  if (!user.password_hash) {
+    return err("Set a password first so you don't get locked out of your account.", 400);
+  }
+  await env.DB.prepare("UPDATE users SET oauth_provider = NULL, oauth_id = NULL WHERE id = ?").bind(user.id).run();
+  const updated = { ...user, oauth_provider: null, oauth_id: null };
+  return json({ user: toPublicUser(updated as any) });
 }
 
 async function handleForgotPassword(request: Request, env: Env): Promise<Response> {
@@ -464,9 +534,11 @@ export default {
       } else if (path === "/api/auth/me" && request.method === "GET") {
         resp = await handleMe(request, env);
       } else if (path === "/api/auth/google" && request.method === "GET") {
-        resp = await handleGoogleStart(env);
+        resp = await handleGoogleStart(request, env);
       } else if (path === "/api/auth/google/callback" && request.method === "GET") {
         resp = await handleGoogleCallback(request, env);
+      } else if (path === "/api/auth/google/link" && request.method === "DELETE") {
+        resp = await handleUnlinkGoogle(request, env);
       } else if (path === "/api/auth/forgot-password" && request.method === "POST") {
         resp = await handleForgotPassword(request, env);
       } else if (path === "/api/auth/reset-password" && request.method === "POST") {

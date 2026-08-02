@@ -50,12 +50,25 @@ export async function verifyPassword(password: string, hash: string, salt: strin
   return diff === 0;
 }
 
-export function sessionCookieHeader(token: string, maxAgeSeconds: number): string {
-  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=${maxAgeSeconds}`;
+// When COOKIE_DOMAIN is configured (e.g. ".yourdomain.com") the frontend and worker
+// share a registrable domain, so the cookie is same-site and we can use the stricter,
+// more widely-honoured SameSite=Lax. Mobile browsers (iOS Safari in particular) are
+// increasingly aggressive about dropping SameSite=None cookies for a Worker domain
+// (e.g. *.workers.dev) that the user never visits directly — that's the most common
+// cause of "not authenticated" after login on a phone. Without COOKIE_DOMAIN we fall
+// back to the old cross-site-cookie behavior so nothing breaks if it isn't set yet.
+function domainAttr(domain?: string): string {
+  return domain ? `; Domain=${domain}` : "";
 }
 
-export function clearSessionCookieHeader(): string {
-  return `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0`;
+export function sessionCookieHeader(token: string, maxAgeSeconds: number, domain?: string): string {
+  const sameSite = domain ? "Lax" : "None";
+  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=${sameSite}${domainAttr(domain)}; Max-Age=${maxAgeSeconds}`;
+}
+
+export function clearSessionCookieHeader(domain?: string): string {
+  const sameSite = domain ? "Lax" : "None";
+  return `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=${sameSite}${domainAttr(domain)}; Max-Age=0`;
 }
 
 export function readSessionToken(request: Request): string | null {
