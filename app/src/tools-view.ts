@@ -9,6 +9,9 @@ import { initWeather, loadWeather } from "./lib/weather";
 
 const overlay = document.getElementById("tools-overlay") as HTMLDivElement;
 const closeBtn = document.getElementById("tools-close-btn") as HTMLButtonElement;
+const backBtn = document.getElementById("tools-back-btn") as HTMLButtonElement;
+const title = document.getElementById("tools-title") as HTMLHeadingElement;
+const menu = document.getElementById("tools-menu") as HTMLDivElement;
 const tabs = document.getElementById("tools-tabs") as HTMLDivElement;
 
 const panes: Record<string, HTMLDivElement> = {
@@ -20,11 +23,34 @@ const panes: Record<string, HTMLDivElement> = {
   uconvert: document.getElementById("tool-uconvert") as HTMLDivElement,
 };
 
+const toolLabels: Record<string, string> = {
+  convert: "Convert Image",
+  bgremove: "Remove Background",
+  ocr: "Image to Text",
+  pdf2word: "PDF to Word",
+  docx: "Text to Word",
+  uconvert: "Converter & Calculator",
+};
+
 function close() {
   overlay.style.display = "none";
+  // Reset back to the tool picker for next time it's opened.
+  showMenu();
 }
 
+// Home screen: a simple grid of tool tiles, nothing else visible.
+function showMenu() {
+  title.textContent = "Tools";
+  backBtn.style.display = "none";
+  menu.style.display = "grid";
+  Object.values(panes).forEach((el) => (el.style.display = "none"));
+}
+
+// Opens one tool full-width, with a back arrow to return to the grid.
 function switchTab(tab: string) {
+  title.textContent = toolLabels[tab] || "Tools";
+  backBtn.style.display = "inline-flex";
+  menu.style.display = "none";
   tabs.querySelectorAll<HTMLButtonElement>("button").forEach((b) => b.classList.toggle("active", b.dataset.toolTab === tab));
   Object.entries(panes).forEach(([key, el]) => {
     el.style.display = key === tab ? "flex" : "none";
@@ -284,10 +310,15 @@ export function initToolsView() {
   const toolsBtn = document.getElementById("tools-btn") as HTMLButtonElement;
   toolsBtn.addEventListener("click", () => {
     overlay.style.display = "flex";
+    showMenu();
   });
   closeBtn.addEventListener("click", close);
+  backBtn.addEventListener("click", showMenu);
   overlay.addEventListener("click", (e) => {
     if (e.target === overlay) close();
+  });
+  menu.querySelectorAll<HTMLButtonElement>(".tool-card").forEach((btn) => {
+    btn.addEventListener("click", () => switchTab(btn.dataset.toolTab!));
   });
   tabs.querySelectorAll<HTMLButtonElement>("button").forEach((btn) => {
     btn.addEventListener("click", () => switchTab(btn.dataset.toolTab!));

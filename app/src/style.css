@@ -801,6 +801,56 @@ select, .modal-body input, .modal-body textarea {
 /* ---------------- Tools panel ---------------- */
 .modal-wide { max-width: 620px; }
 
+/* Tools modal header grows a 3rd (back) button — keep the title readable
+   instead of letting space-between shove it off-center. */
+.modal-tools .modal-header { gap: 6px; }
+.modal-tools .modal-header h2 {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#tools-back-btn { font-size: 18px; }
+
+/* Simple icon-grid "home screen" for Tools — tap a tile to open that tool.
+   Big touch targets and short labels so it reads at a glance on a phone,
+   and settles into a tidy grid on desktop instead of a cramped tab row. */
+.tools-menu {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.tool-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 18px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.tool-card:hover,
+.tool-card:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.tool-card-icon { font-size: 26px; line-height: 1; }
+.tool-card-label { font-size: 13px; font-weight: 500; }
+
+@media (max-width: 480px) {
+  .tools-menu { grid-template-columns: repeat(2, 1fr); }
+  .tool-card { padding: 16px 8px; }
+}
+
 .tools-tabs {
   display: flex;
   flex-wrap: wrap;

@@ -229,12 +229,42 @@
 <div id="tools-overlay" class="modal-overlay" style="display:none;">
   <div class="modal modal-wide modal-tools">
     <header class="modal-header">
-      <h2>Tools</h2>
+      <button id="tools-back-btn" class="icon-btn" style="display:none;" aria-label="Back to tools">←</button>
+      <h2 id="tools-title">Tools</h2>
       <button id="tools-close-btn" class="icon-btn">✕</button>
     </header>
 
     <div class="modal-body">
-      <div class="tools-tabs" id="tools-tabs">
+      <!-- Simple icon-grid home screen: tap a tile to open that tool -->
+      <div class="tools-menu" id="tools-menu">
+        <button class="tool-card" data-tool-tab="convert">
+          <span class="tool-card-icon">🖼️</span>
+          <span class="tool-card-label">Convert Image</span>
+        </button>
+        <button class="tool-card" data-tool-tab="bgremove">
+          <span class="tool-card-icon">✂️</span>
+          <span class="tool-card-label">Remove Background</span>
+        </button>
+        <button class="tool-card" data-tool-tab="ocr">
+          <span class="tool-card-icon">🔤</span>
+          <span class="tool-card-label">Image to Text</span>
+        </button>
+        <button class="tool-card" data-tool-tab="pdf2word">
+          <span class="tool-card-icon">📄</span>
+          <span class="tool-card-label">PDF to Word</span>
+        </button>
+        <button class="tool-card" data-tool-tab="docx">
+          <span class="tool-card-icon">📝</span>
+          <span class="tool-card-label">Text to Word</span>
+        </button>
+        <button class="tool-card" data-tool-tab="uconvert">
+          <span class="tool-card-icon">🧮</span>
+          <span class="tool-card-label">Converter & Calculator</span>
+        </button>
+      </div>
+
+      <!-- kept for the JS lookup table; no longer shown to the user -->
+      <div class="tools-tabs" id="tools-tabs" style="display:none;">
         <button class="tab active" data-tool-tab="convert">Format converter</button>
         <button class="tab" data-tool-tab="bgremove">Background remover</button>
         <button class="tab" data-tool-tab="ocr">Image to text</button>
