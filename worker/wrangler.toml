@@ -11,6 +11,10 @@ database_id = "fa199031-8adc-4005-a228-c365eef5c515"
 
 
 [vars]
+# Your Mistral Agent's ID from https://console.mistral.ai/build/agents (e.g. "ag:xxxxxxxx").
+# Every chat now uses this agent — its model, system instructions, and any tools are
+# configured on Mistral's side, not here.
+MISTRAL_AGENT_ID = "ag_019fb791c3b87699ab5358b2bc5450dc"
 GOOGLE_REDIRECT_URI = "https://api.afmarbre.com/api/auth/google/callback"
 RESEND_FROM = "Agent <noreply@afmarbre.com>"
 FRONTEND_URL = "https://ai.afmarbre.com"

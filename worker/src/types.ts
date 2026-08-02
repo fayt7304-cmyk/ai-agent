@@ -1,6 +1,9 @@
 export interface Env {
   DB: D1Database;
   MISTRAL_API_KEY: string;
+  /** Your Mistral Agent's ID (from https://console.mistral.ai/build/agents), e.g. "ag:...".
+   *  All chats use this agent — its model, instructions, and tools are configured on Mistral's side. */
+  MISTRAL_AGENT_ID: string;
   /** Optional: comma-separated list of allowed frontend origins for CORS + cookies.
    *  If unset, the Worker reflects whatever Origin sent the request (fine for personal use). */
   ALLOWED_ORIGINS?: string;
@@ -38,8 +41,6 @@ export interface PublicUser {
   has_password: boolean;
   google_linked: boolean;
   theme: string;
-  model: string;
-  instructions: string;
 }
 
 export interface ConversationRow {
@@ -75,7 +76,5 @@ export function toPublicUser(u: UserRow): PublicUser {
     has_password: !!u.password_hash,
     google_linked: u.oauth_provider === "google",
     theme: u.theme,
-    model: u.model,
-    instructions: u.instructions,
   };
 }

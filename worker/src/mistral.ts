@@ -2,8 +2,7 @@ import type { AttachmentIn } from "./types";
 
 export interface MistralCallOptions {
   apiKey: string;
-  model: string;
-  instructions: string;
+  agentId: string;
   mistralConversationId?: string | null;
   message: string;
   attachments?: AttachmentIn[];
@@ -35,9 +34,7 @@ export async function callMistral(opts: MistralCallOptions): Promise<MistralCall
     inputs = opts.message;
   }
 
-  const payload = isNew
-    ? { model: opts.model, instructions: opts.instructions, inputs, stream: false }
-    : { inputs, stream: false };
+  const payload = isNew ? { agent_id: opts.agentId, inputs, stream: false } : { inputs, stream: false };
 
   const resp = await fetch(endpoint, {
     method: "POST",

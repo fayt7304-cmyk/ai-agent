@@ -136,20 +136,13 @@ async function handleUpdateSettings(request: Request, env: Env): Promise<Respons
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
 
-  const body = (await request.json().catch(() => null)) as
-    | { theme?: string; model?: string; instructions?: string; password?: string }
-    | null;
+  const body = (await request.json().catch(() => null)) as { theme?: string; password?: string } | null;
   if (!body) return err("Invalid body.");
 
   const theme = body.theme && ["light", "dark", "system"].includes(body.theme) ? body.theme : user.theme;
-  const model = body.model && ALLOWED_MODELS.includes(body.model) ? body.model : user.model;
-  const instructions =
-    typeof body.instructions === "string" && body.instructions.trim().length > 0
-      ? body.instructions.slice(0, 4000)
-      : user.instructions;
 
-  await env.DB.prepare("UPDATE users SET theme = ?, model = ?, instructions = ? WHERE id = ?")
-    .bind(theme, model, instructions, user.id)
+  await env.DB.prepare("UPDATE users SET theme = ? WHERE id = ?")
+    .bind(theme, user.id)
     .run();
 
   if (body.password) {
@@ -160,7 +153,7 @@ async function handleUpdateSettings(request: Request, env: Env): Promise<Respons
       .run();
   }
 
-  return json({ user: { id: user.id, username: user.username, theme, model, instructions } });
+  return json({ user: { id: user.id, username: user.username, google_linked: user.oauth_provider === "google", theme } });
 }
 
 async function handleGoogleStart(request: Request, env: Env): Promise<Response> {
@@ -471,8 +464,7 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
   try {
     const result = await callMistral({
       apiKey: env.MISTRAL_API_KEY,
-      model: user.model,
-      instructions: user.instructions,
+      agentId: env.MISTRAL_AGENT_ID,
       mistralConversationId: convo.mistral_conversation_id,
       message: body.message || "",
       attachments,
