@@ -198,6 +198,12 @@ ALLOWED_ORIGINS = "https://your-frontend.workers.dev"
   `wrangler d1 execute mistral-agent-chat-db --file=./migrations/0003_leads.sql --remote`
   (from `worker/`) against your existing database. Fresh installs
   get it automatically since it's also folded into `schema.sql`.
+- **New migration**: `worker/migrations/0004_profile.sql` — adds
+  `display_name` and `avatar` columns so people can set a profile
+  picture and name from Settings → Profile. Run
+  `wrangler d1 execute mistral-agent-chat-db --file=./migrations/0004_profile.sql --remote`
+  (from `worker/`) against your existing database. Fresh installs
+  get it automatically since it's also folded into `schema.sql`.
 - **Not done**: true streaming responses — see the note above.
 
 ## Project layout
