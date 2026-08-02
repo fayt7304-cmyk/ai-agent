@@ -14,13 +14,37 @@ const resetError = document.getElementById("reset-error") as HTMLDivElement;
 const googleBtn = document.getElementById("google-login-btn") as HTMLAnchorElement;
 const forgotLink = document.getElementById("forgot-password-link") as HTMLButtonElement;
 const backToLoginLink = document.getElementById("back-to-login-link") as HTMLButtonElement;
+const guestContinueBtn = document.getElementById("guest-continue-btn") as HTMLButtonElement;
+const authCloseBtn = document.getElementById("auth-close-btn") as HTMLButtonElement;
+const authTitle = document.getElementById("auth-title") as HTMLHeadingElement;
+const authSubtitle = document.getElementById("auth-subtitle") as HTMLParagraphElement;
+const signupSubmitBtn = signupForm.querySelector("button[type=submit]") as HTMLButtonElement;
+
+// "login" = the normal sign-in/sign-up screen shown before anyone is authenticated.
+// "claim" = a guest session turning itself into a real account in place (same form,
+// different endpoint + a way to back out and keep browsing as a guest).
+let mode: "login" | "claim" = "login";
+let onClaimCancelled: (() => void) | null = null;
 
 function showForm(which: "login" | "signup" | "forgot" | "reset") {
   loginForm.style.display = which === "login" ? "flex" : "none";
   signupForm.style.display = which === "signup" ? "flex" : "none";
   forgotForm.style.display = which === "forgot" ? "flex" : "none";
   resetForm.style.display = which === "reset" ? "flex" : "none";
-  authTabs.style.display = which === "login" || which === "signup" ? "flex" : "none";
+  authTabs.style.display = mode === "claim" ? "none" : which === "login" || which === "signup" ? "flex" : "none";
+}
+
+function resetToLoginMode() {
+  mode = "login";
+  onClaimCancelled = null;
+  guestContinueBtn.style.display = "block";
+  authCloseBtn.style.display = "none";
+  authTitle.textContent = "Agent";
+  authSubtitle.textContent = "Powered by Mistral · your account, your server";
+  signupSubmitBtn.textContent = "Create account";
+  authTabs.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+  authTabs.querySelector('[data-auth-tab="login"]')?.classList.add("active");
+  showForm("login");
 }
 
 export function showAuthScreen() {
@@ -31,8 +55,35 @@ export function hideAuthScreen() {
   authScreen.style.display = "none";
 }
 
-export function initAuthView(onAuthenticated: (user: User) => void) {
+// Lets a guest turn their session into a real, logged-in account without losing
+// their chat history — same signup form, but it calls claimAccount instead of
+// signup, and offers a way back out (onCancelled) instead of the usual guest link.
+export function openClaimScreen(user: User, message?: string, onCancelled?: () => void) {
+  mode = "claim";
+  onClaimCancelled = onCancelled || null;
+  signupError.textContent = "";
+  guestContinueBtn.style.display = "none";
+  authCloseBtn.style.display = "inline-flex";
+  authTitle.textContent = "Save your account";
+  authSubtitle.textContent = message || "Add a username, email, and password so you can log back in on any device.";
+  signupSubmitBtn.textContent = "Save account";
+  const usernameInput = document.getElementById("signup-username") as HTMLInputElement;
+  if (user.username && !user.username.toLowerCase().startsWith("guest")) usernameInput.value = user.username;
+  showAuthScreen();
+  showForm("signup");
+}
+
+export function initAuthView(onAuthenticated: (user: User) => void, onContinueAsGuest: () => void) {
   googleBtn.href = api.googleLoginUrl();
+
+  guestContinueBtn.addEventListener("click", () => onContinueAsGuest());
+
+  authCloseBtn.addEventListener("click", () => {
+    hideAuthScreen();
+    const cancelled = onClaimCancelled;
+    resetToLoginMode();
+    cancelled?.();
+  });
 
   authTabs.querySelectorAll<HTMLButtonElement>(".tab").forEach((tab) => {
     tab.addEventListener("click", () => {
@@ -79,12 +130,15 @@ export function initAuthView(onAuthenticated: (user: User) => void) {
     const username = (document.getElementById("signup-username") as HTMLInputElement).value.trim();
     const email = (document.getElementById("signup-email") as HTMLInputElement).value.trim();
     const password = (document.getElementById("signup-password") as HTMLInputElement).value;
-    const btn = signupForm.querySelector("button[type=submit]") as HTMLButtonElement;
+    const btn = signupSubmitBtn;
     btn.disabled = true;
     try {
-      const { user } = await api.signup(username, email, password);
+      const { user } = mode === "claim" ? await api.claimAccount(username, email, password) : await api.signup(username, email, password);
       signupForm.reset();
+      const wasClaimMode = mode === "claim";
+      resetToLoginMode();
       onAuthenticated(user);
+      if (wasClaimMode) hideAuthScreen();
     } catch (err) {
       signupError.textContent = err instanceof ApiError ? err.message : "Something went wrong. Try again.";
     } finally {

@@ -115,11 +115,17 @@ logoutBtn.addEventListener("click", async () => {
 
 saveAccountBtn.addEventListener("click", () => {
   userMenu.style.display = "none";
-  if (currentUser) openClaimScreen(currentUser);
+  if (currentUser) {
+    appShell.style.display = "none";
+    openClaimScreen(currentUser, undefined, () => (appShell.style.display = "flex"));
+  }
 });
 
 guestBannerSaveBtn.addEventListener("click", () => {
-  if (currentUser) openClaimScreen(currentUser);
+  if (currentUser) {
+    appShell.style.display = "none";
+    openClaimScreen(currentUser, undefined, () => (appShell.style.display = "flex"));
+  }
 });
 
 guestBannerDismissBtn.addEventListener("click", () => {
