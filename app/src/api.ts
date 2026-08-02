@@ -4,6 +4,8 @@ export const API_BASE = "https://mistral-agent-chat.fayt7304.workers.dev";
 export interface User {
   id: string;
   username: string;
+  email: string | null;
+  has_password: boolean;
   theme: "light" | "dark" | "system";
   model: string;
   instructions: string;
@@ -63,11 +65,22 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  signup: (username: string, password: string) =>
-    request<{ user: User }>("/api/auth/signup", { method: "POST", body: JSON.stringify({ username, password }) }),
+  signup: (username: string, email: string, password: string) =>
+    request<{ user: User }>("/api/auth/signup", {
+      method: "POST",
+      body: JSON.stringify({ username, email, password }),
+    }),
 
   login: (username: string, password: string) =>
     request<{ user: User }>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
+
+  googleLoginUrl: () => `${API_BASE}/api/auth/google`,
+
+  forgotPassword: (email: string) =>
+    request<{ ok: true }>("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) }),
+
+  resetPassword: (token: string, password: string) =>
+    request<{ ok: true }>("/api/auth/reset-password", { method: "POST", body: JSON.stringify({ token, password }) }),
 
   logout: () => request<{ ok: true }>("/api/auth/logout", { method: "POST" }),
 

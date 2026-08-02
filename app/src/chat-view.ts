@@ -114,6 +114,7 @@ async function selectConversation(id: string) {
   const { messages } = await api.getMessages(id);
   renderMessages(messages);
   if (window.innerWidth <= 720) sidebar.classList.add("collapsed");
+  syncSidebarBackdrop();
 }
 
 function startNewConversation() {
@@ -123,6 +124,7 @@ function startNewConversation() {
   renderMessages([]);
   chatInput.focus();
   if (window.innerWidth <= 720) sidebar.classList.add("collapsed");
+  syncSidebarBackdrop();
 }
 
 function renderAttachmentChips() {
@@ -213,13 +215,37 @@ async function sendMessage() {
   }
 }
 
+const sidebarBackdrop = document.createElement("div");
+sidebarBackdrop.className = "sidebar-backdrop";
+document.body.appendChild(sidebarBackdrop);
+
+function syncSidebarBackdrop() {
+  const open = window.innerWidth <= 720 && !sidebar.classList.contains("collapsed");
+  sidebarBackdrop.classList.toggle("visible", open);
+}
+
 export function initChatView(user: User) {
   currentUser = user;
   sidebarUsername.textContent = user.username;
   userAvatar.textContent = user.username.slice(0, 2).toUpperCase();
 
+  // On small screens the sidebar overlays the chat, so it should start closed.
+  if (window.innerWidth <= 720) sidebar.classList.add("collapsed");
+  syncSidebarBackdrop();
+
   newChatBtn.addEventListener("click", startNewConversation);
-  sidebarToggle.addEventListener("click", () => sidebar.classList.toggle("collapsed"));
+  sidebarToggle.addEventListener("click", () => {
+    sidebar.classList.toggle("collapsed");
+    syncSidebarBackdrop();
+  });
+  sidebarBackdrop.addEventListener("click", () => {
+    sidebar.classList.add("collapsed");
+    syncSidebarBackdrop();
+  });
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 720) sidebar.classList.remove("collapsed");
+    syncSidebarBackdrop();
+  });
 
   chatInput.addEventListener("input", () => {
     chatInput.style.height = "auto";

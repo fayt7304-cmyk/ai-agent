@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Agent — powered by Mistral</title>
-  <script type="module" crossorigin src="/assets/index-BESHUAh3.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-DA6yCjEF.css">
+  <script type="module" crossorigin src="/assets/index-BdUPCo4C.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-C4rPwLcg.css">
 </head>
 <body>
 
@@ -16,6 +16,8 @@
       <h1>Agent</h1>
       <p>Powered by Mistral · your account, your server</p>
     </header>
+
+    <a href="#" id="google-login-btn" class="google-btn">Continue with Google</a>
 
     <div class="tabs" id="auth-tabs">
       <button class="tab active" data-auth-tab="login">Log in</button>
@@ -31,11 +33,15 @@
       </label>
       <div class="auth-error" id="login-error"></div>
       <button type="submit" class="primary full">Log in</button>
+      <button type="button" id="forgot-password-link" class="link-btn">Forgot password?</button>
     </form>
 
     <form id="signup-form" class="auth-form" style="display:none;">
       <label>Username
         <input type="text" id="signup-username" autocomplete="username" minlength="3" maxlength="32" required>
+      </label>
+      <label>Email
+        <input type="email" id="signup-email" autocomplete="email" required>
       </label>
       <label>Password
         <input type="password" id="signup-password" autocomplete="new-password" minlength="8" required>
@@ -43,6 +49,25 @@
       <div class="hint">At least 8 characters. Stored only on your own Worker — no third party involved.</div>
       <div class="auth-error" id="signup-error"></div>
       <button type="submit" class="primary full">Create account</button>
+    </form>
+
+    <form id="forgot-form" class="auth-form" style="display:none;">
+      <label>Email
+        <input type="email" id="forgot-email" autocomplete="email" required>
+      </label>
+      <div class="hint">We'll email you a link to reset your password if that email is registered.</div>
+      <div class="auth-error" id="forgot-error"></div>
+      <div class="auth-success" id="forgot-success"></div>
+      <button type="submit" class="primary full">Send reset link</button>
+      <button type="button" id="back-to-login-link" class="link-btn">Back to log in</button>
+    </form>
+
+    <form id="reset-form" class="auth-form" style="display:none;">
+      <label>New password
+        <input type="password" id="reset-password" autocomplete="new-password" minlength="8" required>
+      </label>
+      <div class="auth-error" id="reset-error"></div>
+      <button type="submit" class="primary full">Set new password</button>
     </form>
   </div>
 </div>
