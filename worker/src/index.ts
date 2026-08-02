@@ -19,7 +19,7 @@ import {
   randomToken,
 } from "./auth";
 import { buildGoogleAuthUrl, exchangeCodeForAccessToken, fetchGoogleUserInfo } from "./oauth-google";
-import { sendPasswordResetEmail } from "./email";
+import { sendPasswordResetEmail, sendLeadNotificationEmail } from "./email";
 import { callMistral } from "./mistral";
 
 // ---- Customize your agent defaults here ----------------------------
@@ -420,6 +420,21 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
     return err("MISTRAL_API_KEY is not configured on this Worker.", 500);
   }
 
+  const dailyLimit = env.MAX_MESSAGES_PER_DAY ? parseInt(env.MAX_MESSAGES_PER_DAY, 10) : 0;
+  if (dailyLimit > 0) {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const row = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM messages m
+       JOIN conversations c ON c.id = m.conversation_id
+       WHERE c.user_id = ? AND m.role = 'user' AND m.created_at > ?`
+    )
+      .bind(user.id, since)
+      .first<{ n: number }>();
+    if ((row?.n || 0) >= dailyLimit) {
+      return err(`Daily message limit reached (${dailyLimit}/day). Please try again tomorrow.`, 429);
+    }
+  }
+
   const body = (await request.json().catch(() => null)) as ChatRequestBody | null;
   const attachments = Array.isArray(body?.attachments) ? body!.attachments! : [];
   if (!body || (!body.message?.trim() && attachments.length === 0)) {
@@ -506,6 +521,57 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
   }
 }
 
+interface LeadRequestBody {
+  conversation_id?: string;
+  name?: string;
+  phone?: string;
+  email?: string;
+  message?: string;
+  has_photo?: boolean;
+}
+
+async function handleCreateLead(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+
+  const body = (await request.json().catch(() => null)) as LeadRequestBody | null;
+  if (!body) return err("Invalid body.");
+
+  const name = body.name?.trim().slice(0, 120) || null;
+  const phone = body.phone?.trim().slice(0, 60) || null;
+  const email = body.email?.trim().slice(0, 200) || null;
+  const message = body.message?.trim().slice(0, 4000) || null;
+  if (!name && !phone && !email && !message) {
+    return err("Please fill in at least one field.");
+  }
+
+  const id = crypto.randomUUID();
+  const ts = nowIso();
+  await env.DB.prepare(
+    `INSERT INTO leads (id, user_id, conversation_id, name, phone, email, message, has_photo, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(id, user.id, body.conversation_id || null, name, phone, email, message, body.has_photo ? 1 : 0, ts)
+    .run();
+
+  if (env.LEAD_NOTIFY_TO) {
+    try {
+      await sendLeadNotificationEmail(env, env.LEAD_NOTIFY_TO, {
+        name,
+        phone,
+        email,
+        message,
+        hasPhoto: !!body.has_photo,
+        fromUsername: user.username,
+      });
+    } catch (e) {
+      console.error("Failed to send lead notification", e);
+    }
+  }
+
+  return json({ ok: true, lead_id: id });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method === "OPTIONS") {
@@ -549,6 +615,8 @@ export default {
         resp = await handleGetMessages(request, env, path.split("/")[3]);
       } else if (path === "/api/chat" && request.method === "POST") {
         resp = await handleChat(request, env);
+      } else if (path === "/api/leads" && request.method === "POST") {
+        resp = await handleCreateLead(request, env);
       } else {
         resp = json({ error: "Not found" }, { status: 404 });
       }

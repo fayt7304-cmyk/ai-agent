@@ -38,7 +38,7 @@ export async function hashPassword(password: string, saltB64?: string): Promise<
     keyMaterial,
     256
   );
-  return { hash: bufToBase64(bits), salt: bufToBase64(salt.buffer) };
+  return { hash: bufToBase64(bits), salt: bufToBase64(salt.buffer as ArrayBuffer) };
 }
 
 export async function verifyPassword(password: string, hash: string, salt: string): Promise<boolean> {

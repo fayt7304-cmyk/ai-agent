@@ -22,3 +22,11 @@ FRONTEND_URL = "https://ai.afmarbre.com"
 # browsers. Needs api.afmarbre.com added as a custom domain for this Worker in the
 # Cloudflare dashboard, and this new redirect URI added in Google Cloud Console.
 COOKIE_DOMAIN = ".afmarbre.com"
+
+# Optional — lead capture ("Get a quote" button) emails this address when
+# someone submits the form. Uses the same Resend setup as password resets.
+# LEAD_NOTIFY_TO = "you@afmarbre.com"
+
+# Optional — caps how many chat messages one user can send per rolling 24h.
+# Leave unset for no limit.
+# MAX_MESSAGES_PER_DAY = "50"

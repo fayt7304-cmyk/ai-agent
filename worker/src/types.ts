@@ -18,6 +18,12 @@ export interface Env {
   GOOGLE_REDIRECT_URI: string;
   RESEND_API_KEY: string;
   RESEND_FROM: string;
+  /** Optional: where lead notification emails get sent (your team's inbox).
+   *  Falls back to RESEND_FROM's domain admin if unset — but set this explicitly. */
+  LEAD_NOTIFY_TO?: string;
+  /** Optional: max chat messages a single user can send in a rolling 24h window.
+   *  Unset = unlimited. */
+  MAX_MESSAGES_PER_DAY?: string;
 }
 
 export interface UserRow {
@@ -66,6 +72,18 @@ export interface AttachmentIn {
   mime: string;
   size: number;
   dataUrl: string; // data:<mime>;base64,....
+}
+
+export interface LeadRow {
+  id: string;
+  user_id: string;
+  conversation_id: string | null;
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  message: string | null;
+  has_photo: number;
+  created_at: string;
 }
 
 export function toPublicUser(u: UserRow): PublicUser {
