@@ -158,6 +158,17 @@
         <input type="password" id="new-password-input" placeholder="Leave blank to keep current password" minlength="8">
       </section>
 
+      <section class="settings-section">
+        <label class="settings-label">Google account</label>
+        <div class="google-link-row" id="google-link-row">
+          <span id="google-link-status">Not connected</span>
+          <a href="#" id="google-link-btn" class="link-btn">Connect Google</a>
+          <button type="button" id="google-unlink-btn" class="link-btn" style="display:none;">Disconnect</button>
+        </div>
+        <div class="hint">Connect Google to also be able to log in with your Google account.</div>
+      </section>
+
+      <div class="settings-success" id="settings-success"></div>
       <div class="settings-error" id="settings-error"></div>
     </div>
 

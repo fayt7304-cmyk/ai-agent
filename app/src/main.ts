@@ -65,8 +65,29 @@ initSettingsView((user) => {
   updateChatUser(user);
 });
 
+// If we just came back from linking (or trying to link) a Google account, pull the
+// status out of the URL and clean it up so it doesn't stick around on refresh/share.
+const redirectParams = new URLSearchParams(window.location.search);
+const linked = redirectParams.get("linked");
+const linkError = redirectParams.get("link_error");
+if (linked || linkError) {
+  window.history.replaceState({}, "", window.location.pathname);
+}
+
 // Bootstrap: is there already a valid session cookie?
 api
   .me()
-  .then(({ user }) => enterApp(user))
+  .then(({ user }) => {
+    enterApp(user);
+    if (linked === "google") {
+      openSettings(user, "Google account connected.");
+    } else if (linkError) {
+      const message =
+        linkError === "already_linked"
+          ? "That Google account is already linked to a different user."
+          : "Could not connect Google — please try again.";
+      openSettings(user, undefined);
+      document.getElementById("settings-error")!.textContent = message;
+    }
+  })
   .catch(() => showAuthScreen());

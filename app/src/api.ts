@@ -1,11 +1,22 @@
 // Point this at your deployed Worker (see README). Include the origin only, no trailing slash.
-export const API_BASE = "https://mistral-agent-chat.fayt7304.workers.dev";
+//
+// IMPORTANT (mobile login): this now points at api.afmarbre.com instead of the
+// *.workers.dev address. That's not cosmetic — the frontend lives on ai.afmarbre.com,
+// and mobile browsers (especially iOS Safari) routinely drop the login cookie when it
+// comes from a completely unrelated domain like workers.dev. Putting the API on a
+// subdomain of the same domain as the frontend makes the cookie same-site, which is
+// what actually fixes "not authenticated" after logging in on a phone. See the worker's
+// wrangler.toml (GOOGLE_REDIRECT_URI, COOKIE_DOMAIN) — both must point at this same
+// custom domain, and the Worker needs that custom domain added in the Cloudflare
+// dashboard (Workers & Pages → mistral-agent-chat → Settings → Domains & Routes).
+export const API_BASE = "https://api.afmarbre.com";
 
 export interface User {
   id: string;
   username: string;
   email: string | null;
   has_password: boolean;
+  google_linked: boolean;
   theme: "light" | "dark" | "system";
   model: string;
   instructions: string;
@@ -75,6 +86,10 @@ export const api = {
     request<{ user: User }>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
 
   googleLoginUrl: () => `${API_BASE}/api/auth/google`,
+
+  googleLinkUrl: () => `${API_BASE}/api/auth/google?mode=link`,
+
+  unlinkGoogle: () => request<{ user: User }>("/api/auth/google/link", { method: "DELETE" }),
 
   forgotPassword: (email: string) =>
     request<{ ok: true }>("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) }),

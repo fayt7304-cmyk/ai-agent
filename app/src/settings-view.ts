@@ -10,13 +10,30 @@ const modelSelect = document.getElementById("model-select") as HTMLSelectElement
 const instructionsInput = document.getElementById("instructions-input") as HTMLTextAreaElement;
 const passwordInput = document.getElementById("new-password-input") as HTMLInputElement;
 const settingsError = document.getElementById("settings-error") as HTMLDivElement;
+const settingsSuccess = document.getElementById("settings-success") as HTMLDivElement;
+const googleLinkStatus = document.getElementById("google-link-status") as HTMLSpanElement;
+const googleLinkBtn = document.getElementById("google-link-btn") as HTMLAnchorElement;
+const googleUnlinkBtn = document.getElementById("google-unlink-btn") as HTMLButtonElement;
 
 let selectedTheme: Theme = "system";
 
 function close() {
   overlay.style.display = "none";
   settingsError.textContent = "";
+  settingsSuccess.textContent = "";
   passwordInput.value = "";
+}
+
+function renderGoogleLinkState(user: User) {
+  if (user.google_linked) {
+    googleLinkStatus.textContent = "Connected";
+    googleLinkBtn.style.display = "none";
+    googleUnlinkBtn.style.display = "inline";
+  } else {
+    googleLinkStatus.textContent = "Not connected";
+    googleLinkBtn.style.display = "inline";
+    googleUnlinkBtn.style.display = "none";
+  }
 }
 
 export function initSettingsView(onUserUpdated: (user: User) => void) {
@@ -24,6 +41,24 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
   cancelBtn.addEventListener("click", close);
   overlay.addEventListener("click", (e) => {
     if (e.target === overlay) close();
+  });
+
+  googleLinkBtn.href = api.googleLinkUrl();
+
+  googleUnlinkBtn.addEventListener("click", async () => {
+    settingsError.textContent = "";
+    settingsSuccess.textContent = "";
+    googleUnlinkBtn.disabled = true;
+    try {
+      const { user } = await api.unlinkGoogle();
+      renderGoogleLinkState(user);
+      onUserUpdated(user);
+      settingsSuccess.textContent = "Google account disconnected.";
+    } catch (err) {
+      settingsError.textContent = err instanceof ApiError ? err.message : "Could not disconnect Google.";
+    } finally {
+      googleUnlinkBtn.disabled = false;
+    }
   });
 
   themeSegmented.querySelectorAll<HTMLButtonElement>("button").forEach((btn) => {
@@ -56,7 +91,7 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
   });
 }
 
-export function openSettings(user: User) {
+export function openSettings(user: User, message?: string) {
   selectedTheme = user.theme;
   themeSegmented.querySelectorAll<HTMLButtonElement>("button").forEach((b) => {
     b.classList.toggle("active", b.dataset.themeOption === user.theme);
@@ -65,5 +100,7 @@ export function openSettings(user: User) {
   instructionsInput.value = user.instructions;
   passwordInput.value = "";
   settingsError.textContent = "";
+  settingsSuccess.textContent = message || "";
+  renderGoogleLinkState(user);
   overlay.style.display = "flex";
 }
