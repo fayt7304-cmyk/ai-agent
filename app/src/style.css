@@ -827,45 +827,37 @@ select, .modal-body input, .modal-body textarea {
   align-items: center;
   gap: 14px;
   width: 100%;
-  padding: 14px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--card);
+  padding: 11px 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
   color: var(--text);
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: background 0.15s ease;
 }
 
 .tool-card:hover,
 .tool-card:focus-visible {
-  border-color: var(--accent);
-  background: var(--accent-bg);
+  background: var(--sidebar);
 }
 
-.tool-card-icon { font-size: 24px; line-height: 1; flex-shrink: 0; }
+.tool-card-icon { font-size: 20px; line-height: 1; flex-shrink: 0; width: 22px; text-align: center; }
 
 .tool-card-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 
-.tool-card-label { font-size: 14.5px; font-weight: 500; }
+.tool-card-label { font-size: 14px; font-weight: 400; }
 .tool-card-sub {
   font-size: 12.5px;
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.tool-card-chevron {
-  margin-left: auto;
-  color: var(--text-secondary);
-  font-size: 20px;
-  flex-shrink: 0;
 }
 
 .tools-tabs {
