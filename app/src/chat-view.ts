@@ -397,6 +397,15 @@ export function updateChatUser(user: User) {
   currentUser = user;
 }
 
+// Lets other views (e.g. Settings → Privacy → "Delete all chats") refresh the
+// sidebar conversation list after they've changed conversations behind our back.
+export async function refreshConversations() {
+  currentConversationId = null;
+  renderMessages([]);
+  chatTitle.textContent = "New chat";
+  await loadConversations();
+}
+
 export function resetChatView() {
   conversations = [];
   currentConversationId = null;
