@@ -37,6 +37,7 @@ export interface UserRow {
   theme: string;
   model: string;
   instructions: string;
+  is_guest: number;
   created_at: string;
 }
 
@@ -47,6 +48,7 @@ export interface PublicUser {
   has_password: boolean;
   google_linked: boolean;
   theme: string;
+  is_guest: boolean;
 }
 
 export interface ConversationRow {
@@ -94,5 +96,6 @@ export function toPublicUser(u: UserRow): PublicUser {
     has_password: !!u.password_hash,
     google_linked: u.oauth_provider === "google",
     theme: u.theme,
+    is_guest: !!u.is_guest,
   };
 }

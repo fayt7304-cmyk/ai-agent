@@ -153,7 +153,103 @@ async function handleUpdateSettings(request: Request, env: Env): Promise<Respons
       .run();
   }
 
-  return json({ user: { id: user.id, username: user.username, google_linked: user.oauth_provider === "google", theme } });
+  return json({
+    user: {
+      id: user.id,
+      username: user.username,
+      google_linked: user.oauth_provider === "google",
+      theme,
+      is_guest: !!user.is_guest,
+    },
+  });
+}
+
+// ---- Anonymous / guest accounts --------------------------------------
+// Creates a real (but unclaimed) account so guests get full functionality —
+// conversations, settings, everything — without ever seeing a login form.
+// The account can later be "claimed" (handleClaimAccount) into a normal
+// username/password account without losing any history, since it's the
+// same row/id the whole time.
+async function handleGuestLogin(env: Env): Promise<Response> {
+  const id = crypto.randomUUID();
+  const username = `guest_${randomToken(6)}`;
+  await env.DB.prepare(
+    `INSERT INTO users (id, username, email, password_hash, password_salt, theme, model, instructions, is_guest, created_at)
+     VALUES (?, ?, NULL, '', '', 'system', ?, ?, 1, ?)`
+  )
+    .bind(id, username, DEFAULT_MODEL, DEFAULT_INSTRUCTIONS, nowIso())
+    .run();
+
+  const { token, maxAge } = await createSession(env, id);
+  const resp = json({
+    user: {
+      id,
+      username,
+      email: null,
+      has_password: false,
+      google_linked: false,
+      theme: "system",
+      is_guest: true,
+    },
+  });
+  resp.headers.set("Set-Cookie", sessionCookieHeader(token, maxAge, env.COOKIE_DOMAIN));
+  return resp;
+}
+
+// Upgrades the currently-logged-in guest into a real account in place —
+// same user id, so their conversations and settings carry over exactly.
+async function handleClaimAccount(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  if (!user.is_guest) return err("This account is already claimed.", 400);
+
+  const body = (await request.json().catch(() => null)) as
+    | { username?: string; email?: string; password?: string }
+    | null;
+  const username = body?.username?.trim();
+  const email = body?.email?.trim().toLowerCase();
+  const password = body?.password;
+
+  if (!username || username.length < 3 || username.length > 32) {
+    return err("Username must be 3-32 characters.");
+  }
+  if (!/^[a-zA-Z0-9_.-]+$/.test(username)) {
+    return err("Username can only contain letters, numbers, underscores, dots and dashes.");
+  }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return err("A valid email is required.");
+  }
+  if (!password || password.length < 8) {
+    return err("Password must be at least 8 characters.");
+  }
+
+  const existingUsername = await env.DB.prepare("SELECT id FROM users WHERE username = ? AND id != ?")
+    .bind(username, user.id)
+    .first();
+  if (existingUsername) return err("That username is already taken.", 409);
+  const existingEmail = await env.DB.prepare("SELECT id FROM users WHERE email = ? AND id != ?")
+    .bind(email, user.id)
+    .first();
+  if (existingEmail) return err("That email is already registered.", 409);
+
+  const { hash, salt } = await hashPassword(password);
+  await env.DB.prepare(
+    "UPDATE users SET username = ?, email = ?, password_hash = ?, password_salt = ?, is_guest = 0 WHERE id = ?"
+  )
+    .bind(username, email, hash, salt, user.id)
+    .run();
+
+  return json({
+    user: {
+      id: user.id,
+      username,
+      email,
+      has_password: true,
+      google_linked: user.oauth_provider === "google",
+      theme: user.theme,
+      is_guest: false,
+    },
+  });
 }
 
 async function handleGoogleStart(request: Request, env: Env): Promise<Response> {
@@ -591,6 +687,10 @@ export default {
         resp = await handleLogout(request, env);
       } else if (path === "/api/auth/me" && request.method === "GET") {
         resp = await handleMe(request, env);
+      } else if (path === "/api/auth/guest" && request.method === "POST") {
+        resp = await handleGuestLogin(env);
+      } else if (path === "/api/auth/claim" && request.method === "POST") {
+        resp = await handleClaimAccount(request, env);
       } else if (path === "/api/auth/google" && request.method === "GET") {
         resp = await handleGoogleStart(request, env);
       } else if (path === "/api/auth/google/callback" && request.method === "GET") {
