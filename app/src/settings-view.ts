@@ -6,8 +6,6 @@ const closeBtn = document.getElementById("settings-close-btn") as HTMLButtonElem
 const cancelBtn = document.getElementById("settings-cancel-btn") as HTMLButtonElement;
 const saveBtn = document.getElementById("settings-save-btn") as HTMLButtonElement;
 const themeSegmented = document.getElementById("theme-segmented") as HTMLDivElement;
-const modelSelect = document.getElementById("model-select") as HTMLSelectElement;
-const instructionsInput = document.getElementById("instructions-input") as HTMLTextAreaElement;
 const passwordInput = document.getElementById("new-password-input") as HTMLInputElement;
 const settingsError = document.getElementById("settings-error") as HTMLDivElement;
 const settingsSuccess = document.getElementById("settings-success") as HTMLDivElement;
@@ -77,8 +75,6 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     try {
       const { user } = await api.updateSettings({
         theme: selectedTheme,
-        model: modelSelect.value,
-        instructions: instructionsInput.value,
         ...(passwordInput.value ? { password: passwordInput.value } : {}),
       });
       onUserUpdated(user);
@@ -96,8 +92,6 @@ export function openSettings(user: User, message?: string) {
   themeSegmented.querySelectorAll<HTMLButtonElement>("button").forEach((b) => {
     b.classList.toggle("active", b.dataset.themeOption === user.theme);
   });
-  modelSelect.value = user.model;
-  instructionsInput.value = user.instructions;
   passwordInput.value = "";
   settingsError.textContent = "";
   settingsSuccess.textContent = message || "";

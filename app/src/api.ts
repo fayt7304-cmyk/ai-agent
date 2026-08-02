@@ -18,8 +18,6 @@ export interface User {
   has_password: boolean;
   google_linked: boolean;
   theme: "light" | "dark" | "system";
-  model: string;
-  instructions: string;
 }
 
 export interface Conversation {
@@ -101,7 +99,7 @@ export const api = {
 
   me: () => request<{ user: User }>("/api/auth/me", { method: "GET" }),
 
-  updateSettings: (patch: Partial<Pick<User, "theme" | "model" | "instructions">> & { password?: string }) =>
+  updateSettings: (patch: Partial<Pick<User, "theme">> & { password?: string }) =>
     request<{ user: User }>("/api/settings", { method: "PATCH", body: JSON.stringify(patch) }),
 
   listConversations: () => request<{ conversations: Conversation[] }>("/api/conversations", { method: "GET" }),
