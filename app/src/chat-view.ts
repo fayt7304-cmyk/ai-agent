@@ -18,6 +18,27 @@ const QUICK_ACTIONS: QuickAction[] = [
   { label: "📋 Get a quote", openLead: true },
 ];
 
+// Mobile browsers (especially over cellular, with tighter memory limits) can fail to
+// render very large images when they're embedded directly as a base64 "data:" URI in
+// an <img src>. Converting to a Blob object URL first is far more reliable across
+// devices and uses less memory, since the browser handles it as a real binary resource
+// instead of a giant inline text string. Falls back to the raw data URL if conversion
+// fails for any reason (e.g. a malformed data URI), so nothing regresses.
+function dataUrlToObjectUrl(dataUrl: string): string {
+  try {
+    const [header, base64] = dataUrl.split(",");
+    const mimeMatch = header.match(/data:(.*);base64/);
+    const mime = mimeMatch ? mimeMatch[1] : "application/octet-stream";
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: mime });
+    return URL.createObjectURL(blob);
+  } catch {
+    return dataUrl;
+  }
+}
+
 const sidebar = document.getElementById("sidebar") as HTMLDivElement;
 const sidebarToggle = document.getElementById("sidebar-toggle") as HTMLButtonElement;
 const convoList = document.getElementById("convo-list") as HTMLDivElement;
@@ -106,14 +127,24 @@ function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: strin
     chipsWrap.className = "msg-attachments";
     for (const a of attachments) {
       if (a.mime.startsWith("image/") && a.dataUrl) {
+        const objectUrl = dataUrlToObjectUrl(a.dataUrl);
         const link = document.createElement("a");
-        link.href = a.dataUrl;
+        link.href = objectUrl;
         link.target = "_blank";
         link.rel = "noopener";
         const img = document.createElement("img");
         img.className = "msg-image";
-        img.src = a.dataUrl;
+        img.src = objectUrl;
         img.alt = a.name;
+        // If even the Blob URL fails to load for some reason, fall back to the raw
+        // data URL once before giving up — better than a permanently broken image.
+        img.addEventListener(
+          "error",
+          () => {
+            if (img.src !== a.dataUrl) img.src = a.dataUrl!;
+          },
+          { once: true }
+        );
         link.appendChild(img);
         chipsWrap.appendChild(link);
       } else {
