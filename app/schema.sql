@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   theme TEXT NOT NULL DEFAULT 'system',
   model TEXT NOT NULL DEFAULT 'mistral-medium-latest',
   instructions TEXT NOT NULL DEFAULT 'You are a helpful, friendly assistant. Answer clearly and concisely.',
+  is_guest INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL;

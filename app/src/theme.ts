@@ -9,6 +9,12 @@ function resolveSystemTheme(): "light" | "dark" {
 function applyResolvedTheme(theme: Theme) {
   const resolved = theme === "system" ? resolveSystemTheme() : theme;
   document.documentElement.setAttribute("data-theme", resolved);
+  // The calculator's graph reads colors from CSS variables at draw time, so
+  // redraw it if it's currently open — done lazily to avoid a hard import
+  // cycle at module-load time (tools-view isn't guaranteed to exist yet).
+  import("./lib/calculator")
+    .then((m) => m.redrawGraphIfVisible())
+    .catch(() => {});
 }
 
 /** Read the locally-stored preference (used before we know if anyone is logged in). */

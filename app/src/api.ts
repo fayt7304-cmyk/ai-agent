@@ -18,6 +18,7 @@ export interface User {
   has_password: boolean;
   google_linked: boolean;
   theme: "light" | "dark" | "system";
+  is_guest: boolean;
 }
 
 export interface Conversation {
@@ -82,6 +83,18 @@ export const api = {
 
   login: (username: string, password: string) =>
     request<{ user: User }>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
+
+  // Silently creates (or resumes) an anonymous account — no credentials needed.
+  // Used so people land straight in the app instead of a login form.
+  guestLogin: () => request<{ user: User }>("/api/auth/guest", { method: "POST", body: "{}" }),
+
+  // Upgrades the current guest account into a real one in place, keeping the
+  // same id (and therefore all of its conversation history).
+  claimAccount: (username: string, email: string, password: string) =>
+    request<{ user: User }>("/api/auth/claim", {
+      method: "POST",
+      body: JSON.stringify({ username, email, password }),
+    }),
 
   googleLoginUrl: () => `${API_BASE}/api/auth/google`,
 
