@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent — powered by Mistral</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#185fa5">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+
+<!-- ============ AUTH SCREEN ============ -->
+<div id="auth-screen" class="auth-screen">
+  <div class="auth-card" id="auth-card">
+    <header class="auth-header">
+      <button id="auth-close-btn" class="icon-btn auth-close-btn" style="display:none;" title="Keep browsing as guest">✕</button>
+      <h1 id="auth-title">Agent</h1>
+      <p id="auth-subtitle">Powered by Mistral · your account, your server</p>
+    </header>
+
+    <a href="#" id="google-login-btn" class="google-btn">Continue with Google</a>
+
+    <div class="tabs" id="auth-tabs">
+      <button class="tab active" data-auth-tab="login">Log in</button>
+      <button class="tab" data-auth-tab="signup">Sign up</button>
+    </div>
+
+    <form id="login-form" class="auth-form">
+      <label>Username
+        <input type="text" id="login-username" autocomplete="username" required>
+      </label>
+      <label>Password
+        <input type="password" id="login-password" autocomplete="current-password" required>
+      </label>
+      <div class="auth-error" id="login-error"></div>
+      <button type="submit" class="primary full">Log in</button>
+      <button type="button" id="forgot-password-link" class="link-btn">Forgot password?</button>
+    </form>
+
+    <form id="signup-form" class="auth-form" style="display:none;">
+      <label>Username
+        <input type="text" id="signup-username" autocomplete="username" minlength="3" maxlength="32" required>
+      </label>
+      <label>Email
+        <input type="email" id="signup-email" autocomplete="email" required>
+      </label>
+      <label>Password
+        <input type="password" id="signup-password" autocomplete="new-password" minlength="8" required>
+      </label>
+      <div class="hint">At least 8 characters. Stored only on your own Worker — no third party involved.</div>
+      <div class="auth-error" id="signup-error"></div>
+      <button type="submit" class="primary full">Create account</button>
+    </form>
+
+    <form id="forgot-form" class="auth-form" style="display:none;">
+      <label>Email
+        <input type="email" id="forgot-email" autocomplete="email" required>
+      </label>
+      <div class="hint">We'll email you a link to reset your password if that email is registered.</div>
+      <div class="auth-error" id="forgot-error"></div>
+      <div class="auth-success" id="forgot-success"></div>
+      <button type="submit" class="primary full">Send reset link</button>
+      <button type="button" id="back-to-login-link" class="link-btn">Back to log in</button>
+    </form>
+
+    <form id="reset-form" class="auth-form" style="display:none;">
+      <label>New password
+        <input type="password" id="reset-password" autocomplete="new-password" minlength="8" required>
+      </label>
+      <div class="auth-error" id="reset-error"></div>
+      <button type="submit" class="primary full">Set new password</button>
+    </form>
+
+    <button type="button" id="guest-continue-btn" class="link-btn guest-continue-btn">Continue without an account →</button>
+  </div>
+</div>
+
+<!-- ============ APP SHELL ============ -->
+<div id="app-shell" class="app-shell" style="display:none;">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-top">
+      <h1 class="brand">Agent</h1>
+      <button id="new-chat-btn" class="new-chat-btn" title="New chat">+ New chat</button>
+    </div>
+
+    <div class="convo-list" id="convo-list"></div>
+
+    <div class="sidebar-bottom">
+      <button id="user-menu-btn" class="user-menu-btn">
+        <span class="avatar" id="user-avatar"></span>
+        <span class="username" id="sidebar-username"></span>
+        <span class="guest-badge" id="guest-badge" style="display:none;">Guest</span>
+      </button>
+      <div class="user-menu" id="user-menu" style="display:none;">
+        <button id="save-account-btn" style="display:none;">💾 Save my account</button>
+        <button id="open-settings-btn">Settings</button>
+        <button id="logout-btn">Log out</button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="chat-main">
+    <header class="chat-header">
+      <button id="sidebar-toggle" class="icon-btn" title="Toggle conversations">☰</button>
+      <div class="chat-title" id="chat-title">New chat</div>
+      <div class="chat-header-actions">
+        <button id="tools-btn" class="icon-btn" title="Tools">🧰</button>
+        <button id="install-app-btn" class="icon-btn" title="Install app" style="display:none;">⬇️</button>
+      </div>
+    </header>
+
+    <div class="guest-banner" id="guest-banner" style="display:none;">
+      <span>Browsing as a guest — your chats stay on this device only.</span>
+      <button type="button" id="guest-banner-save-btn">Save account</button>
+      <button type="button" id="guest-banner-dismiss-btn" class="icon-btn" title="Dismiss">✕</button>
+    </div>
+
+    <div class="messages" id="messages">
+      <div class="empty-state" id="empty-state">
+        <p>Start a conversation. You can also attach images or documents.</p>
+      </div>
+    </div>
+
+    <div class="quick-actions" id="quick-actions"></div>
+
+    <form id="chat-form" class="chat-form">
+      <div class="attachment-chips" id="attachment-chips"></div>
+      <div class="composer-row">
+        <button type="button" id="attach-btn" class="icon-btn" title="Attach a file">📎</button>
+        <input type="file" id="file-input" multiple style="display:none;">
+        <textarea id="chat-input" placeholder="Message the agent…" rows="1" autofocus></textarea>
+        <button type="submit" id="send-btn">Send</button>
+      </div>
+      <div class="composer-hint" id="composer-hint"></div>
+    </form>
+  </main>
+</div>
+
+<!-- ============ SETTINGS MODAL ============ -->
+<div id="settings-overlay" class="modal-overlay" style="display:none;">
+  <div class="modal modal-wide modal-settings">
+    <header class="modal-header">
+      <h2>Settings</h2>
+      <button id="settings-close-btn" class="icon-btn">✕</button>
+    </header>
+
+    <div class="settings-shell">
+      <nav class="settings-nav" id="settings-nav">
+        <button type="button" class="settings-nav-btn active" data-settings-tab="profile">Profile</button>
+        <button type="button" class="settings-nav-btn" data-settings-tab="preferences">Preferences</button>
+        <button type="button" class="settings-nav-btn" data-settings-tab="security">Security &amp; Access</button>
+        <button type="button" class="settings-nav-btn" data-settings-tab="privacy">Privacy</button>
+      </nav>
+
+      <div class="settings-panels">
+        <!-- Profile -->
+        <section class="settings-panel active" data-settings-panel="profile">
+          <div class="settings-card">
+            <div class="profile-row">
+              <div class="profile-avatar" id="profile-avatar">?</div>
+              <div class="profile-id-block">
+                <div class="profile-username" id="profile-username">—</div>
+                <div class="profile-email" id="profile-email">—</div>
+              </div>
+            </div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-row">
+              <div class="settings-card-title">User ID</div>
+              <div class="user-id-row">
+                <code id="profile-user-id">—</code>
+                <button type="button" id="copy-user-id-btn" class="link-btn">Copy</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Preferences -->
+        <section class="settings-panel" data-settings-panel="preferences">
+          <div class="settings-card">
+            <div class="settings-card-title">Appearance</div>
+            <div class="settings-card-desc">Choose how the interface looks on this device.</div>
+            <div class="segmented" id="theme-segmented">
+              <button data-theme-option="light">Light</button>
+              <button data-theme-option="dark">Dark</button>
+              <button data-theme-option="system">System</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Security & Access -->
+        <section class="settings-panel" data-settings-panel="security">
+          <div class="settings-card">
+            <div class="settings-card-title">Password</div>
+            <div class="settings-card-desc">Set a new password for your account.</div>
+            <input type="password" id="new-password-input" placeholder="Leave blank to keep current password" minlength="8">
+          </div>
+
+          <div class="settings-card">
+            <div class="settings-card-title">Google account</div>
+            <div class="settings-card-desc">Connect Google to also be able to log in with your Google account.</div>
+            <div class="google-link-row" id="google-link-row">
+              <span id="google-link-status">Not connected</span>
+              <a href="#" id="google-link-btn" class="link-btn">Connect Google</a>
+              <button type="button" id="google-unlink-btn" class="link-btn" style="display:none;">Disconnect</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Privacy -->
+        <section class="settings-panel" data-settings-panel="privacy">
+          <div class="settings-card danger-card">
+            <div class="settings-card-title">Delete all chats</div>
+            <div class="settings-card-desc">Permanently delete all of your conversations. This can't be undone.</div>
+            <button type="button" id="delete-all-chats-btn" class="danger-btn">Delete all chats</button>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="settings-messages">
+      <div class="settings-success" id="settings-success"></div>
+      <div class="settings-error" id="settings-error"></div>
+    </div>
+
+    <footer class="modal-footer">
+      <button id="settings-cancel-btn">Cancel</button>
+      <button id="settings-save-btn" class="primary">Save changes</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ============ LEAD / QUOTE REQUEST MODAL ============ -->
+<div id="lead-overlay" class="modal-overlay" style="display:none;">
+  <div class="modal">
+    <header class="modal-header">
+      <h2>Request a quote</h2>
+      <button id="lead-close-btn" class="icon-btn">✕</button>
+    </header>
+
+    <div class="modal-body">
+      <p class="hint">Leave your details and photo — our team will follow up.</p>
+      <section class="settings-section">
+        <label class="settings-label" for="lead-name">Name</label>
+        <input type="text" id="lead-name" placeholder="Your name">
+      </section>
+      <section class="settings-section">
+        <label class="settings-label" for="lead-phone">Phone</label>
+        <input type="tel" id="lead-phone" placeholder="Your phone number">
+      </section>
+      <section class="settings-section">
+        <label class="settings-label" for="lead-email">Email</label>
+        <input type="email" id="lead-email" placeholder="Your email">
+      </section>
+      <section class="settings-section">
+        <label class="settings-label" for="lead-message">Tell us about your project</label>
+        <textarea id="lead-message" rows="3" placeholder="e.g. Kitchen countertop, ~3m, need a quote"></textarea>
+      </section>
+      <section class="settings-section">
+        <label class="settings-label" for="lead-photo">Photo (optional)</label>
+        <input type="file" id="lead-photo" accept="image/*">
+        <div class="hint" id="lead-photo-hint"></div>
+      </section>
+      <div class="settings-success" id="lead-success"></div>
+      <div class="settings-error" id="lead-error"></div>
+    </div>
+
+    <footer class="modal-footer">
+      <button id="lead-cancel-btn">Cancel</button>
+      <button id="lead-submit-btn" class="primary">Send request</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ============ TOOLS MODAL ============ -->
+<div id="tools-overlay" class="modal-overlay" style="display:none;">
+  <div class="modal modal-wide modal-tools">
+    <header class="modal-header">
+      <button id="tools-back-btn" class="icon-btn" style="display:none;" aria-label="Back to tools">←</button>
+      <h2 id="tools-title">Tools</h2>
+      <button id="tools-close-btn" class="icon-btn">✕</button>
+    </header>
+
+    <div class="modal-body">
+      <!-- Simple vertical list: tap a row to open that tool -->
+      <div class="tools-menu" id="tools-menu">
+        <button class="tool-card" data-tool-tab="convert">
+          <span class="tool-card-icon">🖼️</span>
+          <span class="tool-card-text">
+            <span class="tool-card-label">Convert Image</span>
+            <span class="tool-card-sub">Change between PNG, JPG, and WebP</span>
+          </span>
+
+        </button>
+        <button class="tool-card" data-tool-tab="bgremove">
+          <span class="tool-card-icon">✂️</span>
+          <span class="tool-card-text">
+            <span class="tool-card-label">Remove Background</span>
+            <span class="tool-card-sub">Erase the background from a photo</span>
+          </span>
+
+        </button>
+        <button class="tool-card" data-tool-tab="ocr">
+          <span class="tool-card-icon">🔤</span>
+          <span class="tool-card-text">
+            <span class="tool-card-label">Image to Text</span>
+            <span class="tool-card-sub">Pull the text out of a picture</span>
+          </span>
+
+        </button>
+        <button class="tool-card" data-tool-tab="pdf2word">
+          <span class="tool-card-icon">📄</span>
+          <span class="tool-card-text">
+            <span class="tool-card-label">PDF to Word</span>
+            <span class="tool-card-sub">Turn a PDF into an editable Word doc</span>
+          </span>
+
+        </button>
+        <button class="tool-card" data-tool-tab="docx">
+          <span class="tool-card-icon">📝</span>
+          <span class="tool-card-text">
+            <span class="tool-card-label">Text to Word</span>
+            <span class="tool-card-sub">Paste text, export it as a Word doc</span>
+          </span>
+
+        </button>
+        <button class="tool-card" data-tool-tab="uconvert">
+          <span class="tool-card-icon">🧮</span>
+          <span class="tool-card-text">
+            <span class="tool-card-label">Converter & Calculator</span>
+            <span class="tool-card-sub">Units, materials, calculator, weather</span>
+          </span>
+
+        </button>
+      </div>
+
+      <!-- kept for the JS lookup table; no longer shown to the user -->
+      <div class="tools-tabs" id="tools-tabs" style="display:none;">
+        <button class="tab active" data-tool-tab="convert">Format converter</button>
+        <button class="tab" data-tool-tab="bgremove">Background remover</button>
+        <button class="tab" data-tool-tab="ocr">Image to text</button>
+        <button class="tab" data-tool-tab="pdf2word">PDF to Word</button>
+        <button class="tab" data-tool-tab="docx">Markdown → Word</button>
+        <button class="tab" data-tool-tab="uconvert">Universal Converter</button>
+      </div>
+
+      <!-- Format converter -->
+      <div class="tool-pane" id="tool-convert">
+        <div class="dropzone" id="convert-drop">
+          <div id="convert-drop-text">Drop an image here, or click to choose a file</div>
+          <input type="file" id="convert-file" accept="image/*">
+        </div>
+        <div class="preview" id="convert-preview" style="display:none;"><img id="convert-img"></div>
+        <div class="controls" id="convert-controls" style="display:none;">
+          <select id="convert-format">
+            <option value="image/png">PNG</option>
+            <option value="image/jpeg">JPG</option>
+            <option value="image/webp">WebP</option>
+          </select>
+          <button class="primary" id="convert-download">Download converted image</button>
+        </div>
+      </div>
+
+      <!-- Background remover -->
+      <div class="tool-pane" id="tool-bgremove" style="display:none;">
+        <div class="note">Runs entirely in your browser using a public, freely-licensed AI model. First run downloads the model (~80MB) and can take 15-30 seconds; cached after that.</div>
+        <div class="dropzone" id="bg-drop">
+          <div id="bg-drop-text">Drop an image here, or click to choose a file</div>
+          <input type="file" id="bg-file" accept="image/*">
+        </div>
+        <div class="preview" id="bg-preview" style="display:none;"><img id="bg-img"></div>
+        <div class="controls" id="bg-controls" style="display:none;">
+          <button class="primary" id="bg-remove">Remove background</button>
+          <button id="bg-download" style="display:none;">Download result</button>
+        </div>
+        <div class="status" id="bg-status"></div>
+      </div>
+
+      <!-- Image to text (OCR) -->
+      <div class="tool-pane" id="tool-ocr" style="display:none;">
+        <div class="note">Powered by Mistral OCR — reads normal text and math notation (formulas come back as LaTeX source).</div>
+        <div class="dropzone" id="ocr-drop">
+          <div id="ocr-drop-text">Drop an image here, or click to choose a file</div>
+          <input type="file" id="ocr-file" accept="image/*">
+        </div>
+        <div class="preview" id="ocr-preview" style="display:none;"><img id="ocr-img"></div>
+        <div class="controls" id="ocr-controls" style="display:none;">
+          <button class="primary" id="ocr-run">Extract text</button>
+        </div>
+        <div class="status" id="ocr-status"></div>
+        <textarea id="ocr-output" placeholder="Extracted text (and LaTeX for any math) will appear here" style="display:none;"></textarea>
+        <div class="controls" id="ocr-output-controls" style="display:none;">
+          <button id="ocr-copy">Copy text</button>
+          <button id="ocr-download-txt">Download .txt</button>
+          <button id="ocr-download-docx">Download .docx</button>
+        </div>
+      </div>
+
+      <!-- PDF to Word -->
+      <div class="tool-pane" id="tool-pdf2word" style="display:none;">
+        <div class="note">Powered by Mistral OCR — preserves headings and paragraph structure, including math as LaTeX. Complex multi-column layouts may not be perfectly preserved.</div>
+        <div class="dropzone" id="pdf-drop">
+          <div id="pdf-drop-text">Drop a PDF here, or click to choose a file</div>
+          <input type="file" id="pdf-file" accept="application/pdf">
+        </div>
+        <div class="controls" id="pdf-controls" style="display:none;">
+          <button class="primary" id="pdf-run">Convert to Word</button>
+        </div>
+        <div class="status" id="pdf-status"></div>
+      </div>
+
+      <!-- Markdown to docx -->
+      <div class="tool-pane" id="tool-docx" style="display:none;">
+        <p class="hint">Paste markdown (e.g. from an OCR result above) and export it as a Word document.</p>
+        <textarea id="docx-input" rows="8" placeholder="# Heading&#10;Some **bold** text…"></textarea>
+        <button id="docx-run-btn" class="primary">Export .docx</button>
+        <div class="tool-status" id="docx-status"></div>
+      </div>
+
+      <!-- Universal Converter -->
+      <div class="tool-pane tool-pane-uconvert" id="tool-uconvert" style="display:none;">
+        <div class="calc-mode-tabs" id="uconvert-tabs">
+          <button class="tab small active" data-uconvert-tab="convert">Convert</button>
+          <button class="tab small" data-uconvert-tab="material">Material estimate</button>
+          <button class="tab small" data-uconvert-tab="calculator">Calculator</button>
+          <button class="tab small" data-uconvert-tab="weather">Weather</button>
+        </div>
+
+        <!-- Unit / currency convert -->
+        <div class="card" id="convert-panel">
+          <div class="field" style="margin-bottom: 1rem;">
+            <label for="category-select">Category</label>
+            <select id="category-select"></select>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label for="conv-in">From</label>
+              <input type="number" id="conv-in" value="1" step="any">
+            </div>
+            <button class="swap-btn" id="conv-swap" type="button">⇄</button>
+            <div class="field">
+              <label for="conv-in-unit">Unit</label>
+              <select id="conv-in-unit"></select>
+            </div>
+          </div>
+          <div class="field" style="margin-bottom: 1rem;">
+            <label for="conv-out-unit">To</label>
+            <select id="conv-out-unit"></select>
+          </div>
+          <div class="result">
+            <div class="value" id="conv-result">—</div>
+            <div class="label">Result</div>
+          </div>
+          <div class="status" id="conv-status"></div>
+        </div>
+
+        <!-- Material estimate -->
+        <div class="card" id="material-panel" style="display:none;">
+          <h3 class="tool-subheading">Slab / flooring material estimate</h3>
+          <div class="grid2">
+            <div class="field">
+              <label for="mat-width">Width</label>
+              <input type="number" id="mat-width" value="4" step="any">
+            </div>
+            <div class="field">
+              <label for="mat-width-unit">Unit</label>
+              <select id="mat-width-unit"><option value="m">m</option><option value="ft">ft</option></select>
+            </div>
+          </div>
+          <div class="grid2">
+            <div class="field">
+              <label for="mat-length">Length</label>
+              <input type="number" id="mat-length" value="3" step="any">
+            </div>
+            <div class="field">
+              <label for="mat-length-unit">Unit</label>
+              <select id="mat-length-unit"><option value="m">m</option><option value="ft">ft</option></select>
+            </div>
+          </div>
+          <div class="field" style="margin-bottom: 1rem;">
+            <label for="mat-waste">Waste allowance (%)</label>
+            <input type="number" id="mat-waste" value="10" step="1" min="0">
+          </div>
+          <div class="result">
+            <div class="value" id="mat-result">—</div>
+            <div class="label">Area needed</div>
+          </div>
+        </div>
+
+        <!-- Calculator -->
+        <div class="card" id="calculator-panel" style="display:none;">
+          <div class="calc-mode-tabs">
+            <button class="tab small active" data-calc-mode="standard" type="button">Standard</button>
+            <button class="tab small" data-calc-mode="scientific" type="button">Scientific</button>
+            <button class="tab small" data-calc-mode="graph" type="button">Graph</button>
+          </div>
+
+          <div id="calc-standard-view">
+            <div class="calc-display" id="calc-display">0</div>
+            <div class="calc-grid">
+              <button class="calc-btn op" data-calc="clear" type="button">C</button>
+              <button class="calc-btn op" data-calc="sqrt" type="button">√</button>
+              <button class="calc-btn op" data-calc="square" type="button">x²</button>
+              <button class="calc-btn op" data-calc="/" type="button">÷</button>
+
+              <button class="calc-btn" data-calc="7" type="button">7</button>
+              <button class="calc-btn" data-calc="8" type="button">8</button>
+              <button class="calc-btn" data-calc="9" type="button">9</button>
+              <button class="calc-btn op" data-calc="*" type="button">×</button>
+
+              <button class="calc-btn" data-calc="4" type="button">4</button>
+              <button class="calc-btn" data-calc="5" type="button">5</button>
+              <button class="calc-btn" data-calc="6" type="button">6</button>
+              <button class="calc-btn op" data-calc="-" type="button">−</button>
+
+              <button class="calc-btn" data-calc="1" type="button">1</button>
+              <button class="calc-btn" data-calc="2" type="button">2</button>
+              <button class="calc-btn" data-calc="3" type="button">3</button>
+              <button class="calc-btn op" data-calc="+" type="button">+</button>
+
+              <button class="calc-btn wide" data-calc="0" type="button">0</button>
+              <button class="calc-btn" data-calc="." type="button">.</button>
+              <button class="calc-btn op" data-calc="=" type="button">=</button>
+            </div>
+          </div>
+
+          <div id="calc-scientific-view" style="display:none;">
+            <div class="calc-display" id="calc-sci-display">0</div>
+            <div class="calc-grid scientific">
+              <button class="calc-btn op" data-sci="clear" type="button">C</button>
+              <button class="calc-btn" data-sci="(" type="button">(</button>
+              <button class="calc-btn" data-sci=")" type="button">)</button>
+              <button class="calc-btn op" data-sci="del" type="button">⌫</button>
+              <button class="calc-btn op" data-sci="/" type="button">÷</button>
+
+              <button class="calc-btn" data-sci="sin(" type="button">sin</button>
+              <button class="calc-btn" data-sci="cos(" type="button">cos</button>
+              <button class="calc-btn" data-sci="tan(" type="button">tan</button>
+              <button class="calc-btn" data-sci="^" type="button">x^y</button>
+              <button class="calc-btn op" data-sci="*" type="button">×</button>
+
+              <button class="calc-btn" data-sci="log(" type="button">log</button>
+              <button class="calc-btn" data-sci="ln(" type="button">ln</button>
+              <button class="calc-btn" data-sci="sqrt(" type="button">√</button>
+              <button class="calc-btn" data-sci="pi" type="button">π</button>
+              <button class="calc-btn op" data-sci="-" type="button">−</button>
+
+              <button class="calc-btn" data-sci="7" type="button">7</button>
+              <button class="calc-btn" data-sci="8" type="button">8</button>
+              <button class="calc-btn" data-sci="9" type="button">9</button>
+              <button class="calc-btn" data-sci="e" type="button">e</button>
+              <button class="calc-btn op" data-sci="+" type="button">+</button>
+
+              <button class="calc-btn" data-sci="4" type="button">4</button>
+              <button class="calc-btn" data-sci="5" type="button">5</button>
+              <button class="calc-btn" data-sci="6" type="button">6</button>
+              <button class="calc-btn" data-sci="0" type="button">0</button>
+              <button class="calc-btn" data-sci="." type="button">.</button>
+
+              <button class="calc-btn" data-sci="1" type="button">1</button>
+              <button class="calc-btn" data-sci="2" type="button">2</button>
+              <button class="calc-btn" data-sci="3" type="button">3</button>
+              <button class="calc-btn op wide" data-sci="=" type="button">=</button>
+            </div>
+            <div class="calc-note">Trig functions (sin/cos/tan) use degrees.</div>
+          </div>
+
+          <div id="calc-graph-view" style="display:none;">
+            <div class="graph-controls">
+              <div class="field">
+                <label for="graph-expr">y = f(x)</label>
+                <input type="text" id="graph-expr" value="2*x + 3">
+              </div>
+              <div class="field" style="flex: 0 0 140px;">
+                <label for="graph-range">Range</label>
+                <select id="graph-range">
+                  <option value="5">-5 to 5</option>
+                  <option value="10" selected>-10 to 10</option>
+                  <option value="50">-50 to 50</option>
+                </select>
+              </div>
+              <button class="primary" id="graph-plot" type="button" style="height: 42px;">Plot</button>
+            </div>
+            <canvas id="graph-canvas"></canvas>
+            <div class="status" id="graph-status"></div>
+          </div>
+        </div>
+
+        <!-- Weather -->
+        <div class="card" id="weather-panel" style="display:none;">
+          <div id="weather-content">
+            <div class="status working">Getting your location...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
