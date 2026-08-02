@@ -1,6 +1,20 @@
-name = "mistral-agent-chat-frontend"
+name = "mistral-agent-chat"
+main = "src/index.ts"
 compatibility_date = "2026-07-31"
 
-[assets]
-directory = "./dist"
-not_found_handling = "single-page-application"
+# Created with: wrangler d1 create mistral-agent-chat-db
+# Then paste the printed database_id below.
+[[d1_databases]]
+binding = "DB"
+database_name = "mistral-agent-chat-db"
+database_id = "fa199031-8adc-4005-a228-c365eef5c515"
+
+
+[vars]
+GOOGLE_REDIRECT_URI = "https://api.afmarbre.com/api/auth/google/callback"
+RESEND_FROM = "Agent <noreply@afmarbre.com>"
+FRONTEND_URL = "https://ai.afmarbre.com"
+# Shares the cookie across ai.afmarbre.com and api.afmarbre.com so it survives on mobile
+# browsers. Needs api.afmarbre.com added as a custom domain for this Worker in the
+# Cloudflare dashboard, and this new redirect URI added in Google Cloud Console.
+COOKIE_DOMAIN = ".afmarbre.com"
