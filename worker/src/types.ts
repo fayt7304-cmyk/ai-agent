@@ -38,6 +38,8 @@ export interface UserRow {
   model: string;
   instructions: string;
   is_guest: number;
+  display_name: string | null;
+  avatar: string | null;
   created_at: string;
 }
 
@@ -49,6 +51,8 @@ export interface PublicUser {
   google_linked: boolean;
   theme: string;
   is_guest: boolean;
+  display_name: string | null;
+  avatar: string | null;
 }
 
 export interface ConversationRow {
@@ -97,5 +101,7 @@ export function toPublicUser(u: UserRow): PublicUser {
     google_linked: u.oauth_provider === "google",
     theme: u.theme,
     is_guest: !!u.is_guest,
+    display_name: u.display_name ?? null,
+    avatar: u.avatar ?? null,
   };
 }

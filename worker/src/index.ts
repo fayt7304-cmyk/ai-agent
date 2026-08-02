@@ -90,6 +90,9 @@ async function handleSignup(request: Request, env: Env): Promise<Response> {
       theme: "system",
       model: DEFAULT_MODEL,
       instructions: DEFAULT_INSTRUCTIONS,
+      is_guest: false,
+      display_name: null,
+      avatar: null,
     },
   });
   resp.headers.set("Set-Cookie", sessionCookieHeader(token, maxAge, env.COOKIE_DOMAIN));
@@ -132,15 +135,25 @@ async function handleMe(request: Request, env: Env): Promise<Response> {
   return json({ user: toPublicUser(user) });
 }
 
+// A small cap on the base64 avatar payload — the frontend resizes/compresses images
+// before upload, so a legitimate avatar should be well under this. Guards against
+// someone bypassing the client and shipping a huge blob into a D1 row.
+const MAX_AVATAR_BASE64_CHARS = 400_000; // ~300KB of image data
+
 async function handleUpdateSettings(request: Request, env: Env): Promise<Response> {
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
 
-  const body = (await request.json().catch(() => null)) as { theme?: string; password?: string } | null;
+  const body = (await request.json().catch(() => null)) as {
+    theme?: string;
+    password?: string;
+    username?: string;
+    display_name?: string | null;
+    avatar?: string | null;
+  } | null;
   if (!body) return err("Invalid body.");
 
   const theme = body.theme && ["light", "dark", "system"].includes(body.theme) ? body.theme : user.theme;
-
   await env.DB.prepare("UPDATE users SET theme = ? WHERE id = ?")
     .bind(theme, user.id)
     .run();
@@ -153,13 +166,61 @@ async function handleUpdateSettings(request: Request, env: Env): Promise<Respons
       .run();
   }
 
+  // Username change — same rules as signup, minus the "taken by someone else" check
+  // being a no-op when it's their own current name.
+  let username = user.username;
+  if (typeof body.username === "string" && body.username.trim() && body.username.trim() !== user.username) {
+    const newUsername = body.username.trim();
+    if (newUsername.length < 3 || newUsername.length > 32) {
+      return err("Username must be 3-32 characters.");
+    }
+    if (!/^[a-zA-Z0-9_.-]+$/.test(newUsername)) {
+      return err("Username can only contain letters, numbers, underscores, dots and dashes.");
+    }
+    const existing = await env.DB.prepare("SELECT id FROM users WHERE username = ? AND id != ?")
+      .bind(newUsername, user.id)
+      .first();
+    if (existing) return err("That username is already taken.", 409);
+    await env.DB.prepare("UPDATE users SET username = ? WHERE id = ?").bind(newUsername, user.id).run();
+    username = newUsername;
+  }
+
+  // Display name — a friendlier "shown as" name, separate from the login username.
+  // An empty string clears it back to "no display name set" (falls back to username in the UI).
+  let displayName = user.display_name;
+  if (typeof body.display_name === "string") {
+    displayName = body.display_name.trim().slice(0, 60) || null;
+    await env.DB.prepare("UPDATE users SET display_name = ? WHERE id = ?").bind(displayName, user.id).run();
+  }
+
+  // Profile picture — a data: URL the frontend has already resized/compressed.
+  // Passing avatar: null clears it back to the initials-based default avatar.
+  let avatar = user.avatar;
+  if (body.avatar !== undefined) {
+    if (body.avatar === null) {
+      avatar = null;
+    } else if (typeof body.avatar === "string" && /^data:image\/(png|jpe?g|webp);base64,/.test(body.avatar)) {
+      if (body.avatar.length > MAX_AVATAR_BASE64_CHARS) {
+        return err("That image is too large — please use a smaller photo.");
+      }
+      avatar = body.avatar;
+    } else {
+      return err("Invalid avatar image.");
+    }
+    await env.DB.prepare("UPDATE users SET avatar = ? WHERE id = ?").bind(avatar, user.id).run();
+  }
+
   return json({
     user: {
       id: user.id,
-      username: user.username,
+      username,
+      email: user.email,
+      has_password: !!user.password_hash,
       google_linked: user.oauth_provider === "google",
       theme,
       is_guest: !!user.is_guest,
+      display_name: displayName,
+      avatar,
     },
   });
 }
@@ -190,6 +251,8 @@ async function handleGuestLogin(env: Env): Promise<Response> {
       google_linked: false,
       theme: "system",
       is_guest: true,
+      display_name: null,
+      avatar: null,
     },
   });
   resp.headers.set("Set-Cookie", sessionCookieHeader(token, maxAge, env.COOKIE_DOMAIN));
@@ -248,6 +311,8 @@ async function handleClaimAccount(request: Request, env: Env): Promise<Response>
       google_linked: user.oauth_provider === "google",
       theme: user.theme,
       is_guest: false,
+      display_name: user.display_name ?? null,
+      avatar: user.avatar ?? null,
     },
   });
 }
