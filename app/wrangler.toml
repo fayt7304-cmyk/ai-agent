@@ -1,4 +1,4 @@
-name = "mistral-agent-chat-frontend"
+name = "ai-agent"
 compatibility_date = "2026-07-31"
 
 [assets]
