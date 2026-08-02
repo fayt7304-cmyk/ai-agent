@@ -161,7 +161,44 @@ ALLOWED_ORIGINS = "https://your-frontend.workers.dev"
 - To stream tokens instead of waiting for the full reply, set
   `stream: true` in `worker/src/mistral.ts` and switch the Worker to
   relay Mistral's `text/event-stream` response (the frontend would
-  then need to read the stream incrementally too).
+  then need to read the stream incrementally too). **Not yet wired
+  up** — see "What's new" below.
+
+## What's new
+
+- **Markdown rendering** — agent replies render bold/italic/lists/
+  headings/code/links instead of showing raw `**`/`#` characters
+  (`app/src/lib/markdown.ts`, a small dependency-free renderer).
+- **Copy button** on every agent message; **🔄 Try again** on the
+  most recent one (resends your last message as a fresh turn — not
+  a true delete-and-redo, since Mistral's conversation memory means
+  the old exchange stays in context).
+- **Quick-action buttons** above the composer — edit `QUICK_ACTIONS`
+  in `app/src/chat-view.ts`.
+- **Lead capture / quote requests** — the "📋 Get a quote" button
+  opens a name/phone/email/message/photo form. Submissions are
+  stored in a new `leads` D1 table and, if `LEAD_NOTIFY_TO` is set,
+  emailed to your team via Resend. Only photo *metadata* is sent
+  (same pattern as chat attachments) — the file itself stays local
+  unless you extend this to actually upload it (e.g. to R2).
+- **Rate limiting** — set `MAX_MESSAGES_PER_DAY` in
+  `worker/wrangler.toml` to cap messages per user per rolling 24h.
+  Unset = unlimited.
+- **Tools panel** (🧰 button) — wires up four previously-unused
+  helpers in `app/src/lib/`: OCR (`ocr.ts` — note it calls a
+  *separate* already-deployed Worker at the URL in that file, not
+  this one), background removal, PNG/JPEG/WebP conversion, and
+  Markdown → Word export.
+- **PWA install prompt** — `app/public/manifest.json` + `sw.js`
+  (app-shell caching only, never intercepts `/api/*`) + an install
+  button that appears when the browser fires `beforeinstallprompt`.
+  The bundled icons (`app/public/icons/`) are placeholders — swap
+  them for real branding.
+- **New migration**: `worker/migrations/0003_leads.sql` — run
+  `wrangler d1 execute mistral-agent-chat-db --file=./migrations/0003_leads.sql --remote`
+  (from `worker/`) against your existing database. Fresh installs
+  get it automatically since it's also folded into `schema.sql`.
+- **Not done**: true streaming responses — see the note above.
 
 ## Project layout
 
