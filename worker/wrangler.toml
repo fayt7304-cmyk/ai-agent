@@ -9,7 +9,8 @@ binding = "DB"
 database_name = "mistral-agent-chat-db"
 database_id = "fa199031-8adc-4005-a228-c365eef5c515"
 
+
 [vars]
 GOOGLE_REDIRECT_URI = "https://mistral-agent-chat.fayt7304.workers.dev/api/auth/google/callback"
-RESEND_FROM = "Agent <onboarding@resend.dev>"
-FRONTEND_URL = "https://ai-agent.fayt7304.workers.dev"
+RESEND_FROM = "Agent <noreply@ai.afmarbre.com>"
+FRONTEND_URL = "https://ai.afmarbre.com"
