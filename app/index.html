@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent — powered by Mistral</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#185fa5">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+
+<!-- ============ AUTH SCREEN ============ -->
+<div id="auth-screen" class="auth-screen">
+  <div class="auth-card">
+    <header class="auth-header">
+      <h1>Agent</h1>
+      <p>Powered by Mistral · your account, your server</p>
+    </header>
+
+    <a href="#" id="google-login-btn" class="google-btn">Continue with Google</a>
+
+    <div class="tabs" id="auth-tabs">
+      <button class="tab active" data-auth-tab="login">Log in</button>
+      <button class="tab" data-auth-tab="signup">Sign up</button>
+    </div>
+
+    <form id="login-form" class="auth-form">
+      <label>Username
+        <input type="text" id="login-username" autocomplete="username" required>
+      </label>
+      <label>Password
+        <input type="password" id="login-password" autocomplete="current-password" required>
+      </label>
+      <div class="auth-error" id="login-error"></div>
+      <button type="submit" class="primary full">Log in</button>
+      <button type="button" id="forgot-password-link" class="link-btn">Forgot password?</button>
+    </form>
+
+    <form id="signup-form" class="auth-form" style="display:none;">
+      <label>Username
+        <input type="text" id="signup-username" autocomplete="username" minlength="3" maxlength="32" required>
+      </label>
+      <label>Email
+        <input type="email" id="signup-email" autocomplete="email" required>
+      </label>
+      <label>Password
+        <input type="password" id="signup-password" autocomplete="new-password" minlength="8" required>
+      </label>
+      <div class="hint">At least 8 characters. Stored only on your own Worker — no third party involved.</div>
+      <div class="auth-error" id="signup-error"></div>
+      <button type="submit" class="primary full">Create account</button>
+    </form>
+
+    <form id="forgot-form" class="auth-form" style="display:none;">
+      <label>Email
+        <input type="email" id="forgot-email" autocomplete="email" required>
+      </label>
+      <div class="hint">We'll email you a link to reset your password if that email is registered.</div>
+      <div class="auth-error" id="forgot-error"></div>
+      <div class="auth-success" id="forgot-success"></div>
+      <button type="submit" class="primary full">Send reset link</button>
+      <button type="button" id="back-to-login-link" class="link-btn">Back to log in</button>
+    </form>
+
+    <form id="reset-form" class="auth-form" style="display:none;">
+      <label>New password
+        <input type="password" id="reset-password" autocomplete="new-password" minlength="8" required>
+      </label>
+      <div class="auth-error" id="reset-error"></div>
+      <button type="submit" class="primary full">Set new password</button>
+    </form>
+  </div>
+</div>
+
+<!-- ============ APP SHELL ============ -->
+<div id="app-shell" class="app-shell" style="display:none;">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-top">
+      <h1 class="brand">Agent</h1>
+      <button id="new-chat-btn" class="new-chat-btn" title="New chat">+ New chat</button>
+    </div>
+
+    <div class="convo-list" id="convo-list"></div>
+
+    <div class="sidebar-bottom">
+      <button id="user-menu-btn" class="user-menu-btn">
+        <span class="avatar" id="user-avatar"></span>
+        <span class="username" id="sidebar-username"></span>
+      </button>
+      <div class="user-menu" id="user-menu" style="display:none;">
+        <button id="open-settings-btn">Settings</button>
+        <button id="logout-btn">Log out</button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="chat-main">
+    <header class="chat-header">
+      <button id="sidebar-toggle" class="icon-btn" title="Toggle conversations">☰</button>
+      <div class="chat-title" id="chat-title">New chat</div>
+      <div class="chat-header-actions">
+        <button id="tools-btn" class="icon-btn" title="Tools">🧰</button>
+        <button id="install-app-btn" class="icon-btn" title="Install app" style="display:none;">⬇️</button>
+      </div>
+    </header>
+
+    <div class="messages" id="messages">
+      <div class="empty-state" id="empty-state">
+        <p>Start a conversation. You can also attach images or documents.</p>
+      </div>
+    </div>
+
+    <div class="quick-actions" id="quick-actions"></div>
+
+    <form id="chat-form" class="chat-form">
+      <div class="attachment-chips" id="attachment-chips"></div>
+      <div class="composer-row">
+        <button type="button" id="attach-btn" class="icon-btn" title="Attach a file">📎</button>
+        <input type="file" id="file-input" multiple style="display:none;">
+        <textarea id="chat-input" placeholder="Message the agent…" rows="1" autofocus></textarea>
+        <button type="submit" id="send-btn">Send</button>
+      </div>
+      <div class="composer-hint" id="composer-hint"></div>
+    </form>
+  </main>
+</div>
+
+<!-- ============ SETTINGS MODAL ============ -->
+<div id="settings-overlay" class="modal-overlay" style="display:none;">
+  <div class="modal">
+    <header class="modal-header">
+      <h2>Settings</h2>
+      <button id="settings-close-btn" class="icon-btn">✕</button>
+    </header>
+
+    <div class="modal-body">
+      <section class="settings-section">
+        <label class="settings-label">Appearance</label>
+        <div class="segmented" id="theme-segmented">
+          <button data-theme-option="light">Light</button>
+          <button data-theme-option="dark">Dark</button>
+          <button data-theme-option="system">System</button>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <label class="settings-label" for="new-password-input">Change password</label>
+        <input type="password" id="new-password-input" placeholder="Leave blank to keep current password" minlength="8">
+      </section>
+
+      <section class="settings-section">
+        <label class="settings-label">Google account</label>
+        <div class="google-link-row" id="google-link-row">
+          <span id="google-link-status">Not connected</span>
+          <a href="#" id="google-link-btn" class="link-btn">Connect Google</a>
+          <button type="button" id="google-unlink-btn" class="link-btn" style="display:none;">Disconnect</button>
+        </div>
+        <div class="hint">Connect Google to also be able to log in with your Google account.</div>
+      </section>
+
+      <div class="settings-success" id="settings-success"></div>
+      <div class="settings-error" id="settings-error"></div>
+    </div>
+
+    <footer class="modal-footer">
+      <button id="settings-cancel-btn">Cancel</button>
+      <button id="settings-save-btn" class="primary">Save changes</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ============ LEAD / QUOTE REQUEST MODAL ============ -->
+<div id="lead-overlay" class="modal-overlay" style="display:none;">
+  <div class="modal">
+    <header class="modal-header">
+      <h2>Request a quote</h2>
+      <button id="lead-close-btn" class="icon-btn">✕</button>
+    </header>
+
+    <div class="modal-body">
+      <p class="hint">Leave your details and photo — our team will follow up.</p>
+      <section class="settings-section">
+        <label class="settings-label" for="lead-name">Name</label>
+        <input type="text" id="lead-name" placeholder="Your name">
+      </section>
+      <section class="settings-section">
+        <label class="settings-label" for="lead-phone">Phone</label>
+        <input type="tel" id="lead-phone" placeholder="Your phone number">
+      </section>
+      <section class="settings-section">
+        <label class="settings-label" for="lead-email">Email</label>
+        <input type="email" id="lead-email" placeholder="Your email">
+      </section>
+      <section class="settings-section">
+        <label class="settings-label" for="lead-message">Tell us about your project</label>
+        <textarea id="lead-message" rows="3" placeholder="e.g. Kitchen countertop, ~3m, need a quote"></textarea>
+      </section>
+      <section class="settings-section">
+        <label class="settings-label" for="lead-photo">Photo (optional)</label>
+        <input type="file" id="lead-photo" accept="image/*">
+        <div class="hint" id="lead-photo-hint"></div>
+      </section>
+      <div class="settings-success" id="lead-success"></div>
+      <div class="settings-error" id="lead-error"></div>
+    </div>
+
+    <footer class="modal-footer">
+      <button id="lead-cancel-btn">Cancel</button>
+      <button id="lead-submit-btn" class="primary">Send request</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ============ TOOLS MODAL ============ -->
+<div id="tools-overlay" class="modal-overlay" style="display:none;">
+  <div class="modal modal-wide">
+    <header class="modal-header">
+      <h2>Tools</h2>
+      <button id="tools-close-btn" class="icon-btn">✕</button>
+    </header>
+
+    <div class="modal-body">
+      <div class="tools-tabs" id="tools-tabs">
+        <button class="tab active" data-tool-tab="ocr">OCR</button>
+        <button class="tab" data-tool-tab="bgremove">Remove background</button>
+        <button class="tab" data-tool-tab="convert">Convert image</button>
+        <button class="tab" data-tool-tab="docx">Markdown → Word</button>
+      </div>
+
+      <!-- OCR -->
+      <div class="tool-pane" id="tool-ocr">
+        <p class="hint">Extract text from a photo or scanned document (e.g. a supplier invoice).</p>
+        <input type="file" id="ocr-file" accept="image/*,.pdf">
+        <button id="ocr-run-btn" class="primary">Extract text</button>
+        <div class="tool-status" id="ocr-status"></div>
+        <textarea id="ocr-output" rows="8" readonly placeholder="Extracted text will appear here…"></textarea>
+        <button id="ocr-copy-btn" style="display:none;">Copy text</button>
+      </div>
+
+      <!-- Background removal -->
+      <div class="tool-pane" id="tool-bgremove" style="display:none;">
+        <p class="hint">Clean cutout from a photo — useful for catalog/product shots.</p>
+        <input type="file" id="bgremove-file" accept="image/*">
+        <button id="bgremove-run-btn" class="primary">Remove background</button>
+        <div class="tool-status" id="bgremove-status"></div>
+        <div class="tool-preview" id="bgremove-preview"></div>
+        <a id="bgremove-download" style="display:none;" download="cutout.png">Download PNG</a>
+      </div>
+
+      <!-- Image conversion -->
+      <div class="tool-pane" id="tool-convert" style="display:none;">
+        <p class="hint">Convert an image between PNG, JPEG and WebP.</p>
+        <input type="file" id="convert-file" accept="image/*">
+        <div class="segmented" id="convert-format">
+          <button data-format="image/png" class="active">PNG</button>
+          <button data-format="image/jpeg">JPEG</button>
+          <button data-format="image/webp">WebP</button>
+        </div>
+        <button id="convert-run-btn" class="primary">Convert</button>
+        <div class="tool-status" id="convert-status"></div>
+        <a id="convert-download" style="display:none;">Download</a>
+      </div>
+
+      <!-- Markdown to docx -->
+      <div class="tool-pane" id="tool-docx" style="display:none;">
+        <p class="hint">Paste markdown (e.g. from an OCR result above) and export it as a Word document.</p>
+        <textarea id="docx-input" rows="8" placeholder="# Heading&#10;Some **bold** text…"></textarea>
+        <button id="docx-run-btn" class="primary">Export .docx</button>
+        <div class="tool-status" id="docx-status"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
