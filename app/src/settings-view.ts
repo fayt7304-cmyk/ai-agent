@@ -4,10 +4,9 @@ import { refreshConversations } from "./chat-view";
 
 const overlay = document.getElementById("settings-overlay") as HTMLDivElement;
 const closeBtn = document.getElementById("settings-close-btn") as HTMLButtonElement;
-const cancelBtn = document.getElementById("settings-cancel-btn") as HTMLButtonElement;
-const saveBtn = document.getElementById("settings-save-btn") as HTMLButtonElement;
 const themeSegmented = document.getElementById("theme-segmented") as HTMLDivElement;
 const passwordInput = document.getElementById("new-password-input") as HTMLInputElement;
+const setPasswordBtn = document.getElementById("set-password-btn") as HTMLButtonElement;
 const settingsError = document.getElementById("settings-error") as HTMLDivElement;
 const settingsSuccess = document.getElementById("settings-success") as HTMLDivElement;
 const googleLinkStatus = document.getElementById("google-link-status") as HTMLSpanElement;
@@ -17,14 +16,14 @@ const googleUnlinkBtn = document.getElementById("google-unlink-btn") as HTMLButt
 const settingsNav = document.getElementById("settings-nav") as HTMLDivElement;
 const settingsPanels = document.querySelectorAll<HTMLElement>(".settings-panel");
 
-const profileAvatar = document.getElementById("profile-avatar") as HTMLDivElement;
-const profileUsername = document.getElementById("profile-username") as HTMLDivElement;
-const profileEmail = document.getElementById("profile-email") as HTMLDivElement;
+const navProfileAvatar = document.getElementById("nav-profile-avatar") as HTMLDivElement;
+const navProfileUsername = document.getElementById("nav-profile-username") as HTMLDivElement;
+const navProfileEmail = document.getElementById("nav-profile-email") as HTMLDivElement;
 const profileUserId = document.getElementById("profile-user-id") as HTMLElement;
 const copyUserIdBtn = document.getElementById("copy-user-id-btn") as HTMLButtonElement;
 const deleteAllChatsBtn = document.getElementById("delete-all-chats-btn") as HTMLButtonElement;
 
-let selectedTheme: Theme = "system";
+let currentUser: User | null = null;
 
 function close() {
   overlay.style.display = "none";
@@ -55,15 +54,15 @@ function renderGoogleLinkState(user: User) {
 }
 
 function renderProfile(user: User) {
-  profileAvatar.textContent = user.username.slice(0, 2).toUpperCase();
-  profileUsername.textContent = user.username;
-  profileEmail.textContent = user.email || "No email on file";
+  const initials = user.username.slice(0, 2).toUpperCase();
+  navProfileAvatar.textContent = initials;
+  navProfileUsername.textContent = user.username;
+  navProfileEmail.textContent = user.email || "No email on file";
   profileUserId.textContent = user.id;
 }
 
 export function initSettingsView(onUserUpdated: (user: User) => void) {
   closeBtn.addEventListener("click", close);
-  cancelBtn.addEventListener("click", close);
   overlay.addEventListener("click", (e) => {
     if (e.target === overlay) close();
   });
@@ -83,20 +82,43 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     }
   });
 
-  deleteAllChatsBtn.addEventListener("click", async () => {
-    if (!confirm("Delete all of your chats? This can't be undone.")) return;
+  // Theme applies (and saves) the moment it's clicked — no separate save step.
+  themeSegmented.querySelectorAll<HTMLButtonElement>("button").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const theme = btn.dataset.themeOption as Theme;
+      themeSegmented.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      setTheme(theme);
+      settingsError.textContent = "";
+      try {
+        const { user } = await api.updateSettings({ theme });
+        currentUser = user;
+        onUserUpdated(user);
+        settingsSuccess.textContent = "Theme updated.";
+      } catch (err) {
+        settingsError.textContent = err instanceof ApiError ? err.message : "Could not save theme.";
+      }
+    });
+  });
+
+  setPasswordBtn.addEventListener("click", async () => {
     settingsError.textContent = "";
     settingsSuccess.textContent = "";
-    deleteAllChatsBtn.disabled = true;
+    if (passwordInput.value.length < 8) {
+      settingsError.textContent = "Password must be at least 8 characters.";
+      return;
+    }
+    setPasswordBtn.disabled = true;
     try {
-      const { conversations } = await api.listConversations();
-      await Promise.all(conversations.map((c) => api.deleteConversation(c.id)));
-      await refreshConversations();
-      settingsSuccess.textContent = "All chats deleted.";
+      const { user } = await api.updateSettings({ password: passwordInput.value });
+      currentUser = user;
+      onUserUpdated(user);
+      passwordInput.value = "";
+      settingsSuccess.textContent = "Password updated.";
     } catch (err) {
-      settingsError.textContent = err instanceof ApiError ? err.message : "Could not delete all chats.";
+      settingsError.textContent = err instanceof ApiError ? err.message : "Could not update password.";
     } finally {
-      deleteAllChatsBtn.disabled = false;
+      setPasswordBtn.disabled = false;
     }
   });
 
@@ -118,36 +140,26 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     }
   });
 
-  themeSegmented.querySelectorAll<HTMLButtonElement>("button").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      selectedTheme = btn.dataset.themeOption as Theme;
-      themeSegmented.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      // Live-preview the theme immediately.
-      setTheme(selectedTheme);
-    });
-  });
-
-  saveBtn.addEventListener("click", async () => {
+  deleteAllChatsBtn.addEventListener("click", async () => {
+    if (!confirm("Delete all of your chats? This can't be undone.")) return;
     settingsError.textContent = "";
-    saveBtn.disabled = true;
+    settingsSuccess.textContent = "";
+    deleteAllChatsBtn.disabled = true;
     try {
-      const { user } = await api.updateSettings({
-        theme: selectedTheme,
-        ...(passwordInput.value ? { password: passwordInput.value } : {}),
-      });
-      onUserUpdated(user);
-      close();
+      const { conversations } = await api.listConversations();
+      await Promise.all(conversations.map((c) => api.deleteConversation(c.id)));
+      await refreshConversations();
+      settingsSuccess.textContent = "All chats deleted.";
     } catch (err) {
-      settingsError.textContent = err instanceof ApiError ? err.message : "Could not save settings.";
+      settingsError.textContent = err instanceof ApiError ? err.message : "Could not delete all chats.";
     } finally {
-      saveBtn.disabled = false;
+      deleteAllChatsBtn.disabled = false;
     }
   });
 }
 
 export function openSettings(user: User, message?: string) {
-  selectedTheme = user.theme;
+  currentUser = user;
   themeSegmented.querySelectorAll<HTMLButtonElement>("button").forEach((b) => {
     b.classList.toggle("active", b.dataset.themeOption === user.theme);
   });
