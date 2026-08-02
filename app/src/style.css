@@ -832,6 +832,57 @@ select, .modal-body input, .modal-body textarea {
 
 .modal-body textarea { resize: vertical; line-height: 1.5; }
 
+.photo-picker-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  cursor: pointer;
+  width: 100%;
+  justify-content: center;
+}
+
+.photo-picker-btn:hover { border-color: var(--accent); color: var(--accent); }
+.photo-picker-btn-icon { font-size: 15px; }
+
+.photo-picker-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.photo-picker-preview img {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.photo-picker-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.photo-picker-meta .hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .modal-footer {
   display: flex;
   justify-content: flex-end;

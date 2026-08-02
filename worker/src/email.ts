@@ -26,6 +26,9 @@ export interface LeadEmailInput {
   message: string | null;
   hasPhoto: boolean;
   fromUsername: string;
+  /** Base64-encoded photo bytes (no "data:image/...;base64," prefix), if one was attached. */
+  photoBase64?: string | null;
+  photoFilename?: string;
 }
 
 export async function sendLeadNotificationEmail(env: Env, to: string, lead: LeadEmailInput): Promise<void> {
@@ -39,20 +42,31 @@ export async function sendLeadNotificationEmail(env: Env, to: string, lead: Lead
     .map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;color:#666;">${k}</td><td>${v}</td></tr>`)
     .join("");
 
+  const body: Record<string, unknown> = {
+    from: env.RESEND_FROM,
+    to,
+    subject: `New quote request${lead.name ? ` from ${lead.name}` : ""}`,
+    html: `<h2>New quote request</h2>
+           <table>${rows}</table>
+           ${lead.message ? `<p><strong>Message:</strong><br>${lead.message.replace(/\n/g, "<br>")}</p>` : ""}`,
+  };
+
+  if (lead.photoBase64) {
+    body.attachments = [
+      {
+        filename: lead.photoFilename || "photo.jpg",
+        content: lead.photoBase64,
+      },
+    ];
+  }
+
   const resp = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${env.RESEND_API_KEY}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      from: env.RESEND_FROM,
-      to,
-      subject: `New quote request${lead.name ? ` from ${lead.name}` : ""}`,
-      html: `<h2>New quote request</h2>
-             <table>${rows}</table>
-             ${lead.message ? `<p><strong>Message:</strong><br>${lead.message.replace(/\n/g, "<br>")}</p>` : ""}`,
-    }),
+    body: JSON.stringify(body),
   });
   if (!resp.ok) throw new Error(`Failed to send lead notification: ${await resp.text()}`);
 }

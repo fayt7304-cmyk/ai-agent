@@ -312,9 +312,20 @@
         <textarea id="lead-message" rows="3" placeholder="e.g. Kitchen countertop, ~3m, need a quote"></textarea>
       </section>
       <section class="settings-section">
-        <label class="settings-label" for="lead-photo">Photo (optional)</label>
-        <input type="file" id="lead-photo" accept="image/*">
-        <div class="hint" id="lead-photo-hint"></div>
+        <label class="settings-label">Photo (optional)</label>
+        <input type="file" id="lead-photo" accept="image/*" style="display:none;">
+        <div class="photo-picker" id="lead-photo-picker">
+          <button type="button" id="lead-photo-btn" class="photo-picker-btn">
+            <span class="photo-picker-btn-icon">📷</span> Choose photo
+          </button>
+          <div class="photo-picker-preview" id="lead-photo-preview" style="display:none;">
+            <img id="lead-photo-img" alt="Selected photo">
+            <div class="photo-picker-meta">
+              <span class="hint" id="lead-photo-hint"></span>
+              <button type="button" id="lead-photo-remove" class="icon-btn" title="Remove photo">✕</button>
+            </div>
+          </div>
+        </div>
       </section>
       <div class="settings-success" id="lead-success"></div>
       <div class="settings-error" id="lead-error"></div>

@@ -143,6 +143,7 @@ export const api = {
     email?: string;
     message?: string;
     has_photo?: boolean;
+    photo_data_url?: string;
   }) =>
     request<{ ok: true; lead_id: string }>("/api/leads", {
       method: "POST",

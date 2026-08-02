@@ -23,9 +23,10 @@ FRONTEND_URL = "https://ai.afmarbre.com"
 # Cloudflare dashboard, and this new redirect URI added in Google Cloud Console.
 COOKIE_DOMAIN = ".afmarbre.com"
 
-# Optional — lead capture ("Get a quote" button) emails this address when
-# someone submits the form. Uses the same Resend setup as password resets.
-# LEAD_NOTIFY_TO = "you@afmarbre.com"
+# Lead capture ("Get a quote" button) emails this address when someone submits
+# the form. Uses the same Resend setup as password resets. THIS WAS UNSET, which
+# is why quote requests weren't showing up anywhere — replace with your real inbox.
+LEAD_NOTIFY_TO = "you@afmarbre.com"
 
 # Optional — caps how many chat messages one user can send per rolling 24h.
 # Leave unset for no limit.

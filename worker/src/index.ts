@@ -691,7 +691,11 @@ interface LeadRequestBody {
   email?: string;
   message?: string;
   has_photo?: boolean;
+  /** data:<mime>;base64,<data> — the actual (client-compressed) photo, sent as an email attachment. */
+  photo_data_url?: string;
 }
+
+const MAX_LEAD_PHOTO_BYTES = 8 * 1024 * 1024; // 8MB decoded — client already compresses to well under this
 
 async function handleCreateLead(request: Request, env: Env): Promise<Response> {
   const user = await getUserFromRequest(env, request);
@@ -708,13 +712,26 @@ async function handleCreateLead(request: Request, env: Env): Promise<Response> {
     return err("Please fill in at least one field.");
   }
 
+  let photoBase64: string | null = null;
+  if (body.photo_data_url) {
+    const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(body.photo_data_url);
+    if (!match) return err("Invalid photo.");
+    const [, , data] = match;
+    const approxBytes = Math.round((data.length * 3) / 4);
+    if (approxBytes > MAX_LEAD_PHOTO_BYTES) {
+      return err(`Photo is too large. Max size is ${Math.floor(MAX_LEAD_PHOTO_BYTES / (1024 * 1024))}MB.`);
+    }
+    photoBase64 = data;
+  }
+  const hasPhoto = !!photoBase64 || !!body.has_photo;
+
   const id = crypto.randomUUID();
   const ts = nowIso();
   await env.DB.prepare(
     `INSERT INTO leads (id, user_id, conversation_id, name, phone, email, message, has_photo, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
-    .bind(id, user.id, body.conversation_id || null, name, phone, email, message, body.has_photo ? 1 : 0, ts)
+    .bind(id, user.id, body.conversation_id || null, name, phone, email, message, hasPhoto ? 1 : 0, ts)
     .run();
 
   if (env.LEAD_NOTIFY_TO) {
@@ -724,12 +741,16 @@ async function handleCreateLead(request: Request, env: Env): Promise<Response> {
         phone,
         email,
         message,
-        hasPhoto: !!body.has_photo,
+        hasPhoto,
         fromUsername: user.username,
+        photoBase64,
       });
     } catch (e) {
       console.error("Failed to send lead notification", e);
     }
+  } else {
+    // No recipient configured — the lead is still saved to D1, but nobody gets emailed.
+    console.warn("LEAD_NOTIFY_TO is not set; lead saved but no notification email was sent.");
   }
 
   return json({ ok: true, lead_id: id });

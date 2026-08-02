@@ -1,5 +1,5 @@
 import { api, ApiError } from "./api";
-import { formatBytes } from "./files";
+import { formatBytes, readImageAsPhotoDataUrl } from "./files";
 
 const overlay = document.getElementById("lead-overlay") as HTMLDivElement;
 const closeBtn = document.getElementById("lead-close-btn") as HTMLButtonElement;
@@ -10,16 +10,28 @@ const phoneInput = document.getElementById("lead-phone") as HTMLInputElement;
 const emailInput = document.getElementById("lead-email") as HTMLInputElement;
 const messageInput = document.getElementById("lead-message") as HTMLTextAreaElement;
 const photoInput = document.getElementById("lead-photo") as HTMLInputElement;
-const photoHint = document.getElementById("lead-photo-hint") as HTMLDivElement;
+const photoBtn = document.getElementById("lead-photo-btn") as HTMLButtonElement;
+const photoPreview = document.getElementById("lead-photo-preview") as HTMLDivElement;
+const photoImg = document.getElementById("lead-photo-img") as HTMLImageElement;
+const photoHint = document.getElementById("lead-photo-hint") as HTMLSpanElement;
+const photoRemoveBtn = document.getElementById("lead-photo-remove") as HTMLButtonElement;
 const leadError = document.getElementById("lead-error") as HTMLDivElement;
 const leadSuccess = document.getElementById("lead-success") as HTMLDivElement;
 
 let currentConversationId: string | null = null;
+// Compressed base64 data URL of the chosen photo, actually sent to the Worker
+// (and on to the team's inbox as an email attachment) — not just metadata.
+let photoDataUrl: string | null = null;
 
-// The Worker only stores lead metadata (not file bytes) — same pattern as chat
-// attachments. The photo itself never leaves the browser; this just lets your
-// team know a photo exists so they can ask the customer to resend it directly,
-// or you can extend this later to actually upload it (e.g. to R2).
+function clearPhoto() {
+  photoDataUrl = null;
+  photoInput.value = "";
+  photoImg.src = "";
+  photoHint.textContent = "";
+  photoPreview.style.display = "none";
+  photoBtn.style.display = "flex";
+}
+
 function close() {
   overlay.style.display = "none";
   leadError.textContent = "";
@@ -28,8 +40,7 @@ function close() {
   phoneInput.value = "";
   emailInput.value = "";
   messageInput.value = "";
-  photoInput.value = "";
-  photoHint.textContent = "";
+  clearPhoto();
 }
 
 export function initLeadView() {
@@ -39,9 +50,29 @@ export function initLeadView() {
     if (e.target === overlay) close();
   });
 
-  photoInput.addEventListener("change", () => {
+  photoBtn.addEventListener("click", () => photoInput.click());
+  photoRemoveBtn.addEventListener("click", clearPhoto);
+
+  photoInput.addEventListener("change", async () => {
     const file = photoInput.files?.[0];
-    photoHint.textContent = file ? `${file.name} (${formatBytes(file.size)})` : "";
+    if (!file) return;
+    leadError.textContent = "";
+    if (!file.type.startsWith("image/")) {
+      leadError.textContent = "Please choose an image file.";
+      photoInput.value = "";
+      return;
+    }
+    try {
+      photoDataUrl = await readImageAsPhotoDataUrl(file);
+      photoImg.src = photoDataUrl;
+      const approxBytes = Math.round((photoDataUrl.length * 3) / 4);
+      photoHint.textContent = `${file.name} (${formatBytes(approxBytes)})`;
+      photoBtn.style.display = "none";
+      photoPreview.style.display = "flex";
+    } catch {
+      leadError.textContent = "Could not read that photo. Please try another.";
+      clearPhoto();
+    }
   });
 
   submitBtn.addEventListener("click", async () => {
@@ -55,7 +86,8 @@ export function initLeadView() {
         phone: phoneInput.value.trim() || undefined,
         email: emailInput.value.trim() || undefined,
         message: messageInput.value.trim() || undefined,
-        has_photo: !!photoInput.files?.length,
+        has_photo: !!photoDataUrl,
+        photo_data_url: photoDataUrl || undefined,
       });
       leadSuccess.textContent = "Thanks — we'll be in touch shortly.";
       setTimeout(close, 1500);
