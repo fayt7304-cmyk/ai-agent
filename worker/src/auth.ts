@@ -2,7 +2,7 @@ import type { Env, UserRow } from "./types";
 
 const SESSION_COOKIE = "session";
 const SESSION_DAYS = 30;
-const PBKDF2_ITERATIONS = 120_000;
+const PBKDF2_ITERATIONS = 100_000;
 
 function bufToBase64(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
