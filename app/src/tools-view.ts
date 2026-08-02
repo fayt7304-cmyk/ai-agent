@@ -42,7 +42,7 @@ function close() {
 function showMenu() {
   title.textContent = "Tools";
   backBtn.style.display = "none";
-  menu.style.display = "grid";
+  menu.style.display = "flex";
   Object.values(panes).forEach((el) => (el.style.display = "none"));
 }
 

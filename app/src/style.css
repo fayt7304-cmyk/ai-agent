@@ -812,28 +812,28 @@ select, .modal-body input, .modal-body textarea {
 }
 #tools-back-btn { font-size: 18px; }
 
-/* Simple icon-grid "home screen" for Tools — tap a tile to open that tool.
-   Big touch targets and short labels so it reads at a glance on a phone,
-   and settles into a tidy grid on desktop instead of a cramped tab row. */
+/* Simple vertical list "home screen" for Tools — tap a row to open that
+   tool. One column at every width (no grid breakpoints to fuss over),
+   big tap targets, and a short subtitle so people know what each tool
+   does before they open it. */
 .tools-menu {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .tool-card {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 18px 10px;
+  gap: 14px;
+  width: 100%;
+  padding: 14px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--card);
   color: var(--text);
   cursor: pointer;
-  text-align: center;
+  text-align: left;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
@@ -843,12 +843,29 @@ select, .modal-body input, .modal-body textarea {
   background: var(--accent-bg);
 }
 
-.tool-card-icon { font-size: 26px; line-height: 1; }
-.tool-card-label { font-size: 13px; font-weight: 500; }
+.tool-card-icon { font-size: 24px; line-height: 1; flex-shrink: 0; }
 
-@media (max-width: 480px) {
-  .tools-menu { grid-template-columns: repeat(2, 1fr); }
-  .tool-card { padding: 16px 8px; }
+.tool-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tool-card-label { font-size: 14.5px; font-weight: 500; }
+.tool-card-sub {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-card-chevron {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: 20px;
+  flex-shrink: 0;
 }
 
 .tools-tabs {
