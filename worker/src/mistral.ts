@@ -11,6 +11,47 @@ export interface MistralCallOptions {
 export interface MistralCallResult {
   reply: string;
   mistralConversationId: string;
+  attachments: AttachmentIn[];
+}
+
+const EXT_MIME: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+};
+
+// Cloudflare Workers has no Buffer — build the base64 string in chunks so we
+// don't blow the call stack passing a huge byte array to String.fromCharCode at once.
+function arrayBufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+// The image_generation tool returns a `tool_file` chunk with a file_id — the actual
+// image bytes have to be fetched separately from Mistral's Files API, then we inline
+// them as a data URL so the frontend can render (and later re-load) the image with no
+// extra plumbing on our side.
+async function downloadToolFile(apiKey: string, fileId: string, fileName: string, fileType: string): Promise<AttachmentIn | null> {
+  const resp = await fetch(`https://api.mistral.ai/v1/files/${fileId}/content`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!resp.ok) return null;
+  const buf = await resp.arrayBuffer();
+  const ext = (fileType || "png").toLowerCase();
+  const mime = EXT_MIME[ext] || "image/png";
+  return {
+    name: `${fileName || "image"}.${ext}`,
+    mime,
+    size: buf.byteLength,
+    dataUrl: `data:${mime};base64,${arrayBufferToBase64(buf)}`,
+  };
 }
 
 export async function callMistral(opts: MistralCallOptions): Promise<MistralCallResult> {
@@ -53,12 +94,26 @@ export async function callMistral(opts: MistralCallOptions): Promise<MistralCall
   const data: any = await resp.json();
   const outputs: any[] = Array.isArray(data.outputs) ? data.outputs : [];
   const messageOutput = outputs.find((o) => o.type === "message.output");
-  const reply =
-    typeof messageOutput?.content === "string"
-      ? messageOutput.content
-      : Array.isArray(messageOutput?.content)
-        ? messageOutput.content.map((c: any) => c.text || "").join("")
-        : "";
 
-  return { reply, mistralConversationId: data.conversation_id };
+  let reply = "";
+  const attachments: AttachmentIn[] = [];
+
+  if (typeof messageOutput?.content === "string") {
+    reply = messageOutput.content;
+  } else if (Array.isArray(messageOutput?.content)) {
+    for (const chunk of messageOutput.content) {
+      if (chunk.type === "tool_file" && chunk.file_id) {
+        try {
+          const file = await downloadToolFile(opts.apiKey, chunk.file_id, chunk.file_name, chunk.file_type);
+          if (file) attachments.push(file);
+        } catch {
+          // If the file download fails, still surface the text reply rather than erroring the whole turn.
+        }
+      } else if (typeof chunk?.text === "string") {
+        reply += chunk.text;
+      }
+    }
+  }
+
+  return { reply, mistralConversationId: data.conversation_id, attachments };
 }

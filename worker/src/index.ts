@@ -582,10 +582,11 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
     });
 
     const agentMsgId = crypto.randomUUID();
+    const agentAttachments = result.attachments.map((a) => ({ name: a.name, mime: a.mime, size: a.size, dataUrl: a.dataUrl }));
     await env.DB.prepare(
-      "INSERT INTO messages (id, conversation_id, role, content, attachments, created_at) VALUES (?, ?, 'agent', ?, NULL, ?)"
+      "INSERT INTO messages (id, conversation_id, role, content, attachments, created_at) VALUES (?, ?, 'agent', ?, ?, ?)"
     )
-      .bind(agentMsgId, convo.id, result.reply || "(empty response)", nowIso())
+      .bind(agentMsgId, convo.id, result.reply || "(empty response)", agentAttachments.length ? JSON.stringify(agentAttachments) : null, nowIso())
       .run();
 
     // Persist the Mistral conversation id + set the title on the first exchange.
@@ -604,6 +605,7 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
       conversation_id: convo.id,
       title: newTitle,
       reply: result.reply,
+      attachments: agentAttachments,
     });
   } catch (e: any) {
     const errorMsgId = crypto.randomUUID();
