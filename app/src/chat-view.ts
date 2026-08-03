@@ -108,6 +108,60 @@ function renderConvoList() {
     const title = document.createElement("span");
     title.className = "convo-title";
     title.textContent = c.title;
+
+    function startRename() {
+      const input = document.createElement("input");
+      input.className = "convo-title-input";
+      input.type = "text";
+      input.value = c.title;
+      item.replaceChild(input, title);
+      item.classList.add("renaming");
+      input.focus();
+      input.select();
+
+      let done = false;
+      async function commit() {
+        if (done) return;
+        done = true;
+        const newTitle = input.value.trim();
+        item.classList.remove("renaming");
+        if (newTitle && newTitle !== c.title) {
+          c.title = newTitle;
+          if (c.id === currentConversationId) chatTitle.textContent = newTitle;
+          try {
+            await api.renameConversation(c.id, newTitle);
+          } catch {
+            // Best-effort — the new title still shows locally even if the save fails.
+          }
+        }
+        renderConvoList();
+      }
+      input.addEventListener("blur", commit);
+      input.addEventListener("keydown", (e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") {
+          e.preventDefault();
+          input.blur();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          done = true;
+          item.classList.remove("renaming");
+          renderConvoList();
+        }
+      });
+      input.addEventListener("click", (e) => e.stopPropagation());
+    }
+
+    const rename = document.createElement("button");
+    rename.className = "convo-rename";
+    rename.innerHTML = icons.pencil;
+    rename.type = "button";
+    rename.title = t("convo.rename");
+    rename.addEventListener("click", (e) => {
+      e.stopPropagation();
+      startRename();
+    });
+
     const del = document.createElement("button");
     del.className = "convo-delete";
     del.textContent = "✕";
@@ -125,6 +179,7 @@ function renderConvoList() {
       renderConvoList();
     });
     item.appendChild(title);
+    item.appendChild(rename);
     item.appendChild(del);
     item.addEventListener("click", () => selectConversation(c.id));
     convoList.appendChild(item);
@@ -452,7 +507,12 @@ function syncSidebarBackdrop() {
 }
 
 function syncSidebarOpenBtn() {
-  sidebarOpenBtn.style.display = sidebar.classList.contains("collapsed") ? "inline-flex" : "none";
+  // On desktop the collapsed rail stays visible with its own toggle button, so
+  // showing this header button too would put two "open/close sidebar" icons on
+  // screen at once. It's only needed on mobile, where collapsing hides the rail
+  // entirely (see the <=720 media query) and leaves no other way back in.
+  const isMobile = window.innerWidth <= 720;
+  sidebarOpenBtn.style.display = isMobile && sidebar.classList.contains("collapsed") ? "inline-flex" : "none";
 }
 
 function toggleSidebar(collapsed?: boolean) {
@@ -556,6 +616,20 @@ export function initChatView(user: User) {
   });
   sidebarSearchClose.addEventListener("click", closeSidebarSearch);
   sidebarSearchInput.addEventListener("input", () => filterConvoList(sidebarSearchInput.value));
+
+  document.addEventListener("keydown", (e) => {
+    const mod = e.ctrlKey || e.metaKey;
+    if (!mod) return;
+    if (e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      toggleSidebar(false);
+      sidebarSearchRow.style.display = "flex";
+      sidebarSearchInput.focus();
+    } else if (e.key === ".") {
+      e.preventDefault();
+      toggleSidebar();
+    }
+  });
 
   attachBtn.addEventListener("click", (e) => {
     e.stopPropagation();

@@ -123,6 +123,15 @@
           <button id="save-account-btn" style="display:none;"><span class="menu-icon">💾</span><span data-i18n="menu.saveAccount">Save my account</span></button>
           <button id="login-menu-btn" style="display:none;"><span class="menu-icon">🔑</span><span data-i18n="menu.login">Log in</span></button>
           <button id="open-settings-btn"><span class="menu-icon">⚙️</span><span data-i18n="menu.settings">Settings</span></button>
+          <div class="user-menu-item-wrap" id="learn-more-wrap">
+            <button id="learn-more-btn" type="button">
+              <span class="menu-icon">💡</span><span data-i18n="menu.learnMore">Learn more</span><span class="menu-caret">›</span>
+            </button>
+            <div class="user-submenu" id="learn-more-submenu" style="display:none;">
+              <button id="keyboard-shortcuts-btn" type="button"><span class="menu-icon">⌨️</span><span data-i18n="menu.keyboardShortcuts">Keyboard shortcuts</span></button>
+            </div>
+          </div>
+          <button id="privacy-choices-btn" type="button"><span class="menu-icon">🔒</span><span data-i18n="menu.privacyChoices">Your privacy choices</span></button>
           <button id="logout-btn"><span class="menu-icon">↪️</span><span data-i18n="menu.logout">Log out</span></button>
         </div>
         <div class="user-menu-theme-row" id="user-menu-theme-row">
@@ -702,6 +711,73 @@
         </div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ============ KEYBOARD SHORTCUTS MODAL ============ -->
+<div id="shortcuts-overlay" class="modal-overlay" style="display:none;">
+  <div class="modal modal-shortcuts">
+    <header class="modal-header">
+      <h2 data-i18n="shortcuts.title">Keyboard shortcuts</h2>
+      <button id="shortcuts-close-btn" class="icon-btn">✕</button>
+    </header>
+    <div class="modal-body">
+      <div class="shortcuts-group">
+        <div class="shortcuts-group-title" data-i18n="shortcuts.general">General</div>
+        <div class="shortcut-row">
+          <span data-i18n="shortcuts.search">Search chats</span>
+          <span class="shortcut-keys"><kbd>Ctrl</kbd><kbd>K</kbd></span>
+        </div>
+        <div class="shortcut-row">
+          <span data-i18n="shortcuts.toggleSidebar">Toggle sidebar</span>
+          <span class="shortcut-keys"><kbd>Ctrl</kbd><kbd>.</kbd></span>
+        </div>
+      </div>
+      <div class="shortcuts-group">
+        <div class="shortcuts-group-title" data-i18n="shortcuts.inChats">In chats</div>
+        <div class="shortcut-row">
+          <span data-i18n="shortcuts.send">Send message</span>
+          <span class="shortcut-keys"><kbd>Enter</kbd></span>
+        </div>
+        <div class="shortcut-row">
+          <span data-i18n="shortcuts.newline">New line in message</span>
+          <span class="shortcut-keys"><kbd>Shift</kbd><kbd>Enter</kbd></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ COOKIE SETTINGS MODAL ============ -->
+<div id="cookie-overlay" class="modal-overlay" style="display:none;">
+  <div class="modal modal-cookie">
+    <header class="modal-header">
+      <h2 data-i18n="cookie.title">Cookie settings</h2>
+    </header>
+    <div class="modal-body">
+      <p class="hint" data-i18n="cookie.desc">We use cookies to keep you signed in and improve the app. Accept, reject, or customize your choice below.</p>
+      <div class="cookie-customize" id="cookie-customize" style="display:none;">
+        <div class="cookie-row">
+          <div>
+            <div class="cookie-row-title" data-i18n="cookie.essential">Essential</div>
+            <div class="cookie-row-desc" data-i18n="cookie.essentialDesc">Required to keep you signed in. Always on.</div>
+          </div>
+          <input type="checkbox" checked disabled>
+        </div>
+        <div class="cookie-row">
+          <div>
+            <div class="cookie-row-title" data-i18n="cookie.analytics">Analytics</div>
+            <div class="cookie-row-desc" data-i18n="cookie.analyticsDesc">Helps us understand how the app is used.</div>
+          </div>
+          <input type="checkbox" id="cookie-analytics-toggle">
+        </div>
+      </div>
+    </div>
+    <footer class="modal-footer cookie-footer">
+      <button id="cookie-customize-btn" type="button" data-i18n="cookie.customize">Customize Cookie Settings</button>
+      <button id="cookie-reject-btn" type="button" data-i18n="cookie.reject">Reject All Cookies</button>
+      <button id="cookie-accept-btn" type="button" class="primary" data-i18n="cookie.accept">Accept All Cookies</button>
+    </footer>
   </div>
 </div>
 

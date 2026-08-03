@@ -1,6 +1,6 @@
 import { api, type User } from "./api";
 import { initTheme, setTheme } from "./theme";
-import { initI18n } from "./lib/i18n";
+import { initI18n, t } from "./lib/i18n";
 import { showAuthScreen, hideAuthScreen, initAuthView, openClaimScreen, openLoginScreen } from "./auth-view";
 import { initChatView, updateChatUser, resetChatView } from "./chat-view";
 import { initSettingsView, openSettings } from "./settings-view";
@@ -62,6 +62,21 @@ const guestBannerSaveBtn = document.getElementById("guest-banner-save-btn") as H
 const guestBannerDismissBtn = document.getElementById("guest-banner-dismiss-btn") as HTMLButtonElement;
 const GUEST_BANNER_DISMISSED_KEY = "guest-banner-dismissed";
 
+const learnMoreBtn = document.getElementById("learn-more-btn") as HTMLButtonElement;
+const learnMoreSubmenu = document.getElementById("learn-more-submenu") as HTMLDivElement;
+const keyboardShortcutsBtn = document.getElementById("keyboard-shortcuts-btn") as HTMLButtonElement;
+const shortcutsOverlay = document.getElementById("shortcuts-overlay") as HTMLDivElement;
+const shortcutsCloseBtn = document.getElementById("shortcuts-close-btn") as HTMLButtonElement;
+
+const privacyChoicesBtn = document.getElementById("privacy-choices-btn") as HTMLButtonElement;
+const cookieOverlay = document.getElementById("cookie-overlay") as HTMLDivElement;
+const cookieCustomize = document.getElementById("cookie-customize") as HTMLDivElement;
+const cookieCustomizeBtn = document.getElementById("cookie-customize-btn") as HTMLButtonElement;
+const cookieAnalyticsToggle = document.getElementById("cookie-analytics-toggle") as HTMLInputElement;
+const cookieRejectBtn = document.getElementById("cookie-reject-btn") as HTMLButtonElement;
+const cookieAcceptBtn = document.getElementById("cookie-accept-btn") as HTMLButtonElement;
+const COOKIE_CONSENT_KEY = "cookie-consent";
+
 let currentUser: User | null = null;
 let chatInitialized = false;
 
@@ -121,12 +136,85 @@ userMenuBtn.addEventListener("click", () => {
 document.addEventListener("click", (e) => {
   if (!userMenuBtn.contains(e.target as Node) && !userMenu.contains(e.target as Node)) {
     userMenu.style.display = "none";
+    learnMoreSubmenu.style.display = "none";
   }
 });
 
 openSettingsBtn.addEventListener("click", () => {
   userMenu.style.display = "none";
   if (currentUser) openSettings(currentUser);
+});
+
+learnMoreBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const open = learnMoreSubmenu.style.display !== "none";
+  learnMoreSubmenu.style.display = open ? "none" : "block";
+});
+
+function closeShortcuts() {
+  shortcutsOverlay.style.display = "none";
+}
+
+keyboardShortcutsBtn.addEventListener("click", () => {
+  userMenu.style.display = "none";
+  learnMoreSubmenu.style.display = "none";
+  shortcutsOverlay.style.display = "flex";
+});
+shortcutsCloseBtn.addEventListener("click", closeShortcuts);
+shortcutsOverlay.addEventListener("click", (e) => {
+  if (e.target === shortcutsOverlay) closeShortcuts();
+});
+
+function closeCookieModal() {
+  cookieOverlay.style.display = "none";
+  cookieCustomize.style.display = "none";
+  cookieCustomizeBtn.textContent = cookieCustomizeBtn.dataset.defaultLabel || cookieCustomizeBtn.textContent || "";
+}
+
+function openCookieModal() {
+  cookieOverlay.style.display = "flex";
+}
+
+function saveCookieConsent(choice: "all" | "rejected" | "custom", analytics: boolean) {
+  try {
+    localStorage.setItem(
+      COOKIE_CONSENT_KEY,
+      JSON.stringify({ choice, essential: true, analytics, date: new Date().toISOString() })
+    );
+  } catch {
+    // Best-effort — if storage is unavailable the choice just won't persist across visits.
+  }
+}
+
+privacyChoicesBtn.addEventListener("click", () => {
+  userMenu.style.display = "none";
+  // Re-opening always starts from the plain accept/reject view — the customize
+  // panel only needs to expand when someone actively asks for it.
+  cookieCustomize.style.display = "none";
+  openCookieModal();
+});
+
+cookieCustomizeBtn.dataset.defaultLabel = cookieCustomizeBtn.textContent || "";
+cookieCustomizeBtn.addEventListener("click", () => {
+  const showing = cookieCustomize.style.display !== "none";
+  if (!showing) {
+    cookieCustomize.style.display = "flex";
+    cookieCustomizeBtn.dataset.defaultLabel = cookieCustomizeBtn.dataset.defaultLabel || cookieCustomizeBtn.textContent || "";
+    cookieCustomizeBtn.textContent = t("cookie.savePreferences");
+  } else {
+    saveCookieConsent("custom", cookieAnalyticsToggle.checked);
+    closeCookieModal();
+  }
+});
+
+cookieRejectBtn.addEventListener("click", () => {
+  saveCookieConsent("rejected", false);
+  closeCookieModal();
+});
+
+cookieAcceptBtn.addEventListener("click", () => {
+  saveCookieConsent("all", true);
+  closeCookieModal();
 });
 
 themeIconBtns.forEach((btn) => {
@@ -177,6 +265,14 @@ guestBannerDismissBtn.addEventListener("click", () => {
   guestBanner.style.display = "none";
 });
 
+function maybeShowCookieBanner() {
+  try {
+    if (!localStorage.getItem(COOKIE_CONSENT_KEY)) openCookieModal();
+  } catch {
+    // No localStorage access — just skip the banner rather than error out.
+  }
+}
+
 initAuthView(
   (user) => enterApp(user),
   () => enterAsGuest()
@@ -217,4 +313,5 @@ api
   // No valid session yet — rather than stopping people at a login wall, drop
   // them straight into a working guest session. They can save it into a real
   // account any time from the user menu, with nothing lost.
-  .catch(() => enterAsGuest());
+  .catch(() => enterAsGuest())
+  .finally(maybeShowCookieBanner);

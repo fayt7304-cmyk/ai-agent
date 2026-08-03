@@ -53,6 +53,9 @@ export const icons = {
   chats: svg(
     `<path d="M3 5.5A2.5 2.5 0 0 1 5.5 3h9A2.5 2.5 0 0 1 17 5.5v6A2.5 2.5 0 0 1 14.5 14H8l-3.5 3v-3H5.5A2.5 2.5 0 0 1 3 11.5Z"/>`
   ),
+  pencil: svg(
+    `<path d="M12.6 3.4a1.9 1.9 0 0 1 2.7 2.7L6 15.4l-3.5.9.9-3.5Z"/><line x1="11.2" y1="4.8" x2="14.2" y2="7.8"/>`
+  ),
 };
 
 export function iconEl(name: keyof typeof icons, extraClass = ""): HTMLSpanElement {
