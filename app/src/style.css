@@ -513,7 +513,6 @@ button.full { width: 100%; }
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: var(--shadow);
-  overflow: hidden;
   z-index: 5;
 }
 
