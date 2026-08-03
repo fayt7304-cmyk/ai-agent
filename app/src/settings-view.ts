@@ -1,6 +1,6 @@
 import { api, ApiError, type User } from "./api";
 import { setTheme, type Theme } from "./theme";
-import { setLang, getStoredLang, type Lang } from "./lib/i18n";
+import { setLang, getStoredLang, t, type Lang } from "./lib/i18n";
 import { refreshConversations } from "./chat-view";
 import { applyAvatar } from "./lib/avatar";
 import { readImageAsAvatarDataUrl } from "./files";
@@ -57,11 +57,11 @@ function showTab(tab: string) {
 
 function renderGoogleLinkState(user: User) {
   if (user.google_linked) {
-    googleLinkStatus.textContent = "Connected";
+    googleLinkStatus.textContent = t("settings.connected");
     googleLinkBtn.style.display = "none";
     googleUnlinkBtn.style.display = "inline";
   } else {
-    googleLinkStatus.textContent = "Not connected";
+    googleLinkStatus.textContent = t("settings.notConnected");
     googleLinkBtn.style.display = "inline";
     googleUnlinkBtn.style.display = "none";
   }
@@ -70,7 +70,7 @@ function renderGoogleLinkState(user: User) {
 function renderProfile(user: User) {
   applyAvatar(navProfileAvatar, user);
   navProfileUsername.textContent = user.username;
-  navProfileEmail.textContent = user.email || "No email on file";
+  navProfileEmail.textContent = user.email || t("settings.noEmail");
   profileUserId.textContent = user.id;
 
   applyAvatar(editProfileAvatar, user);
@@ -101,7 +101,7 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     try {
       await navigator.clipboard.writeText(profileUserId.textContent || "");
       const original = copyUserIdBtn.textContent;
-      copyUserIdBtn.textContent = "Copied!";
+      copyUserIdBtn.textContent = t("common.copied");
       setTimeout(() => (copyUserIdBtn.textContent = original), 1200);
     } catch {
       // Clipboard access can fail (unsupported/insecure context) — not worth surfacing an error for.
@@ -120,9 +120,9 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
         const { user } = await api.updateSettings({ theme });
         currentUser = user;
         onUserUpdated(user);
-        settingsSuccess.textContent = "Theme updated.";
+        settingsSuccess.textContent = t("settings.themeUpdated");
       } catch (err) {
-        settingsError.textContent = err instanceof ApiError ? err.message : "Could not save theme.";
+        settingsError.textContent = err instanceof ApiError ? err.message : t("settings.themeError");
       }
     });
   });
@@ -131,7 +131,7 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     settingsError.textContent = "";
     settingsSuccess.textContent = "";
     if (passwordInput.value.length < 8) {
-      settingsError.textContent = "Password must be at least 8 characters.";
+      settingsError.textContent = t("settings.passwordTooShort");
       return;
     }
     setPasswordBtn.disabled = true;
@@ -140,9 +140,9 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
       currentUser = user;
       onUserUpdated(user);
       passwordInput.value = "";
-      settingsSuccess.textContent = "Password updated.";
+      settingsSuccess.textContent = t("settings.passwordUpdated");
     } catch (err) {
-      settingsError.textContent = err instanceof ApiError ? err.message : "Could not update password.";
+      settingsError.textContent = err instanceof ApiError ? err.message : t("settings.passwordError");
     } finally {
       setPasswordBtn.disabled = false;
     }
@@ -158,16 +158,16 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
       const { user } = await api.unlinkGoogle();
       renderGoogleLinkState(user);
       onUserUpdated(user);
-      settingsSuccess.textContent = "Google account disconnected.";
+      settingsSuccess.textContent = t("settings.googleDisconnected");
     } catch (err) {
-      settingsError.textContent = err instanceof ApiError ? err.message : "Could not disconnect Google.";
+      settingsError.textContent = err instanceof ApiError ? err.message : t("settings.googleDisconnectError");
     } finally {
       googleUnlinkBtn.disabled = false;
     }
   });
 
   deleteAllChatsBtn.addEventListener("click", async () => {
-    if (!confirm("Delete all of your chats? This can't be undone.")) return;
+    if (!confirm(t("settings.deleteAllChatsConfirm"))) return;
     settingsError.textContent = "";
     settingsSuccess.textContent = "";
     deleteAllChatsBtn.disabled = true;
@@ -175,9 +175,9 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
       const { conversations } = await api.listConversations();
       await Promise.all(conversations.map((c) => api.deleteConversation(c.id)));
       await refreshConversations();
-      settingsSuccess.textContent = "All chats deleted.";
+      settingsSuccess.textContent = t("settings.allChatsDeleted");
     } catch (err) {
-      settingsError.textContent = err instanceof ApiError ? err.message : "Could not delete all chats.";
+      settingsError.textContent = err instanceof ApiError ? err.message : t("settings.deleteAllChatsError");
     } finally {
       deleteAllChatsBtn.disabled = false;
     }
@@ -196,7 +196,7 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
       applyAvatar(editProfileAvatar, { username: currentUser?.username || "?", avatar: dataUrl });
       avatarRemoveBtn.style.display = "inline";
     } catch {
-      settingsError.textContent = "Could not read that image. Please try a different photo.";
+      settingsError.textContent = t("settings.avatarReadError");
     }
   });
 
@@ -211,7 +211,7 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     settingsSuccess.textContent = "";
     const username = usernameInput.value.trim();
     if (username.length < 3 || username.length > 32) {
-      settingsError.textContent = "Username must be 3-32 characters.";
+      settingsError.textContent = t("settings.usernameLengthError");
       return;
     }
     saveProfileBtn.disabled = true;
@@ -224,9 +224,9 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
       currentUser = user;
       onUserUpdated(user);
       renderProfile(user);
-      settingsSuccess.textContent = "Profile updated.";
+      settingsSuccess.textContent = t("settings.profileUpdated");
     } catch (err) {
-      settingsError.textContent = err instanceof ApiError ? err.message : "Could not update profile.";
+      settingsError.textContent = err instanceof ApiError ? err.message : t("settings.profileError");
     } finally {
       saveProfileBtn.disabled = false;
     }

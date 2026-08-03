@@ -1,5 +1,6 @@
 import { api, ApiError } from "./api";
 import { formatBytes, readImageAsPhotoDataUrl } from "./files";
+import { t } from "./lib/i18n";
 
 const overlay = document.getElementById("lead-overlay") as HTMLDivElement;
 const closeBtn = document.getElementById("lead-close-btn") as HTMLButtonElement;
@@ -58,7 +59,7 @@ export function initLeadView() {
     if (!file) return;
     leadError.textContent = "";
     if (!file.type.startsWith("image/")) {
-      leadError.textContent = "Please choose an image file.";
+      leadError.textContent = t("lead.photoTypeError");
       photoInput.value = "";
       return;
     }
@@ -70,7 +71,7 @@ export function initLeadView() {
       photoBtn.style.display = "none";
       photoPreview.style.display = "flex";
     } catch {
-      leadError.textContent = "Could not read that photo. Please try another.";
+      leadError.textContent = t("lead.photoReadError");
       clearPhoto();
     }
   });
@@ -89,10 +90,10 @@ export function initLeadView() {
         has_photo: !!photoDataUrl,
         photo_data_url: photoDataUrl || undefined,
       });
-      leadSuccess.textContent = "Thanks — we'll be in touch shortly.";
+      leadSuccess.textContent = t("lead.successMessage");
       setTimeout(close, 1500);
     } catch (err) {
-      leadError.textContent = err instanceof ApiError ? err.message : "Could not send your request. Please try again.";
+      leadError.textContent = err instanceof ApiError ? err.message : t("lead.submitError");
     } finally {
       submitBtn.disabled = false;
     }

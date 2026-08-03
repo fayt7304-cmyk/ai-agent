@@ -51,7 +51,7 @@ export function loadWeather() {
     const hourly = data.hourly;
     const daily = data.daily;
 
-    const nowIso = new Date().toISOString().slice(0, 13);
+    const nowIso = new Date(Date.now() + (data.utc_offset_seconds || 0) * 1000).toISOString().slice(0, 13);
     let startIdx = hourly.time.findIndex((t: string) => t.startsWith(nowIso));
     if (startIdx === -1) startIdx = 0;
     const next24 = [];

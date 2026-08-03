@@ -1,4 +1,5 @@
 import { api, ApiError, type User } from "./api";
+import { t } from "./lib/i18n";
 
 const authScreen = document.getElementById("auth-screen") as HTMLDivElement;
 const authTabs = document.getElementById("auth-tabs") as HTMLDivElement;
@@ -39,9 +40,9 @@ function resetToLoginMode() {
   onClaimCancelled = null;
   guestContinueBtn.style.display = "block";
   authCloseBtn.style.display = "none";
-  authTitle.textContent = "Agent";
-  authSubtitle.textContent = "Powered by Mistral · your account, your server";
-  signupSubmitBtn.textContent = "Create account";
+  authTitle.textContent = t("auth.title");
+  authSubtitle.textContent = t("auth.subtitle");
+  signupSubmitBtn.textContent = t("auth.createAccount");
   authTabs.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
   authTabs.querySelector('[data-auth-tab="login"]')?.classList.add("active");
   showForm("login");
@@ -64,9 +65,9 @@ export function openClaimScreen(user: User, message?: string, onCancelled?: () =
   signupError.textContent = "";
   guestContinueBtn.style.display = "none";
   authCloseBtn.style.display = "inline-flex";
-  authTitle.textContent = "Save your account";
-  authSubtitle.textContent = message || "Add a username, email, and password so you can log back in on any device.";
-  signupSubmitBtn.textContent = "Save account";
+  authTitle.textContent = t("auth.saveAccountTitle");
+  authSubtitle.textContent = message || t("auth.saveAccountSubtitle");
+  signupSubmitBtn.textContent = t("auth.saveAccountBtn");
   const usernameInput = document.getElementById("signup-username") as HTMLInputElement;
   if (user.username && !user.username.toLowerCase().startsWith("guest")) usernameInput.value = user.username;
   showAuthScreen();
@@ -85,9 +86,9 @@ export function openLoginScreen(onCancelled?: () => void) {
   signupError.textContent = "";
   guestContinueBtn.style.display = "none";
   authCloseBtn.style.display = "inline-flex";
-  authTitle.textContent = "Log in";
-  authSubtitle.textContent = "Log in to an existing account, or create a new one.";
-  signupSubmitBtn.textContent = "Create account";
+  authTitle.textContent = t("auth.tabLogin");
+  authSubtitle.textContent = t("auth.loginSubtitle");
+  signupSubmitBtn.textContent = t("auth.createAccount");
   authTabs.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
   authTabs.querySelector('[data-auth-tab="login"]')?.classList.add("active");
   showAuthScreen();
@@ -139,7 +140,7 @@ export function initAuthView(onAuthenticated: (user: User) => void, onContinueAs
       loginForm.reset();
       onAuthenticated(user);
     } catch (err) {
-      loginError.textContent = err instanceof ApiError ? err.message : "Something went wrong. Try again.";
+      loginError.textContent = err instanceof ApiError ? err.message : t("common.genericError");
     } finally {
       btn.disabled = false;
     }
@@ -161,7 +162,7 @@ export function initAuthView(onAuthenticated: (user: User) => void, onContinueAs
       onAuthenticated(user);
       if (wasClaimMode) hideAuthScreen();
     } catch (err) {
-      signupError.textContent = err instanceof ApiError ? err.message : "Something went wrong. Try again.";
+      signupError.textContent = err instanceof ApiError ? err.message : t("common.genericError");
     } finally {
       btn.disabled = false;
     }
@@ -176,10 +177,10 @@ export function initAuthView(onAuthenticated: (user: User) => void, onContinueAs
     btn.disabled = true;
     try {
       await api.forgotPassword(email);
-      forgotSuccess.textContent = "If that email is registered, a reset link is on its way.";
+      forgotSuccess.textContent = t("auth.resetLinkSent");
       forgotForm.reset();
     } catch (err) {
-      forgotError.textContent = err instanceof ApiError ? err.message : "Something went wrong. Try again.";
+      forgotError.textContent = err instanceof ApiError ? err.message : t("common.genericError");
     } finally {
       btn.disabled = false;
     }
@@ -197,9 +198,9 @@ export function initAuthView(onAuthenticated: (user: User) => void, onContinueAs
       window.history.replaceState({}, "", window.location.pathname);
       resetForm.reset();
       showForm("login");
-      loginError.textContent = "Password updated. Please log in.";
+      loginError.textContent = t("auth.passwordUpdatedLoginPrompt");
     } catch (err) {
-      resetError.textContent = err instanceof ApiError ? err.message : "Something went wrong. Try again.";
+      resetError.textContent = err instanceof ApiError ? err.message : t("common.genericError");
     } finally {
       btn.disabled = false;
     }

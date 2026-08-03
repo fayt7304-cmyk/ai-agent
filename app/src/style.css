@@ -118,7 +118,7 @@ button, input, textarea, select {
   color: var(--accent);
   font-size: 11px;
   font-weight: 600;
-  margin-left: 6px;
+  margin-inline-start: 6px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
@@ -245,7 +245,7 @@ button.full { width: 100%; }
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  transition: margin-left 0.2s ease;
+  transition: margin-left 0.2s ease, margin-right 0.2s ease;
 }
 
 .sidebar.collapsed {
@@ -270,7 +270,7 @@ button.full { width: 100%; }
   background: var(--card);
   cursor: pointer;
   font-size: 13.5px;
-  text-align: left;
+  text-align: start;
 }
 
 .new-chat-btn:hover { border-color: var(--accent); color: var(--accent); }
@@ -405,7 +405,7 @@ button.full { width: 100%; }
   align-items: center;
   gap: 10px;
   width: 100%;
-  text-align: left;
+  text-align: start;
   padding: 9px 12px;
   border: none;
   background: transparent;
@@ -477,7 +477,7 @@ button.full { width: 100%; }
 .icon-btn:hover { background: var(--accent-bg); color: var(--accent); }
 
 .chat-header-actions {
-  margin-left: auto;
+  margin-inline-start: auto;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -579,7 +579,7 @@ button.full { width: 100%; }
 .msg > pre:last-child { margin-bottom: 0; }
 .msg p { margin: 0.5em 0; }
 .msg h3, .msg h4, .msg h5, .msg h6 { margin: 0.6em 0 0.3em; line-height: 1.3; }
-.msg ul, .msg ol { margin: 0.4em 0; padding-left: 1.3em; }
+.msg ul, .msg ol { margin: 0.4em 0; padding-inline-start: 1.3em; }
 .msg li { margin: 0.2em 0; }
 .msg code {
   background: var(--accent-bg);
@@ -816,10 +816,10 @@ button.full { width: 100%; }
   font-size: 13px;
   cursor: pointer;
   color: var(--text-secondary);
-  border-right: 1px solid var(--border);
+  border-inline-end: 1px solid var(--border);
 }
 
-.segmented button:last-child { border-right: none; }
+.segmented button:last-child { border-inline-end: none; }
 .segmented button.active { background: var(--accent-bg); color: var(--accent); font-weight: 500; }
 
 select, .modal-body input, .modal-body textarea {
@@ -964,7 +964,7 @@ select, .modal-body input, .modal-body textarea {
   background: transparent;
   color: var(--text);
   cursor: pointer;
-  text-align: left;
+  text-align: start;
   transition: background 0.15s ease;
 }
 
@@ -1112,7 +1112,7 @@ select, .modal-body input, .modal-body textarea {
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  text-align: left;
+  text-align: start;
   padding: 9px 12px;
   border-radius: 8px;
   font-size: 13.5px;
@@ -1623,6 +1623,8 @@ html[dir="rtl"] .sidebar {
 html[dir="rtl"] .sidebar.collapsed { margin-left: 0; margin-right: -260px; }
 
 html[dir="rtl"] .auth-close-btn { right: auto; left: -6px; }
+
+html[dir="rtl"] .settings-close-float { right: auto; left: 14px; }
 
 html[dir="rtl"] .avatar-upload-btn { right: auto; left: -4px; }
 
