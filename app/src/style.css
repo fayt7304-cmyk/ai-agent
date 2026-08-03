@@ -249,6 +249,13 @@ button.full { width: 100%; }
   overflow-x: hidden;
 }
 
+/* The account menu (and its "Learn more" flyout) are positioned inside the
+   sidebar but need to visually pop out past its edge — most noticeably in the
+   collapsed 64px rail, where the menu is deliberately wider than its container.
+   overflow-x:hidden above exists for the collapse/expand width transition, not
+   to clip open menus, so lift it only while a menu is actually open. */
+.sidebar.menu-open { overflow: visible; }
+
 /* Desktop collapsed state becomes a slim icon rail (not fully hidden) so the
    toggle/new-chat/search/avatar stay reachable with one click — matches how
    the reference UI keeps a narrow nav strip instead of hiding navigation entirely. */
@@ -508,6 +515,17 @@ button.full { width: 100%; }
   box-shadow: var(--shadow);
   overflow: hidden;
   z-index: 5;
+}
+
+/* Collapsed sidebar is only 64px wide — anchoring the menu to left:10px/right:10px
+   like above would squeeze it down to ~44px, wrapping every label onto multiple
+   lines and clipping the rest off-screen (the exact bug this fixes). Instead give
+   it a real fixed width and let it float out over the main content, anchored to
+   the rail's left edge, the same way the collapsed rail's other flyouts behave. */
+.sidebar.collapsed .user-menu {
+  left: 10px;
+  right: auto;
+  width: 260px;
 }
 
 .user-menu-header {

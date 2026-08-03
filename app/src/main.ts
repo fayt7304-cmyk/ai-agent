@@ -46,6 +46,7 @@ window.addEventListener("appinstalled", () => {
 });
 
 const appShell = document.getElementById("app-shell") as HTMLDivElement;
+const sidebar = document.getElementById("sidebar") as HTMLDivElement;
 const userMenuBtn = document.getElementById("user-menu-btn") as HTMLButtonElement;
 const userMenu = document.getElementById("user-menu") as HTMLDivElement;
 const menuAvatar = document.getElementById("menu-avatar") as HTMLSpanElement;
@@ -62,6 +63,7 @@ const guestBannerSaveBtn = document.getElementById("guest-banner-save-btn") as H
 const guestBannerDismissBtn = document.getElementById("guest-banner-dismiss-btn") as HTMLButtonElement;
 const GUEST_BANNER_DISMISSED_KEY = "guest-banner-dismissed";
 
+const learnMoreWrap = document.getElementById("learn-more-wrap") as HTMLDivElement;
 const learnMoreBtn = document.getElementById("learn-more-btn") as HTMLButtonElement;
 const learnMoreSubmenu = document.getElementById("learn-more-submenu") as HTMLDivElement;
 const keyboardShortcutsBtn = document.getElementById("keyboard-shortcuts-btn") as HTMLButtonElement;
@@ -129,26 +131,66 @@ function enterAsGuest() {
     .catch(() => showAuthScreen());
 }
 
+function setUserMenuOpen(open: boolean) {
+  userMenu.style.display = open ? "block" : "none";
+  // The sidebar normally clips horizontal overflow (needed so the collapse/expand
+  // width transition doesn't flash a scrollbar). But that same clipping cuts off
+  // this menu whenever it needs to be wider than the collapsed 64px rail — so lift
+  // the clip only while the menu is actually open.
+  sidebar.classList.toggle("menu-open", open);
+  if (!open) learnMoreSubmenu.style.display = "none";
+}
+
 userMenuBtn.addEventListener("click", () => {
-  userMenu.style.display = userMenu.style.display === "none" ? "block" : "none";
+  setUserMenuOpen(userMenu.style.display === "none");
 });
 
 document.addEventListener("click", (e) => {
   if (!userMenuBtn.contains(e.target as Node) && !userMenu.contains(e.target as Node)) {
-    userMenu.style.display = "none";
-    learnMoreSubmenu.style.display = "none";
+    setUserMenuOpen(false);
   }
 });
 
 openSettingsBtn.addEventListener("click", () => {
-  userMenu.style.display = "none";
+  setUserMenuOpen(false);
   if (currentUser) openSettings(currentUser);
 });
 
+let learnMoreCloseTimer: ReturnType<typeof setTimeout> | null = null;
+
+function openLearnMore() {
+  if (learnMoreCloseTimer) {
+    clearTimeout(learnMoreCloseTimer);
+    learnMoreCloseTimer = null;
+  }
+  learnMoreSubmenu.style.display = "block";
+}
+
+function closeLearnMore(delay = 0) {
+  if (learnMoreCloseTimer) clearTimeout(learnMoreCloseTimer);
+  learnMoreCloseTimer = setTimeout(() => {
+    learnMoreSubmenu.style.display = "none";
+    learnMoreCloseTimer = null;
+  }, delay);
+}
+
+// Pointer devices open it on hover, like the reference menu. A short close
+// delay means moving the mouse from the "Learn more" row into the flyout
+// itself doesn't close it partway there.
+learnMoreWrap.addEventListener("mouseenter", openLearnMore);
+learnMoreWrap.addEventListener("mouseleave", () => closeLearnMore(150));
+// The flyout itself sits outside the wrap's own box (it's positioned past the
+// menu's right edge), so it needs its own hover handling too — otherwise moving
+// the pointer from the "Learn more" row toward the flyout closes it en route.
+learnMoreSubmenu.addEventListener("mouseenter", openLearnMore);
+learnMoreSubmenu.addEventListener("mouseleave", () => closeLearnMore(150));
+
+// Touch/keyboard still needs a tap-to-toggle, since there's no hover to rely on.
 learnMoreBtn.addEventListener("click", (e) => {
   e.stopPropagation();
   const open = learnMoreSubmenu.style.display !== "none";
-  learnMoreSubmenu.style.display = open ? "none" : "block";
+  if (open) closeLearnMore();
+  else openLearnMore();
 });
 
 function closeShortcuts() {
@@ -156,8 +198,7 @@ function closeShortcuts() {
 }
 
 keyboardShortcutsBtn.addEventListener("click", () => {
-  userMenu.style.display = "none";
-  learnMoreSubmenu.style.display = "none";
+  setUserMenuOpen(false);
   shortcutsOverlay.style.display = "flex";
 });
 shortcutsCloseBtn.addEventListener("click", closeShortcuts);
@@ -187,7 +228,7 @@ function saveCookieConsent(choice: "all" | "rejected" | "custom", analytics: boo
 }
 
 privacyChoicesBtn.addEventListener("click", () => {
-  userMenu.style.display = "none";
+  setUserMenuOpen(false);
   // Re-opening always starts from the plain accept/reject view — the customize
   // panel only needs to expand when someone actively asks for it.
   cookieCustomize.style.display = "none";
@@ -234,13 +275,13 @@ themeIconBtns.forEach((btn) => {
 });
 
 logoutBtn.addEventListener("click", async () => {
-  userMenu.style.display = "none";
+  setUserMenuOpen(false);
   await api.logout().catch(() => {});
   exitApp();
 });
 
 saveAccountBtn.addEventListener("click", () => {
-  userMenu.style.display = "none";
+  setUserMenuOpen(false);
   if (currentUser) {
     appShell.style.display = "none";
     openClaimScreen(currentUser, undefined, () => (appShell.style.display = "flex"));
@@ -248,7 +289,7 @@ saveAccountBtn.addEventListener("click", () => {
 });
 
 loginMenuBtn.addEventListener("click", () => {
-  userMenu.style.display = "none";
+  setUserMenuOpen(false);
   appShell.style.display = "none";
   openLoginScreen(() => (appShell.style.display = "flex"));
 });
