@@ -4,6 +4,7 @@ import { renderMarkdown } from "./lib/markdown";
 import { openLeadModal } from "./lead-view";
 import { applyAvatar } from "./lib/avatar";
 import { t } from "./lib/i18n";
+import { icons } from "./lib/icons";
 
 interface QuickAction {
   labelKey: string;
@@ -43,6 +44,11 @@ function dataUrlToObjectUrl(dataUrl: string): string {
 
 const sidebar = document.getElementById("sidebar") as HTMLDivElement;
 const sidebarToggle = document.getElementById("sidebar-toggle") as HTMLButtonElement;
+const sidebarOpenBtn = document.getElementById("sidebar-open-btn") as HTMLButtonElement;
+const sidebarSearchBtn = document.getElementById("sidebar-search-btn") as HTMLButtonElement;
+const sidebarSearchRow = document.getElementById("sidebar-search-row") as HTMLDivElement;
+const sidebarSearchInput = document.getElementById("sidebar-search-input") as HTMLInputElement;
+const sidebarSearchClose = document.getElementById("sidebar-search-close") as HTMLButtonElement;
 const convoList = document.getElementById("convo-list") as HTMLDivElement;
 const newChatBtn = document.getElementById("new-chat-btn") as HTMLButtonElement;
 const chatTitle = document.getElementById("chat-title") as HTMLDivElement;
@@ -52,6 +58,10 @@ const chatForm = document.getElementById("chat-form") as HTMLFormElement;
 const chatInput = document.getElementById("chat-input") as HTMLTextAreaElement;
 const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
 const attachBtn = document.getElementById("attach-btn") as HTMLButtonElement;
+const attachMenu = document.getElementById("attach-menu") as HTMLDivElement;
+const attachMenuFiles = document.getElementById("attach-menu-files") as HTMLButtonElement;
+const attachMenuTools = document.getElementById("attach-menu-tools") as HTMLButtonElement;
+const micBtn = document.getElementById("mic-btn") as HTMLButtonElement;
 const fileInput = document.getElementById("file-input") as HTMLInputElement;
 const attachmentChips = document.getElementById("attachment-chips") as HTMLDivElement;
 const composerRow = document.querySelector(".composer-row") as HTMLDivElement;
@@ -59,6 +69,23 @@ const composerHint = document.getElementById("composer-hint") as HTMLDivElement;
 const sidebarUsername = document.getElementById("sidebar-username") as HTMLDivElement;
 const userAvatar = document.getElementById("user-avatar") as HTMLSpanElement;
 const quickActionsEl = document.getElementById("quick-actions") as HTMLDivElement;
+
+// Fill in the static icon buttons that only carry an aria/title in markup — kept out
+// of index.html so all icon markup lives in one place (lib/icons.ts).
+function mountStaticIcons() {
+  sidebarToggle.innerHTML = icons.panel;
+  sidebarOpenBtn.innerHTML = icons.panel;
+  sidebarSearchBtn.innerHTML = icons.search;
+  sidebarSearchClose.innerHTML = icons.close;
+  document.querySelector(".new-chat-icon")!.innerHTML = icons.plus;
+  document.querySelector(".sidebar-search-icon")!.innerHTML = icons.search;
+  document.querySelector(".install-app-icon")!.innerHTML = icons.download;
+  attachBtn.innerHTML = icons.plus;
+  document.querySelector("#attach-menu-files .attach-menu-icon")!.innerHTML = icons.image;
+  document.querySelector("#attach-menu-tools .attach-menu-icon")!.innerHTML = icons.tools;
+  micBtn.innerHTML = icons.mic;
+  document.querySelector(".send-icon")!.innerHTML = icons.send;
+}
 
 let currentUser: User;
 let conversations: Conversation[] = [];
@@ -108,6 +135,16 @@ async function loadConversations() {
   const { conversations: list } = await api.listConversations();
   conversations = list;
   renderConvoList();
+}
+
+function makeIconActionBtn(icon: keyof typeof icons, title: string): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.className = "msg-action-btn";
+  btn.type = "button";
+  btn.title = title;
+  btn.setAttribute("aria-label", title);
+  btn.innerHTML = icons[icon];
+  return btn;
 }
 
 function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: string, attachments: Attachment[] = []) {
@@ -163,17 +200,53 @@ function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: strin
     const actions = document.createElement("div");
     actions.className = "msg-actions";
 
-    const copyBtn = document.createElement("button");
-    copyBtn.className = "msg-action-btn";
-    copyBtn.type = "button";
-    copyBtn.textContent = "Copy";
+    const copyBtn = makeIconActionBtn("copy", "Copy");
     copyBtn.addEventListener("click", () => {
       navigator.clipboard.writeText(content).then(() => {
-        copyBtn.textContent = "Copied!";
-        setTimeout(() => (copyBtn.textContent = "Copy"), 1200);
+        copyBtn.innerHTML = icons.check;
+        copyBtn.classList.add("done");
+        setTimeout(() => {
+          copyBtn.innerHTML = icons.copy;
+          copyBtn.classList.remove("done");
+        }, 1200);
       });
     });
     actions.appendChild(copyBtn);
+
+    const speakBtn = makeIconActionBtn("volume", "Read aloud");
+    speakBtn.addEventListener("click", () => {
+      if (!("speechSynthesis" in window)) return;
+      if (speakBtn.classList.contains("speaking")) {
+        window.speechSynthesis.cancel();
+        speakBtn.classList.remove("speaking");
+        speakBtn.innerHTML = icons.volume;
+        return;
+      }
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(content.replace(/[#*`_>-]/g, ""));
+      utter.onend = () => {
+        speakBtn.classList.remove("speaking");
+        speakBtn.innerHTML = icons.volume;
+      };
+      speakBtn.classList.add("speaking");
+      speakBtn.innerHTML = icons.volumeOff;
+      window.speechSynthesis.speak(utter);
+    });
+    actions.appendChild(speakBtn);
+
+    const upBtn = makeIconActionBtn("thumbUp", "Good response");
+    const downBtn = makeIconActionBtn("thumbDown", "Bad response");
+    upBtn.addEventListener("click", () => {
+      const active = upBtn.classList.toggle("active");
+      if (active) downBtn.classList.remove("active");
+    });
+    downBtn.addEventListener("click", () => {
+      const active = downBtn.classList.toggle("active");
+      if (active) upBtn.classList.remove("active");
+    });
+    actions.appendChild(upBtn);
+    actions.appendChild(downBtn);
+
     row.appendChild(actions);
   }
 
@@ -191,10 +264,8 @@ function attachRegenerateButton(row: HTMLDivElement) {
   }
   const actions = row.querySelector(".msg-actions");
   if (!actions) return;
-  const btn = document.createElement("button");
-  btn.className = "msg-action-btn msg-action-regenerate";
-  btn.type = "button";
-  btn.textContent = "🔄 Try again";
+  const btn = makeIconActionBtn("retry", "Try again");
+  btn.classList.add("msg-action-regenerate");
   btn.addEventListener("click", () => regenerateLast());
   actions.appendChild(btn);
   lastAgentRow = row;
@@ -380,28 +451,129 @@ function syncSidebarBackdrop() {
   sidebarBackdrop.classList.toggle("visible", open);
 }
 
+function syncSidebarOpenBtn() {
+  sidebarOpenBtn.style.display = sidebar.classList.contains("collapsed") ? "inline-flex" : "none";
+}
+
+function toggleSidebar(collapsed?: boolean) {
+  sidebar.classList.toggle("collapsed", collapsed ?? !sidebar.classList.contains("collapsed"));
+  syncSidebarBackdrop();
+  syncSidebarOpenBtn();
+}
+
+function closeSidebarSearch() {
+  sidebarSearchRow.style.display = "none";
+  sidebarSearchInput.value = "";
+  filterConvoList("");
+}
+
+function filterConvoList(query: string) {
+  const q = query.trim().toLowerCase();
+  convoList.querySelectorAll<HTMLDivElement>(".convo-item").forEach((item) => {
+    const title = item.querySelector(".convo-title")?.textContent?.toLowerCase() || "";
+    item.style.display = !q || title.includes(q) ? "flex" : "none";
+  });
+}
+
+// Voice input: transcribes speech straight into the composer while the mic button
+// is held active. Falls back gracefully (hidden button) where unsupported.
+const SpeechRecognitionCtor: any =
+  (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+let recognizer: any = null;
+let recording = false;
+
+function setupMic() {
+  if (!SpeechRecognitionCtor) {
+    micBtn.style.display = "none";
+    return;
+  }
+  recognizer = new SpeechRecognitionCtor();
+  recognizer.continuous = true;
+  recognizer.interimResults = true;
+  recognizer.onresult = (event: any) => {
+    let transcript = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      transcript += event.results[i][0].transcript;
+    }
+    chatInput.value = transcript;
+    chatInput.style.height = "auto";
+    chatInput.style.height = `${chatInput.scrollHeight}px`;
+  };
+  recognizer.onend = () => {
+    recording = false;
+    micBtn.classList.remove("recording");
+  };
+  recognizer.onerror = () => {
+    recording = false;
+    micBtn.classList.remove("recording");
+  };
+  micBtn.addEventListener("click", () => {
+    if (recording) {
+      recognizer.stop();
+      recording = false;
+      micBtn.classList.remove("recording");
+    } else {
+      try {
+        recognizer.start();
+        recording = true;
+        micBtn.classList.add("recording");
+      } catch {
+        // already started / permission denied — ignore, button state stays off
+      }
+    }
+  });
+}
+
+function closeAttachMenu() {
+  attachMenu.style.display = "none";
+}
+
 export function initChatView(user: User) {
   currentUser = user;
+  mountStaticIcons();
   sidebarUsername.textContent = user.display_name || user.username;
   applyAvatar(userAvatar, user);
 
   // On small screens the sidebar overlays the chat, so it should start closed.
   if (window.innerWidth <= 720) sidebar.classList.add("collapsed");
   syncSidebarBackdrop();
+  syncSidebarOpenBtn();
 
   newChatBtn.addEventListener("click", startNewConversation);
-  sidebarToggle.addEventListener("click", () => {
-    sidebar.classList.toggle("collapsed");
-    syncSidebarBackdrop();
-  });
-  sidebarBackdrop.addEventListener("click", () => {
-    sidebar.classList.add("collapsed");
-    syncSidebarBackdrop();
-  });
+  sidebarToggle.addEventListener("click", () => toggleSidebar());
+  sidebarOpenBtn.addEventListener("click", () => toggleSidebar(false));
+  sidebarBackdrop.addEventListener("click", () => toggleSidebar(true));
   window.addEventListener("resize", () => {
     if (window.innerWidth > 720) sidebar.classList.remove("collapsed");
     syncSidebarBackdrop();
+    syncSidebarOpenBtn();
   });
+
+  sidebarSearchBtn.addEventListener("click", () => {
+    toggleSidebar(false);
+    sidebarSearchRow.style.display = "flex";
+    sidebarSearchInput.focus();
+  });
+  sidebarSearchClose.addEventListener("click", closeSidebarSearch);
+  sidebarSearchInput.addEventListener("input", () => filterConvoList(sidebarSearchInput.value));
+
+  attachBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    attachMenu.style.display = attachMenu.style.display === "none" ? "flex" : "none";
+  });
+  attachMenuFiles.addEventListener("click", () => {
+    closeAttachMenu();
+    fileInput.click();
+  });
+  attachMenuTools.addEventListener("click", () => {
+    closeAttachMenu();
+    document.getElementById("tools-btn")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+  document.addEventListener("click", (e) => {
+    if (!attachMenu.contains(e.target as Node) && e.target !== attachBtn) closeAttachMenu();
+  });
+
+  setupMic();
 
   chatInput.addEventListener("input", () => {
     chatInput.style.height = "auto";
@@ -420,7 +592,6 @@ export function initChatView(user: User) {
     sendMessage();
   });
 
-  attachBtn.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", () => {
     if (fileInput.files && fileInput.files.length) handleFiles(fileInput.files);
     fileInput.value = "";

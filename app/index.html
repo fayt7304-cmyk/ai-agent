@@ -82,13 +82,30 @@
 <div id="app-shell" class="app-shell" style="display:none;">
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-top">
-      <h1 class="brand">Agent</h1>
-      <button id="new-chat-btn" class="new-chat-btn" title="New chat" data-i18n="sidebar.newChat">+ New chat</button>
+      <div class="sidebar-top-row">
+        <button id="sidebar-toggle" class="icon-btn sidebar-toggle-btn" title="Close sidebar"></button>
+        <h1 class="brand">Agent</h1>
+        <button id="sidebar-search-btn" class="icon-btn" title="Search chats"></button>
+      </div>
+      <button id="new-chat-btn" class="new-chat-btn" title="New chat">
+        <span class="new-chat-icon"></span>
+        <span class="new-chat-label" data-i18n="sidebar.newChat">New chat</span>
+      </button>
+      <div class="sidebar-search-row" id="sidebar-search-row" style="display:none;">
+        <span class="sidebar-search-icon"></span>
+        <input type="text" id="sidebar-search-input" class="sidebar-search-input" placeholder="Search chats…">
+        <button type="button" id="sidebar-search-close" class="icon-btn" title="Close search"></button>
+      </div>
     </div>
 
+    <div class="convo-list-label" id="convo-list-label" data-i18n="sidebar.recents">Recents</div>
     <div class="convo-list" id="convo-list"></div>
 
     <div class="sidebar-bottom">
+      <button id="install-app-btn" class="install-app-btn" style="display:none;" title="Install app">
+        <span class="install-app-icon-wrap"><span class="install-app-icon"></span><span class="install-app-dot"></span></span>
+        <span class="install-app-label" data-i18n="sidebar.getApp">Get the app</span>
+      </button>
       <button id="user-menu-btn" class="user-menu-btn">
         <span class="avatar" id="user-avatar"></span>
         <span class="username" id="sidebar-username"></span>
@@ -119,11 +136,10 @@
 
   <main class="chat-main">
     <header class="chat-header">
-      <button id="sidebar-toggle" class="icon-btn" title="Toggle conversations">☰</button>
+      <button id="sidebar-open-btn" class="icon-btn sidebar-open-btn" title="Open sidebar" style="display:none;"></button>
       <div class="chat-title" id="chat-title" data-i18n="chat.newChat">New chat</div>
       <div class="chat-header-actions">
         <button id="tools-btn" class="icon-btn" title="Tools">🧰</button>
-        <button id="install-app-btn" class="icon-btn" title="Install app" style="display:none;">⬇️</button>
       </div>
     </header>
 
@@ -144,10 +160,25 @@
     <form id="chat-form" class="chat-form">
       <div class="attachment-chips" id="attachment-chips"></div>
       <div class="composer-row">
-        <button type="button" id="attach-btn" class="icon-btn" title="Attach a file">📎</button>
+        <div class="attach-wrap">
+          <button type="button" id="attach-btn" class="composer-icon-btn" title="Add files or tools"></button>
+          <div class="attach-menu" id="attach-menu" style="display:none;">
+            <button type="button" id="attach-menu-files" class="attach-menu-item">
+              <span class="attach-menu-icon"></span>
+              <span data-i18n="composer.addFiles">Add files or photos</span>
+            </button>
+            <button type="button" id="attach-menu-tools" class="attach-menu-item">
+              <span class="attach-menu-icon"></span>
+              <span data-i18n="composer.openTools">Tools</span>
+            </button>
+          </div>
+        </div>
         <input type="file" id="file-input" multiple style="display:none;">
         <textarea id="chat-input" placeholder="Message the agent…" data-i18n-placeholder="chat.placeholder" rows="1" autofocus></textarea>
-        <button type="submit" id="send-btn" data-i18n="chat.send">Send</button>
+        <button type="button" id="mic-btn" class="composer-icon-btn" title="Press to record"></button>
+        <button type="submit" id="send-btn" title="Send">
+          <span class="send-icon"></span>
+        </button>
       </div>
       <div class="composer-hint" id="composer-hint"></div>
     </form>
