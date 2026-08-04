@@ -570,7 +570,20 @@ button.full { width: 100%; }
 
 .user-menu-items button:hover { background: var(--accent-bg); color: var(--accent); }
 
-.menu-icon { width: 16px; text-align: center; flex-shrink: 0; font-size: 13px; }
+.menu-icon { 
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px; 
+  height: 16px;
+  text-align: center; 
+  flex-shrink: 0; 
+  font-size: 13px; 
+}
+.menu-icon svg {
+  width: 16px;
+  height: 16px;
+}
 
 .user-menu-item-wrap { position: relative; }
 .menu-caret { margin-inline-start: auto; opacity: 0.6; }
@@ -1992,6 +2005,9 @@ html[dir="rtl"] #weather-content .uc-section-title {
 }
 
 /* Crop Modal */
+#crop-overlay {
+  z-index: 1000 !important;
+}
 .modal-crop {
   max-width: 90vw;
   max-height: 90vh;
@@ -2019,8 +2035,21 @@ html[dir="rtl"] #weather-content .uc-section-title {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  background: var(--bg-card);
+  background: var(--card);
   border-top: 1px solid var(--border);
+}
+.modal-crop .modal-actions button.secondary {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  font-weight: 500;
+}
+.modal-crop .modal-actions button.secondary:hover {
+  background: var(--border);
 }
 @media (max-width: 640px) {
   .modal-crop {

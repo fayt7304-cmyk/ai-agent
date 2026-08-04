@@ -43,6 +43,7 @@ function resetToLoginMode() {
   authTitle.textContent = t("auth.title");
   authSubtitle.textContent = t("auth.subtitle");
   signupSubmitBtn.textContent = t("auth.createAccount");
+  googleBtn.href = api.googleLoginUrl("login");
   authTabs.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
   authTabs.querySelector('[data-auth-tab="login"]')?.classList.add("active");
   showForm("login");

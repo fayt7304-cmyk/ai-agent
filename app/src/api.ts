@@ -98,7 +98,8 @@ export const api = {
       body: JSON.stringify({ username, email, password }),
     }),
 
-  googleLoginUrl: () => `${API_BASE}/api/auth/google`,
+  googleLoginUrl: (mode?: "login" | "link") => 
+    `${API_BASE}/api/auth/google${mode ? "?mode=" + mode : ""}`,
 
   googleLinkUrl: () => `${API_BASE}/api/auth/google?mode=link`,
 

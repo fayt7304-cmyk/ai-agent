@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Agent — powered by Mistral</title>
+<title>Paul</title>
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#185fa5">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
@@ -19,8 +19,8 @@
   <div class="auth-card" id="auth-card">
     <header class="auth-header">
       <button id="auth-close-btn" class="icon-btn auth-close-btn" style="display:none;" title="Keep browsing as guest">✕</button>
-      <h1 id="auth-title" data-i18n="auth.title">Agent</h1>
-      <p id="auth-subtitle" data-i18n="auth.subtitle">Powered by Mistral · your account, your server</p>
+      <h1 id="auth-title" data-i18n="auth.title">Paul</h1>
+      <p id="auth-subtitle" data-i18n="auth.subtitle">Your account, your server</p>
     </header>
 
     <a href="#" id="google-login-btn" class="google-btn" data-i18n="auth.continueGoogle">Continue with Google</a>
@@ -85,7 +85,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-top">
       <div class="sidebar-top-row">
-        <h1 class="brand">Agent</h1>
+        <h1 class="brand">Paul</h1>
         <button id="sidebar-search-btn" class="icon-btn" title="Search chats"></button>
         <button id="sidebar-toggle" class="icon-btn sidebar-toggle-btn" title="Close sidebar"></button>
       </div>
@@ -224,7 +224,10 @@
         <div class="settings-nav-tabs">
           <button type="button" class="settings-nav-btn active" data-settings-tab="profile" data-i18n="settings.tabProfile">Profile</button>
           <button type="button" class="settings-nav-btn" data-settings-tab="preferences" data-i18n="settings.tabPreferences">Preferences</button>
+          <button type="button" class="settings-nav-btn" data-settings-tab="voice" data-i18n="settings.tabVoice">Voice</button>
+          <button type="button" class="settings-nav-btn" data-settings-tab="animations" data-i18n="settings.tabAnimations">Animations</button>
           <button type="button" class="settings-nav-btn" data-settings-tab="security" data-i18n="settings.tabSecurity">Security &amp; Access</button>
+          <button type="button" class="settings-nav-btn" data-settings-tab="data" data-i18n="settings.tabData">Data &amp; Memory</button>
           <button type="button" class="settings-nav-btn" data-settings-tab="privacy" data-i18n="settings.tabPrivacy">Privacy</button>
         </div>
       </nav>
@@ -326,6 +329,99 @@
           </div>
         </section>
 
+        <!-- Voice Settings -->
+        <section class="settings-panel" data-settings-panel="voice">
+          <h2 class="settings-panel-title" data-i18n="settings.tabVoice">Voice Settings</h2>
+          <div class="settings-card">
+            <div class="settings-card-title" data-i18n="settings.voiceLanguage">Voice Language</div>
+            <div class="settings-card-desc" data-i18n="settings.voiceLanguageDesc">Choose the language for text-to-speech.</div>
+            <select id="voice-language-select">
+              <option value="en">English</option>
+              <option value="es">Español</option>
+              <option value="fr">Français</option>
+              <option value="de">Deutsch</option>
+              <option value="it">Italiano</option>
+              <option value="pt">Português</option>
+              <option value="ar">العربية</option>
+              <option value="zh">中文</option>
+            </select>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title" data-i18n="settings.voiceStyle">Voice Style</div>
+            <div class="settings-card-desc" data-i18n="settings.voiceStyleDesc">Choose how Paul speaks to you.</div>
+            <select id="voice-style-select">
+              <option value="natural">Natural</option>
+              <option value="formal">Formal</option>
+              <option value="friendly">Friendly</option>
+              <option value="calm">Calm</option>
+            </select>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title" data-i18n="settings.voiceSpeed">Voice Speed</div>
+            <div class="settings-card-desc" data-i18n="settings.voiceSpeedDesc">Adjust the speaking speed.</div>
+            <input type="range" id="voice-speed-slider" min="0.5" max="2" step="0.1" value="1" style="width: 100%;">
+            <div style="text-align: center; margin-top: 8px; font-size: 12px; color: var(--text-secondary);" id="voice-speed-value">1.0x</div>
+          </div>
+        </section>
+
+        <!-- Animations & Motion -->
+        <section class="settings-panel" data-settings-panel="animations">
+          <h2 class="settings-panel-title" data-i18n="settings.tabAnimations">Animations &amp; Motion</h2>
+          <div class="settings-card">
+            <div class="settings-card-title" data-i18n="settings.animationLevel">Animation Level</div>
+            <div class="settings-card-desc" data-i18n="settings.animationLevelDesc">Control the amount of motion in the app.</div>
+            <div class="segmented" id="animation-segmented">
+              <button data-animation-level="none" data-i18n="settings.animNone">None</button>
+              <button data-animation-level="reduced" data-i18n="settings.animReduced">Reduced</button>
+              <button data-animation-level="normal" data-i18n="settings.animNormal">Normal</button>
+            </div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title" data-i18n="settings.fontFamily">Font Family</div>
+            <div class="settings-card-desc" data-i18n="settings.fontFamilyDesc">Choose the typeface used throughout the app.</div>
+            <select id="font-family-select">
+              <option value="system">System Default</option>
+              <option value="serif">Serif</option>
+              <option value="mono">Monospace</option>
+              <option value="rounded">Rounded</option>
+            </select>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title" data-i18n="settings.fontSize">Font Size</div>
+            <div class="settings-card-desc" data-i18n="settings.fontSizeDesc">Adjust the base text size.</div>
+            <input type="range" id="font-size-slider" min="12" max="18" step="1" value="14" style="width: 100%;">
+            <div style="text-align: center; margin-top: 8px; font-size: 12px; color: var(--text-secondary);" id="font-size-value">14px</div>
+          </div>
+        </section>
+
+        <!-- Data & Memory -->
+        <section class="settings-panel" data-settings-panel="data">
+          <h2 class="settings-panel-title" data-i18n="settings.tabData">Data &amp; Memory</h2>
+          <div class="settings-card">
+            <div class="settings-card-title" data-i18n="settings.activeSessions">Active Sessions</div>
+            <div class="settings-card-desc" data-i18n="settings.activeSessionsDesc">Manage your active sessions and devices.</div>
+            <div id="active-sessions-list" style="margin-top: 12px;">
+              <p style="color: var(--text-secondary); font-size: 13px;">Loading sessions...</p>
+            </div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title" data-i18n="settings.paulMemory">Paul's Memory</div>
+            <div class="settings-card-desc" data-i18n="settings.paulMemoryDesc">Generate memories from your conversations for Paul to remember important details.</div>
+            <button type="button" id="generate-memory-btn" class="secondary-btn" data-i18n="settings.generateMemory">Generate Memory from Chats</button>
+            <div id="memory-list" style="margin-top: 12px;"></div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title" data-i18n="settings.uploadedData">Uploaded Files</div>
+            <div class="settings-card-desc" data-i18n="settings.uploadedDataDesc">Manage files you've uploaded to the app.</div>
+            <button type="button" id="manage-uploads-btn" class="secondary-btn" data-i18n="settings.manageUploads">View Uploads</button>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title" data-i18n="settings.exportData">Export Your Data</div>
+            <div class="settings-card-desc" data-i18n="settings.exportDataDesc">Download all your conversations and settings as a JSON file.</div>
+            <button type="button" id="export-data-btn" class="secondary-btn" data-i18n="settings.exportData">Export Data</button>
+          </div>
+        </section>
+
         <!-- Privacy -->
         <section class="settings-panel" data-settings-panel="privacy">
           <h2 class="settings-panel-title" data-i18n="settings.tabPrivacy">Privacy</h2>
@@ -336,6 +432,15 @@
                 <div class="settings-card-desc" data-i18n="settings.deleteAllChatsDesc">Permanently delete all of your conversations. This can't be undone.</div>
               </div>
               <button type="button" id="delete-all-chats-btn" class="danger-btn" data-i18n="settings.deleteAllChats">Delete all chats</button>
+            </div>
+          </div>
+          <div class="settings-card danger-card">
+            <div class="settings-card-row">
+              <div>
+                <div class="settings-card-title" data-i18n="settings.deleteAccount">Delete Account</div>
+                <div class="settings-card-desc" data-i18n="settings.deleteAccountDesc">Permanently delete your account and all associated data. This action cannot be reversed.</div>
+              </div>
+              <button type="button" id="delete-account-btn" class="danger-btn" data-i18n="settings.deleteAccount">Delete Account</button>
             </div>
           </div>
         </section>
