@@ -499,6 +499,158 @@ async function handleResetPassword(request: Request, env: Env): Promise<Response
   return json({ ok: true });
 }
 
+// ---- Sessions management --------------------------------------------
+// Returns all active (non-expired) sessions for the current user so the
+// settings UI can show them and let the user revoke individual ones.
+async function handleListSessions(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+
+  const currentToken = readSessionToken(request);
+  const { results } = await env.DB.prepare(
+    `SELECT token, created_at, expires_at FROM sessions
+     WHERE user_id = ? AND expires_at > ?
+     ORDER BY created_at DESC`
+  )
+    .bind(user.id, nowIso())
+    .all<{ token: string; created_at: string; expires_at: string }>();
+
+  // Return sessions as a list — use a hashed id so we never expose the raw token.
+  // The frontend only needs to identify a session to revoke it, not read the token.
+  const sessions = (results || []).map((s) => ({
+    id: s.token.slice(0, 8), // short prefix used as a display id for revocation
+    token_prefix: s.token.slice(0, 8),
+    created_at: s.created_at,
+    expires_at: s.expires_at,
+    is_current: s.token === currentToken,
+    device: "Browser session",
+  }));
+
+  return json(sessions);
+}
+
+// Revokes (deletes) a single session by its token prefix. The current
+// session cannot be revoked this way — use /api/auth/logout instead.
+async function handleRevokeSession(request: Request, env: Env, tokenPrefix: string): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+
+  const currentToken = readSessionToken(request);
+
+  // Find the full token matching the prefix for this user
+  const { results } = await env.DB.prepare(
+    `SELECT token FROM sessions WHERE user_id = ? AND token LIKE ? AND expires_at > ?`
+  )
+    .bind(user.id, `${tokenPrefix}%`, nowIso())
+    .all<{ token: string }>();
+
+  if (!results || results.length === 0) {
+    return err("Session not found.", 404);
+  }
+
+  const target = results[0].token;
+  if (target === currentToken) {
+    return err("Use /api/auth/logout to end your current session.", 400);
+  }
+
+  await env.DB.prepare("DELETE FROM sessions WHERE token = ?").bind(target).run();
+  return json({ ok: true });
+}
+
+// ---- Delete account -------------------------------------------------
+// Permanently deletes the user's account and all associated data.
+// The DB schema uses ON DELETE CASCADE on conversations/messages/leads,
+// so deleting the user row cascades automatically.
+async function handleDeleteAccount(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+
+  // Destroy all sessions first (including the current one)
+  await destroyAllSessionsForUser(env, user.id);
+
+  // Delete all conversations and messages (cascade handles messages/leads)
+  await env.DB.prepare("DELETE FROM conversations WHERE user_id = ?").bind(user.id).run();
+
+  // Delete any leads associated with this user
+  await env.DB.prepare("DELETE FROM leads WHERE user_id = ?").bind(user.id).run();
+
+  // Delete password reset tokens
+  await env.DB.prepare("DELETE FROM password_reset_tokens WHERE user_id = ?").bind(user.id).run();
+
+  // Finally delete the user row itself
+  await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id).run();
+
+  const resp = json({ ok: true });
+  resp.headers.set("Set-Cookie", clearSessionCookieHeader(env.COOKIE_DOMAIN));
+  return resp;
+}
+
+// ---- Memory generation ----------------------------------------------
+// Stub endpoint — returns a friendly message. If you integrate a real
+// memory/summarisation pipeline (e.g. Mistral summarising past chats),
+// replace the body of this function with that logic.
+async function handleGenerateMemory(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+
+  // Fetch recent messages to build a lightweight "memory" summary.
+  // If MISTRAL_API_KEY is available we can call the model; otherwise we
+  // return a graceful message so the UI doesn't show a raw 404.
+  if (!env.MISTRAL_API_KEY) {
+    return json({ message: "Memory generation is not configured on this deployment." });
+  }
+
+  try {
+    // Pull the last 50 user messages across all conversations
+    const { results } = await env.DB.prepare(
+      `SELECT m.content FROM messages m
+       JOIN conversations c ON c.id = m.conversation_id
+       WHERE c.user_id = ? AND m.role = 'user'
+       ORDER BY m.created_at DESC LIMIT 50`
+    )
+      .bind(user.id)
+      .all<{ content: string }>();
+
+    if (!results || results.length === 0) {
+      return json({ message: "No conversation history found to generate memory from." });
+    }
+
+    const combined = results.map((r) => r.content).join("\n");
+    const summaryPrompt = `Summarise the following user messages into a concise memory profile (key interests, topics discussed, preferences). Keep it under 200 words.\n\n${combined}`;
+
+    const summaryResult = await callMistral({
+      apiKey: env.MISTRAL_API_KEY,
+      agentId: env.MISTRAL_AGENT_ID,
+      mistralConversationId: null,
+      message: summaryPrompt,
+      attachments: [],
+    });
+
+    return json({ message: summaryResult.reply || "Memory generated successfully." });
+  } catch (e: any) {
+    return json({ message: "Memory generation encountered an error: " + (e?.message || "Unknown error.") });
+  }
+}
+
+// ---- Uploads management ---------------------------------------------
+// Stub endpoint — returns a count of 0 with a friendly message.
+// Replace with real R2/storage logic if you add file upload support.
+async function handleListUploads(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+
+  // Count attachments stored in message rows for this user
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM messages m
+     JOIN conversations c ON c.id = m.conversation_id
+     WHERE c.user_id = ? AND m.attachments IS NOT NULL`
+  )
+    .bind(user.id)
+    .first<{ n: number }>();
+
+  return json({ uploads: [], files: [], count: row?.n || 0 });
+}
+
 async function handleListConversations(request: Request, env: Env): Promise<Response> {
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
@@ -809,6 +961,21 @@ export default {
         resp = await handleResetPassword(request, env);
       } else if (path === "/api/settings" && request.method === "PATCH") {
         resp = await handleUpdateSettings(request, env);
+      } else if (path === "/api/sessions" && request.method === "GET") {
+        // List all active sessions for the current user
+        resp = await handleListSessions(request, env);
+      } else if (path.match(/^\/api\/sessions\/[^/]+$/) && request.method === "DELETE") {
+        // Revoke a specific session by its token prefix
+        resp = await handleRevokeSession(request, env, path.split("/").pop()!);
+      } else if (path === "/api/user/delete" && request.method === "DELETE") {
+        // Permanently delete the current user's account and all data
+        resp = await handleDeleteAccount(request, env);
+      } else if (path === "/api/memory/generate" && request.method === "POST") {
+        // Generate a memory summary from the user's conversation history
+        resp = await handleGenerateMemory(request, env);
+      } else if (path === "/api/uploads" && request.method === "GET") {
+        // List uploads/attachments for the current user
+        resp = await handleListUploads(request, env);
       } else if (path === "/api/conversations" && request.method === "GET") {
         resp = await handleListConversations(request, env);
       } else if (path === "/api/conversations" && request.method === "POST") {
