@@ -435,33 +435,28 @@ button.full { width: 100%; }
   white-space: nowrap;
 }
 
-.convo-delete {
-  opacity: 0;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  color: var(--text-secondary);
-  font-size: 13px;
-  padding: 2px 4px;
-}
-
-.convo-item:hover .convo-delete { opacity: 1; }
-.convo-delete:hover { color: var(--danger); }
-
-.convo-rename {
+.convo-dots {
   opacity: 0;
   border: none;
   background: transparent;
   cursor: pointer;
   color: var(--text-secondary);
   padding: 2px 4px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
-.convo-rename svg { width: 14px; height: 14px; }
-.convo-item:hover .convo-rename { opacity: 1; }
-.convo-rename:hover { color: var(--accent); }
+.convo-dots svg { width: 15px; height: 15px; }
+.convo-item:hover .convo-dots { opacity: 1; }
+.convo-item.active .convo-dots { opacity: 1; }
+.convo-dots:hover { color: var(--accent); background: var(--accent-bg); }
+
+/* Always show the dots on touch devices, since there's no hover state */
+@media (hover: none) {
+  .convo-dots { opacity: 1; }
+}
 
 .convo-title-input {
   flex: 1;
@@ -474,8 +469,12 @@ button.full { width: 100%; }
   padding: 2px 6px;
 }
 
-.convo-item.renaming .convo-rename,
-.convo-item.renaming .convo-delete { opacity: 0; pointer-events: none; }
+.convo-item.renaming .convo-dots { opacity: 0; pointer-events: none; }
+
+/* Sidebar per-item dropdown reuses .header-dropdown/.more-option styling but is
+   positioned with inline fixed coordinates (computed in JS), not relative to a
+   header button, since it's appended to <body> to escape the sidebar's scroll clip. */
+.convo-dropdown { min-width: 170px; }
 
 .sidebar-bottom {
   border-top: 1px solid var(--border);

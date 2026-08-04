@@ -451,6 +451,135 @@ function setHint(text: string, isError = false) {
   composerHint.classList.toggle("error", isError);
 }
 
+// ---- Per-conversation "..." dropdown (sidebar) ----
+let openConvoMenuEl: HTMLDivElement | null = null;
+let openConvoMenuFor: string | null = null;
+
+function closeConvoMenu() {
+  if (openConvoMenuEl) openConvoMenuEl.remove();
+  openConvoMenuEl = null;
+  openConvoMenuFor = null;
+}
+document.addEventListener("click", closeConvoMenu);
+window.addEventListener("resize", closeConvoMenu);
+document.addEventListener(
+  "scroll",
+  (e) => {
+    // Don't close for scroll events happening inside the dropdown itself
+    if (openConvoMenuEl && e.target instanceof Node && openConvoMenuEl.contains(e.target)) return;
+    closeConvoMenu();
+  },
+  true
+);
+
+/**
+ * Opens the "..." dropdown for a single conversation item in the sidebar, anchored
+ * to the dots button that triggered it. Appended to <body> (not the item) so it
+ * isn't clipped by the sidebar list's overflow-y:auto scroll container.
+ */
+function openConvoMenu(anchor: HTMLElement, c: Conversation, startRename: () => void) {
+  if (openConvoMenuFor === c.id) {
+    closeConvoMenu();
+    return;
+  }
+  closeConvoMenu();
+
+  const menu = document.createElement("div");
+  menu.className = "header-dropdown convo-dropdown";
+  menu.style.display = "block";
+  document.body.appendChild(menu);
+  openConvoMenuEl = menu;
+  openConvoMenuFor = c.id;
+
+  const addItem = (label: string, iconSvg: string, onClick: () => void, danger = false) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "more-option" + (danger ? " danger" : "");
+    btn.innerHTML = `<span class="menu-icon">${iconSvg}</span> ${label}`;
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeConvoMenu();
+      onClick();
+    });
+    menu.appendChild(btn);
+  };
+
+  addItem(t("convo.rename"), icons.pencil, () => startRename());
+  addItem(c.starred ? "Unstar" : "Star", c.starred ? icons.starFilled : icons.star, async () => {
+    try {
+      const result = await api.starConversation(c.id);
+      c.starred = result.starred;
+      renderConvoList();
+      showToast(result.starred ? "⭐ Conversation starred" : "Conversation unstarred");
+    } catch {
+      showToast("Could not update star status.");
+    }
+  });
+  addItem("Copy Link", icons.link, async () => {
+    const url = `${window.location.origin}${window.location.pathname}#conv=${c.id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast("Link copied to clipboard!");
+    } catch {
+      showToast("Could not copy link. URL: " + url);
+    }
+  });
+  addItem(c.archived ? "Unarchive" : "Archive", icons.archive, async () => {
+    try {
+      const result = await api.archiveConversation(c.id);
+      c.archived = result.archived;
+      if (result.archived) {
+        conversations = conversations.filter((x) => x.id !== c.id);
+        if (currentConversationId === c.id) {
+          currentConversationId = null;
+          renderMessages([]);
+          chatTitle.textContent = t("chat.newChat");
+        }
+        showToast("Conversation archived");
+      } else {
+        showToast("Conversation unarchived");
+      }
+      renderConvoList();
+    } catch {
+      showToast("Could not archive conversation.");
+    }
+  });
+  addItem(
+    "Delete",
+    icons.close,
+    async () => {
+      if (!confirm(`Delete "${c.title}"?`)) return;
+      try {
+        await api.deleteConversation(c.id);
+        conversations = conversations.filter((x) => x.id !== c.id);
+        if (currentConversationId === c.id) {
+          currentConversationId = null;
+          renderMessages([]);
+          chatTitle.textContent = t("chat.newChat");
+        }
+        renderConvoList();
+      } catch {
+        showToast("Could not delete conversation.");
+      }
+    },
+    true
+  );
+
+  // Position after the menu has real dimensions, anchored to the dots button,
+  // flipped to stay inside the viewport on narrow / mobile screens.
+  const rect = anchor.getBoundingClientRect();
+  const menuRect = menu.getBoundingClientRect();
+  let top = rect.bottom + 4;
+  if (top + menuRect.height > window.innerHeight) top = Math.max(4, rect.top - menuRect.height - 4);
+  let left = rect.right - menuRect.width;
+  if (left < 4) left = 4;
+  if (left + menuRect.width > window.innerWidth - 4) left = window.innerWidth - menuRect.width - 4;
+  menu.style.position = "fixed";
+  menu.style.top = `${top}px`;
+  menu.style.left = `${left}px`;
+  menu.style.right = "auto";
+}
+
 function renderConvoList() {
   convoList.innerHTML = "";
   for (const c of conversations) {
@@ -513,35 +642,18 @@ function renderConvoList() {
       input.addEventListener("click", (e) => e.stopPropagation());
     }
 
-    const rename = document.createElement("button");
-    rename.className = "convo-rename";
-    rename.innerHTML = icons.pencil;
-    rename.type = "button";
-    rename.title = t("convo.rename");
-    rename.addEventListener("click", (e) => {
+    const dots = document.createElement("button");
+    dots.className = "convo-dots";
+    dots.innerHTML = icons.more;
+    dots.type = "button";
+    dots.title = "More options";
+    dots.addEventListener("click", (e) => {
       e.stopPropagation();
-      startRename();
+      openConvoMenu(dots, c, startRename);
     });
 
-    const del = document.createElement("button");
-    del.className = "convo-delete";
-    del.innerHTML = icons.close;
-    del.title = "Delete conversation";
-    del.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      if (!confirm(`Delete "${c.title}"?`)) return;
-      await api.deleteConversation(c.id);
-      conversations = conversations.filter((x) => x.id !== c.id);
-      if (currentConversationId === c.id) {
-        currentConversationId = null;
-        renderMessages([]);
-        chatTitle.textContent = t("chat.newChat");
-      }
-      renderConvoList();
-    });
     item.appendChild(title);
-    item.appendChild(rename);
-    item.appendChild(del);
+    item.appendChild(dots);
     item.addEventListener("click", () => selectConversation(c.id));
     convoList.appendChild(item);
   }
