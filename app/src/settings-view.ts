@@ -1,4 +1,5 @@
 import { api, ApiError, type User } from "./api";
+import { API_BASE } from "./api";
 import { setTheme, type Theme } from "./theme";
 import { setLang, getStoredLang, t, type Lang } from "./lib/i18n";
 import { refreshConversations } from "./chat-view";
@@ -99,6 +100,22 @@ function renderProfile(user: User) {
   pendingAvatar = undefined;
 }
 
+/** Helper: make an authenticated request to the API base, same pattern as api.ts */
+async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const resp = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(init.headers || {}),
+    },
+  });
+  let data: any = null;
+  try { data = await resp.json(); } catch { /* no body */ }
+  if (!resp.ok) throw new ApiError(data?.error || `Request failed (${resp.status})`, resp.status);
+  return data as T;
+}
+
 export function initSettingsView(onUserUpdated: (user: User) => void) {
   closeBtn.addEventListener("click", close);
   overlay.addEventListener("click", (e) => {
@@ -117,8 +134,7 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     btn.addEventListener("click", () => showTab(btn.dataset.settingsTab!));
   });
 
-  // Language applies (and saves locally) the moment it's picked — same pattern as theme,
-  // but kept device-local (localStorage) rather than synced to the account for now.
+  // Language applies (and saves locally) the moment it's picked
   languageSelect.value = getStoredLang();
   languageSelect.addEventListener("change", () => {
     setLang(languageSelect.value as Lang);
@@ -129,14 +145,14 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
   voiceLanguageSelect.value = prefs.voiceLanguage;
   voiceLanguageSelect.addEventListener("change", () => {
     updateVoiceLanguage(voiceLanguageSelect.value as VoiceLanguage);
-    settingsSuccess.textContent = "Voice language updated";
+    settingsSuccess.textContent = t("settings.voiceLanguage") + " " + t("settings.updated");
     settingsError.textContent = "";
   });
 
   voiceStyleSelect.value = prefs.voiceStyle;
   voiceStyleSelect.addEventListener("change", () => {
     updateVoiceStyle(voiceStyleSelect.value as VoiceStyle);
-    settingsSuccess.textContent = "Voice style updated";
+    settingsSuccess.textContent = t("settings.voiceStyle") + " " + t("settings.updated");
     settingsError.textContent = "";
   });
 
@@ -146,6 +162,8 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     const speed = parseFloat(voiceSpeedSlider.value);
     updateVoiceSpeed(speed);
     voiceSpeedValue.textContent = speed.toFixed(1) + "x";
+    settingsSuccess.textContent = t("settings.voiceSpeed") + " " + t("settings.updated");
+    settingsError.textContent = "";
   });
 
   // Animation & Font settings
@@ -156,7 +174,7 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
       animationSegmented.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       updateAnimationLevel(level);
-      settingsSuccess.textContent = t("settings.animationLevel") + " updated";
+      settingsSuccess.textContent = t("settings.animationLevel") + " " + t("settings.updated");
       settingsError.textContent = "";
     });
   });
@@ -164,7 +182,7 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
   fontFamilySelect.value = prefs.fontFamily;
   fontFamilySelect.addEventListener("change", () => {
     updateFontFamily(fontFamilySelect.value as FontFamily);
-    settingsSuccess.textContent = "Font family updated";
+    settingsSuccess.textContent = t("settings.fontFamily") + " " + t("settings.updated");
     settingsError.textContent = "";
   });
 
@@ -174,46 +192,26 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     const size = parseInt(fontSizeSlider.value);
     updateFontSize(size);
     fontSizeValue.textContent = size + "px";
-    settingsSuccess.textContent = "Font size updated";
+    settingsSuccess.textContent = t("settings.fontSize") + " " + t("settings.updated");
     settingsError.textContent = "";
   });
 
-  // Voice settings
-  voiceLanguageSelect.value = prefs.voiceLanguage;
-  voiceLanguageSelect.addEventListener("change", () => {
-    updateVoiceLanguage(voiceLanguageSelect.value as VoiceLanguage);
-    settingsSuccess.textContent = "Voice language updated";
-    settingsError.textContent = "";
-  });
+  // ── Data & Memory buttons ─────────────────────────────────────────────────
+  // All requests go through API_BASE with credentials so the auth cookie is sent.
 
-  voiceStyleSelect.value = prefs.voiceStyle;
-  voiceStyleSelect.addEventListener("change", () => {
-    updateVoiceStyle(voiceStyleSelect.value as VoiceStyle);
-    settingsSuccess.textContent = "Voice style updated";
-    settingsError.textContent = "";
-  });
-
-  voiceSpeedSlider.value = prefs.voiceSpeed.toString();
-  voiceSpeedValue.textContent = prefs.voiceSpeed.toFixed(1) + "x";
-  voiceSpeedSlider.addEventListener("input", () => {
-    const speed = parseFloat(voiceSpeedSlider.value);
-    updateVoiceSpeed(speed);
-    voiceSpeedValue.textContent = speed.toFixed(1) + "x";
-    settingsSuccess.textContent = "Voice speed updated";
-    settingsError.textContent = "";
-  });
-
-  // Data & Memory buttons
   generateMemoryBtn.addEventListener("click", async () => {
     generateMemoryBtn.disabled = true;
+    settingsError.textContent = "";
+    settingsSuccess.textContent = "";
     try {
-      const res = await fetch("/api/memory/generate", { method: "POST" });
-      if (!res.ok) throw new Error("Failed to generate memory");
-      const result = await res.json();
-      settingsSuccess.textContent = result.message || "Memory generated successfully";
-      settingsError.textContent = "";
+      const result = await apiRequest<{ message?: string }>("/api/memory/generate", { method: "POST" });
+      settingsSuccess.textContent = result.message || t("settings.memoryGenerated");
     } catch (err) {
-      settingsError.textContent = "Failed to generate memory";
+      // If the endpoint doesn't exist on this deployment, show a friendly message
+      // instead of a raw network error.
+      settingsError.textContent = err instanceof ApiError && err.status !== 404
+        ? err.message
+        : t("settings.memoryNotAvailable");
     } finally {
       generateMemoryBtn.disabled = false;
     }
@@ -221,20 +219,25 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
 
   exportDataBtn.addEventListener("click", async () => {
     exportDataBtn.disabled = true;
+    settingsError.textContent = "";
+    settingsSuccess.textContent = "";
     try {
-      const res = await fetch("/api/user/export", { method: "GET" });
-      if (!res.ok) throw new Error("Failed to export data");
-      const blob = await res.blob();
+      // Export: download all conversations as JSON
+      const { conversations } = await api.listConversations();
+      const exportObj = {
+        exported_at: new Date().toISOString(),
+        conversations,
+      };
+      const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `paul-data-${new Date().toISOString().split("T")[0]}.json`;
+      a.download = `data-export-${new Date().toISOString().split("T")[0]}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      settingsSuccess.textContent = "Data exported successfully";
-      settingsError.textContent = "";
+      settingsSuccess.textContent = t("settings.dataExported");
     } catch (err) {
-      settingsError.textContent = "Failed to export data";
+      settingsError.textContent = err instanceof ApiError ? err.message : t("settings.dataExportError");
     } finally {
       exportDataBtn.disabled = false;
     }
@@ -242,76 +245,88 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
 
   manageUploadsBtn.addEventListener("click", async () => {
     manageUploadsBtn.disabled = true;
+    settingsError.textContent = "";
+    settingsSuccess.textContent = "";
     try {
-      const res = await fetch("/api/uploads", { method: "GET" });
-      if (!res.ok) throw new Error("Failed to fetch uploads");
-      const uploads = await res.json();
-      settingsSuccess.textContent = `You have ${uploads.length} uploaded file(s)`;
-      settingsError.textContent = "";
+      const data = await apiRequest<{ uploads?: any[]; files?: any[] }>("/api/uploads", { method: "GET" });
+      const count = (data.uploads || data.files || []).length;
+      settingsSuccess.textContent = t("settings.uploadsCount").replace("{n}", String(count));
     } catch (err) {
-      settingsError.textContent = "Failed to load uploads";
+      // Endpoint may not be implemented yet — show graceful message
+      settingsError.textContent = err instanceof ApiError && err.status !== 404
+        ? err.message
+        : t("settings.uploadsNotAvailable");
     } finally {
       manageUploadsBtn.disabled = false;
     }
   });
 
-  // Active sessions and delete account
+  // ── Active Sessions ───────────────────────────────────────────────────────
   const activeSessionsList = document.getElementById("active-sessions-list") as HTMLDivElement;
   const deleteAccountBtn = document.getElementById("delete-account-btn") as HTMLButtonElement;
 
   async function loadActiveSessions() {
+    activeSessionsList.innerHTML = `<p style='padding: 12px; color: var(--text-secondary); font-size: 13px;'>${t("settings.loadingSessions")}</p>`;
     try {
-      const res = await fetch("/api/sessions", { method: "GET" });
-      if (!res.ok) throw new Error("Failed to fetch sessions");
-      const sessions = await res.json();
+      const data = await apiRequest<any[]>("/api/sessions", { method: "GET" });
+      const sessions: any[] = Array.isArray(data) ? data : [];
       activeSessionsList.innerHTML = "";
       if (sessions.length === 0) {
-        activeSessionsList.innerHTML = "<p style='padding: 12px; color: var(--text-secondary);'>No active sessions</p>";
+        activeSessionsList.innerHTML = `<p style='padding: 12px; color: var(--text-secondary); font-size: 13px;'>${t("settings.noActiveSessions")}</p>`;
       } else {
         sessions.forEach((session: any) => {
           const sessionEl = document.createElement("div");
-          sessionEl.style.cssText = "padding: 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;";
+          sessionEl.className = "session-item";
+          sessionEl.style.cssText = "padding: 12px 14px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 12px;";
           const revokeBtn = document.createElement("button");
-          revokeBtn.textContent = "Revoke";
-          revokeBtn.style.cssText = "padding: 6px 12px; background: var(--danger-bg); color: var(--danger); border: none; border-radius: 6px; cursor: pointer; font-size: 12px;";
+          revokeBtn.textContent = t("settings.revokeSession");
+          revokeBtn.className = "danger-btn";
+          revokeBtn.style.cssText = "padding: 5px 12px; font-size: 12px; flex-shrink: 0;";
           revokeBtn.onclick = async () => {
+            revokeBtn.disabled = true;
             try {
-              await fetch(`/api/sessions/${session.id}`, { method: "DELETE" });
+              await apiRequest(`/api/sessions/${session.id}`, { method: "DELETE" });
               loadActiveSessions();
-            } catch (err) {
-              console.error("Failed to revoke session", err);
+            } catch {
+              revokeBtn.disabled = false;
             }
           };
-          sessionEl.innerHTML = `
-            <div>
-              <div style='font-weight: 500;'>${session.device || "Device"}</div>
-              <div style='font-size: 12px; color: var(--text-secondary);'>${new Date(session.created_at).toLocaleString()}</div>
-            </div>
+          const info = document.createElement("div");
+          info.innerHTML = `
+            <div style='font-weight: 500; font-size: 13px;'>${session.device || t("settings.unknownDevice")}</div>
+            <div style='font-size: 12px; color: var(--text-secondary); margin-top: 2px;'>${new Date(session.created_at).toLocaleString()}</div>
           `;
+          sessionEl.appendChild(info);
           sessionEl.appendChild(revokeBtn);
           activeSessionsList.appendChild(sessionEl);
         });
       }
     } catch (err) {
-      activeSessionsList.innerHTML = "<p style='padding: 12px; color: var(--danger);'>Failed to load sessions</p>";
+      // Endpoint may not be implemented — show graceful message
+      const msg = err instanceof ApiError && err.status !== 404
+        ? err.message
+        : t("settings.sessionsNotAvailable");
+      activeSessionsList.innerHTML = `<p style='padding: 12px; color: var(--text-secondary); font-size: 13px;'>${msg}</p>`;
     }
   }
   loadActiveSessions();
 
+  // ── Delete Account ────────────────────────────────────────────────────────
   deleteAccountBtn.addEventListener("click", async () => {
-    const confirmed = confirm(t("settings.deleteAccountConfirm") || "Are you sure? This cannot be undone.");
+    const confirmed = confirm(t("settings.deleteAccountConfirm"));
     if (!confirmed) return;
     deleteAccountBtn.disabled = true;
+    settingsError.textContent = "";
+    settingsSuccess.textContent = "";
     try {
-      const res = await fetch("/api/user/delete", { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete account");
-      settingsSuccess.textContent = "Account deleted. Redirecting...";
+      await apiRequest("/api/user/delete", { method: "DELETE" });
+      settingsSuccess.textContent = t("settings.accountDeleted");
       setTimeout(() => {
         localStorage.clear();
         window.location.href = "/";
       }, 1500);
     } catch (err) {
-      settingsError.textContent = "Failed to delete account";
+      settingsError.textContent = err instanceof ApiError ? err.message : t("settings.deleteAccountError");
       deleteAccountBtn.disabled = false;
     }
   });

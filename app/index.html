@@ -6,8 +6,10 @@
 <title>Paul</title>
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#185fa5">
-<link rel="apple-touch-icon" href="/icons/icon-192.png">
-<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png">
   <link rel="stylesheet" href="/src/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
@@ -122,19 +124,39 @@
           </div>
         </div>
         <div class="user-menu-items">
-          <button id="save-account-btn" style="display:none;"><span class="menu-icon">💾</span><span data-i18n="menu.saveAccount">Save my account</span></button>
-          <button id="login-menu-btn" style="display:none;"><span class="menu-icon">🔑</span><span data-i18n="menu.login">Log in</span></button>
-          <button id="open-settings-btn"><span class="menu-icon">⚙️</span><span data-i18n="menu.settings">Settings</span></button>
+          <button id="save-account-btn" style="display:none;">
+            <span class="menu-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 13v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2"/><polyline points="7 9 10 12 13 9"/><line x1="10" y1="3" x2="10" y2="12"/></svg></span>
+            <span data-i18n="menu.saveAccount">Save my account</span>
+          </button>
+          <button id="login-menu-btn" style="display:none;">
+            <span class="menu-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-2"/><polyline points="10 15 15 10 10 5"/><line x1="15" y1="10" x2="3" y2="10"/></svg></span>
+            <span data-i18n="menu.login">Log in</span>
+          </button>
+          <button id="open-settings-btn">
+            <span class="menu-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="3"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42"/></svg></span>
+            <span data-i18n="menu.settings">Settings</span>
+          </button>
           <div class="user-menu-item-wrap" id="learn-more-wrap">
             <button id="learn-more-btn" type="button">
-              <span class="menu-icon">💡</span><span data-i18n="menu.learnMore">Learn more</span><span class="menu-caret">›</span>
+              <span class="menu-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="8"/><line x1="10" y1="9" x2="10" y2="14"/><circle cx="10" cy="6.5" r="0.5" fill="currentColor"/></svg></span>
+              <span data-i18n="menu.learnMore">Learn more</span>
+              <span class="menu-caret" style="margin-inline-start:auto;opacity:0.5;">›</span>
             </button>
             <div class="user-submenu" id="learn-more-submenu" style="display:none;">
-              <button id="keyboard-shortcuts-btn" type="button"><span class="menu-icon">⌨️</span><span data-i18n="menu.keyboardShortcuts">Keyboard shortcuts</span></button>
-              <button id="privacy-choices-btn" type="button"><span class="menu-icon">🔒</span><span data-i18n="menu.privacyChoices">Your privacy choices</span></button>
+              <button id="keyboard-shortcuts-btn" type="button">
+                <span class="menu-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="16" height="12" rx="2"/><path d="M6 9h1M10 9h1M14 9h1M6 13h8"/></svg></span>
+                <span data-i18n="menu.keyboardShortcuts">Keyboard shortcuts</span>
+              </button>
+              <button id="privacy-choices-btn" type="button">
+                <span class="menu-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2L3 5v5c0 4.4 3 8.5 7 9.5 4-1 7-5.1 7-9.5V5z"/></svg></span>
+                <span data-i18n="menu.privacyChoices">Your privacy choices</span>
+              </button>
             </div>
           </div>
-          <button id="logout-btn"><span class="menu-icon">↪️</span><span data-i18n="menu.logout">Log out</span></button>
+          <button id="logout-btn" class="danger-item">
+            <span class="menu-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"/><polyline points="10 15 5 10 10 5"/><line x1="5" y1="10" x2="17" y2="10"/></svg></span>
+            <span data-i18n="menu.logout">Log out</span>
+          </button>
         </div>
         <div class="user-menu-theme-row" id="user-menu-theme-row">
           <button type="button" class="theme-icon-btn" data-theme-option="light" title="Light theme">☀️</button>

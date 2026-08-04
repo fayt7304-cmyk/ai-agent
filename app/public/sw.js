@@ -9,8 +9,8 @@
 // which is where the "Response body is already used" clone errors came
 // from. This version only touches same-origin GETs and always resolves to
 // a real Response.
-const CACHE_NAME = "agent-shell-v2";
-const SHELL_URLS = ["/", "/manifest.json", "/icons/icon-192.png", "/icons/icon-512.png"];
+const CACHE_NAME = "agent-shell-v3";
+const SHELL_URLS = ["/", "/manifest.json", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_URLS)));

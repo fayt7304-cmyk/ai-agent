@@ -359,13 +359,14 @@ button.full { width: 100%; }
   align-items: center;
   gap: 8px;
   padding: 9px 12px;
-  border-radius: 8px;
+  border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--card);
   cursor: pointer;
   font-size: 13.5px;
   text-align: start;
   color: var(--text);
+  transition: border-color 0.15s ease, color 0.15s ease;
 }
 
 .new-chat-btn:hover { border-color: var(--accent); color: var(--accent); }
@@ -524,16 +525,18 @@ button.full { width: 100%; }
   border: none;
   background: transparent;
   cursor: pointer;
-  padding: 6px;
-  border-radius: 8px;
+  padding: 7px 8px;
+  border-radius: 10px;
   font-size: 13.5px;
+  transition: background 0.15s ease;
 }
 
 .user-menu-btn:hover { background: var(--card); }
+.user-menu-btn.active { background: var(--card); }
 
 .avatar {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   background: var(--accent);
   color: var(--accent-text);
@@ -543,6 +546,7 @@ button.full { width: 100%; }
   font-size: 12px;
   font-weight: 600;
   flex-shrink: 0;
+  box-shadow: 0 1px 4px rgba(24, 95, 165, 0.25);
 }
 
 .username {
@@ -553,14 +557,15 @@ button.full { width: 100%; }
 
 .user-menu {
   position: absolute;
-  bottom: 52px;
+  bottom: 56px;
   left: 10px;
   right: 10px;
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--shadow);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(20, 20, 18, 0.14), 0 2px 8px rgba(20, 20, 18, 0.06);
   z-index: 5;
+  overflow: hidden;
 }
 
 /* Collapsed sidebar is only 64px wide — anchoring the menu to left:10px/right:10px
@@ -578,8 +583,9 @@ button.full { width: 100%; }
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px;
+  padding: 14px 14px 12px;
   border-bottom: 1px solid var(--border);
+  background: var(--sidebar);
 }
 
 .user-menu-header .avatar { width: 32px; height: 32px; font-size: 13px; }
@@ -600,7 +606,7 @@ button.full { width: 100%; }
   white-space: nowrap;
 }
 
-.user-menu-items { border-bottom: 1px solid var(--border); padding: 4px 0; }
+.user-menu-items { border-bottom: 1px solid var(--border); padding: 6px 0; }
 
 .user-menu-items button {
   display: flex;
@@ -608,31 +614,46 @@ button.full { width: 100%; }
   gap: 12px;
   width: 100%;
   text-align: start;
-  padding: 12px 14px;
+  padding: 10px 14px;
   border: none;
   background: transparent;
   cursor: pointer;
   font-size: 13.5px;
   color: var(--text);
   min-height: 44px;
+  transition: background 0.15s ease, color 0.15s ease;
+  border-radius: 0;
 }
 
-.user-menu-items button:hover { background: var(--accent-bg); color: var(--accent); }
+.user-menu-items button:hover {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+/* Danger item (Logout) gets a red tint on hover */
+.user-menu-items button.danger-item:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
 
 .menu-icon { 
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px; 
-  height: 16px;
+  width: 18px; 
+  height: 18px;
   text-align: center; 
   flex-shrink: 0; 
-  font-size: 13px; 
+  font-size: 14px;
+  color: var(--text-secondary);
+  transition: color 0.15s ease;
 }
 .menu-icon svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
 }
+.user-menu-items button:hover .menu-icon { color: var(--accent); }
+.user-menu-items button.danger-item:hover .menu-icon { color: var(--danger); }
 
 .user-menu-item-wrap { position: relative; }
 .menu-caret { margin-inline-start: auto; opacity: 0.6; }
@@ -665,6 +686,15 @@ button.full { width: 100%; }
 }
 
 .user-submenu button:hover { background: var(--accent-bg); color: var(--accent); }
+
+.user-menu-footer {
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  background: var(--sidebar);
+}
 
 .user-menu-theme-row {
   display: flex;
@@ -1511,10 +1541,14 @@ select, .modal-body input, .modal-body textarea {
   border-radius: 8px;
   font-size: 13.5px;
   cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .settings-nav-btn:hover { background: var(--card); color: var(--text); }
-.settings-nav-btn.active { background: var(--card); color: var(--text); font-weight: 600; }
+.settings-nav-btn.active { background: var(--card); color: var(--accent); font-weight: 600; border-inline-start: 2px solid var(--accent); }
 
 .settings-panels {
   flex: 1;
@@ -1533,12 +1567,17 @@ select, .modal-body input, .modal-body textarea {
 
 .settings-card {
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 18px;
+  border-radius: 14px;
+  padding: 18px 20px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   background: var(--card);
+  transition: box-shadow 0.15s ease;
+}
+
+.settings-card:hover {
+  box-shadow: 0 2px 12px rgba(20, 20, 18, 0.06);
 }
 
 .settings-card-title { font-size: 14.5px; font-weight: 600; margin-bottom: 4px; }
