@@ -28,6 +28,7 @@ export interface Conversation {
   title: string;
   starred: boolean;
   archived: boolean;
+  visibility?: "private" | "shared";
   created_at: string;
   updated_at: string;
 }
@@ -164,13 +165,23 @@ export const api = {
       body: archived !== undefined ? JSON.stringify({ archived }) : "{}",
     }),
 
+  setConversationVisibility: (id: string, visibility: "private" | "shared") =>
+    request<{ ok: true; visibility: "private" | "shared" }>(`/api/conversations/${id}/visibility`, {
+      method: "PATCH",
+      body: JSON.stringify({ visibility }),
+    }),
+
   getConversationFiles: (id: string) =>
     request<{ files: ConversationFile[] }>(`/api/conversations/${id}/files`, { method: "GET" }),
 
   getConversationUsage: (id: string) =>
     request<ConversationUsage>(`/api/conversations/${id}/usage`, { method: "GET" }),
 
-  getMessages: (id: string) => request<{ messages: Message[] }>(`/api/conversations/${id}/messages`, { method: "GET" }),
+  getMessages: (id: string) =>
+    request<{ messages: Message[]; conversation?: { id: string; title: string; owner: boolean } }>(
+      `/api/conversations/${id}/messages`,
+      { method: "GET" }
+    ),
 
   sendMessage: (payload: { conversation_id?: string; message: string; attachments?: Attachment[] }) =>
     request<{ conversation_id: string; title: string; reply: string; attachments?: Attachment[] }>("/api/chat", {

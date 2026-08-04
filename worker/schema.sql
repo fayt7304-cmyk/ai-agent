@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   title TEXT NOT NULL DEFAULT 'New chat',
   starred INTEGER NOT NULL DEFAULT 0,
   archived INTEGER NOT NULL DEFAULT 0,
+  visibility TEXT NOT NULL DEFAULT 'private',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

@@ -875,10 +875,19 @@ async function handleGetMessages(request: Request, env: Env, id: string): Promis
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
 
-  const convo = await env.DB.prepare("SELECT id FROM conversations WHERE id = ? AND user_id = ?")
-    .bind(id, user.id)
-    .first();
+  const convo = await env.DB.prepare("SELECT id, user_id, title, visibility FROM conversations WHERE id = ?")
+    .bind(id)
+    .first<{ id: string; user_id: string; title: string; visibility: string }>();
+
+  // Distinguish "doesn't exist" from "exists but you're not allowed to see it" so the
+  // frontend can show a clear "ask the owner for access" message on shared links,
+  // rather than a generic not-found.
   if (!convo) return err("Conversation not found.", 404);
+  const isOwner = convo.user_id === user.id;
+  const isShared = convo.visibility === "shared";
+  if (!isOwner && !isShared) {
+    return err("Access forbidden. Ask the owner to share a link with access.", 403);
+  }
 
   const { results } = await env.DB.prepare(
     "SELECT id, role, content, attachments, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at ASC"
@@ -891,7 +900,26 @@ async function handleGetMessages(request: Request, env: Env, id: string): Promis
     attachments: m.attachments ? JSON.parse(m.attachments) : [],
   }));
 
-  return json({ messages });
+  return json({ messages, conversation: { id: convo.id, title: convo.title, owner: isOwner } });
+}
+
+async function handleSetConversationVisibility(request: Request, env: Env, id: string): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+
+  const convo = await env.DB.prepare("SELECT id FROM conversations WHERE id = ? AND user_id = ?")
+    .bind(id, user.id)
+    .first();
+  if (!convo) return err("Conversation not found.", 404);
+
+  const body = (await request.json().catch(() => null)) as { visibility?: string } | null;
+  const visibility = body?.visibility === "shared" ? "shared" : "private";
+
+  await env.DB.prepare("UPDATE conversations SET visibility = ?, updated_at = ? WHERE id = ?")
+    .bind(visibility, nowIso(), id)
+    .run();
+
+  return json({ ok: true, visibility });
 }
 
 interface ChatRequestBody {
@@ -952,7 +980,7 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
     )
       .bind(id, user.id, ts, ts)
       .run();
-    convo = { id, user_id: user.id, mistral_conversation_id: null, title: "New chat", starred: 0, archived: 0, created_at: ts, updated_at: ts };
+    convo = { id, user_id: user.id, mistral_conversation_id: null, title: "New chat", starred: 0, archived: 0, visibility: "private", created_at: ts, updated_at: ts };
   }
 
   // Save the user's message first so it's never lost even if Mistral errors out.
@@ -1145,6 +1173,8 @@ export default {
         resp = await handleStarConversation(request, env, path.split("/")[3]);
       } else if (path.match(/^\/api\/conversations\/[^/]+\/archive$/) && request.method === "PATCH") {
         resp = await handleArchiveConversation(request, env, path.split("/")[3]);
+      } else if (path.match(/^\/api\/conversations\/[^/]+\/visibility$/) && request.method === "PATCH") {
+        resp = await handleSetConversationVisibility(request, env, path.split("/")[3]);
       } else if (path.match(/^\/api\/conversations\/[^/]+\/files$/) && request.method === "GET") {
         resp = await handleGetConversationFiles(request, env, path.split("/")[3]);
       } else if (path.match(/^\/api\/conversations\/[^/]+\/usage$/) && request.method === "GET") {

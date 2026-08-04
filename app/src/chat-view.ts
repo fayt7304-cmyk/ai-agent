@@ -146,28 +146,53 @@ function wireHeaderActions() {
   const shareMenu = document.getElementById("share-menu") as HTMLDivElement;
   const shareBtn = document.getElementById("header-share-btn") as HTMLButtonElement;
 
-  document.getElementById("share-only-me")?.addEventListener("click", () => {
-    shareMenu.style.display = "none";
-    showToast("Visibility set to Only Me");
-  });
-  document.getElementById("share-with-people")?.addEventListener("click", () => {
-    shareMenu.style.display = "none";
-    showToast("Sharing with people is not yet configured for this deployment.");
-  });
-  document.getElementById("share-collaboration")?.addEventListener("click", async () => {
-    shareMenu.style.display = "none";
+  // Share menu — real actions. "Only Me" and "Everyone" both set the conversation's
+  // visibility on the server and copy a `#conv=<id>` deep-link; the difference is
+  // purely who's allowed to open that link (enforced server-side in handleGetMessages).
+  // "Collab" shares the same way as "Everyone" for now — it's read access for any
+  // signed-in user of the app, not live co-editing.
+  async function shareCurrentConversation(visibility: "private" | "shared", copyLink: boolean) {
     if (!currentConversationId) {
       showToast("No active conversation to share.");
       return;
     }
-    // Copy a deep-link to this conversation to the clipboard
-    const url = `${window.location.origin}${window.location.pathname}#conv=${currentConversationId}`;
+    const id = currentConversationId;
+    try {
+      await api.setConversationVisibility(id, visibility);
+      const convo = conversations.find((c) => c.id === id);
+      if (convo) convo.visibility = visibility;
+    } catch {
+      showToast("Could not update sharing settings.");
+      return;
+    }
+    if (!copyLink) {
+      showToast(visibility === "private" ? "Visibility set to Only Me" : "Visibility updated");
+      return;
+    }
+    const url = `${window.location.origin}${window.location.pathname}#conv=${id}`;
     try {
       await navigator.clipboard.writeText(url);
-      showToast("Link copied to clipboard!");
+      showToast(
+        visibility === "private"
+          ? "Private link copied — only your account can open it."
+          : "Link copied — any signed-in user can open it."
+      );
     } catch {
       showToast("Could not copy link. URL: " + url);
     }
+  }
+
+  document.getElementById("share-only-me")?.addEventListener("click", () => {
+    shareMenu.style.display = "none";
+    shareCurrentConversation("private", true);
+  });
+  document.getElementById("share-with-people")?.addEventListener("click", () => {
+    shareMenu.style.display = "none";
+    shareCurrentConversation("shared", true);
+  });
+  document.getElementById("share-collaboration")?.addEventListener("click", () => {
+    shareMenu.style.display = "none";
+    shareCurrentConversation("shared", true);
   });
 
   shareBtn.addEventListener("click", (e) => {
@@ -707,6 +732,59 @@ async function loadConversations() {
   renderConvoList();
 }
 
+/** Shows a full-width "you can't see this" state in place of the message list. */
+function renderAccessForbidden(message: string) {
+  messagesEl.innerHTML = "";
+  emptyState.style.display = "none";
+  const wrap = document.createElement("div");
+  wrap.className = "access-forbidden";
+  wrap.innerHTML = `
+    <div class="access-forbidden-icon">${icons.lock}</div>
+    <div class="access-forbidden-title">Access forbidden</div>
+    <div class="access-forbidden-text">${message}</div>
+  `;
+  messagesEl.appendChild(wrap);
+}
+
+/**
+ * Opens a conversation from a `#conv=<id>` share link. Unlike selectConversation,
+ * the conversation may not belong to the current user and may not be in their own
+ * sidebar list (it's someone else's "Everyone"-shared chat) — so this fetches
+ * messages directly and shows a clear "access forbidden" state on 403/404 instead
+ * of failing silently.
+ */
+async function openConversationLink(id: string) {
+  currentConversationId = id;
+  renderConvoList();
+  messagesEl.innerHTML = "";
+  chatTitle.textContent = "…";
+  try {
+    const { messages, conversation } = await api.getMessages(id);
+    chatTitle.textContent = conversation?.title || t("chat.newChat");
+    renderMessages(messages);
+    if (conversation && !conversation.owner) {
+      showToast("Viewing a conversation shared with you — read access only.");
+    }
+  } catch (e) {
+    currentConversationId = null;
+    chatTitle.textContent = t("chat.newChat");
+    if (e instanceof ApiError && e.status === 403) {
+      renderAccessForbidden("This conversation is private. Ask the owner to share a link with access.");
+    } else {
+      renderAccessForbidden("This conversation doesn't exist or is no longer available.");
+    }
+  }
+  if (window.innerWidth <= 720) sidebar.classList.add("collapsed");
+  syncSidebarBackdrop();
+}
+
+/** Checks the URL for a `#conv=<id>` share link and opens it if present. */
+function handleConvoLinkFromHash() {
+  const match = window.location.hash.match(/#conv=([^&]+)/);
+  if (match) openConversationLink(decodeURIComponent(match[1]));
+}
+window.addEventListener("hashchange", handleConvoLinkFromHash);
+
 function makeIconActionBtn(icon: keyof typeof icons, title: string): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.className = "msg-action-btn";
@@ -1205,6 +1283,7 @@ export function initChatView(user: User) {
   renderQuickActions();
   loadConversations();
   renderMessages([]);
+  handleConvoLinkFromHash();
 }
 
 export function updateChatUser(user: User) {

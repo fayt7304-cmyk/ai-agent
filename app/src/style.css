@@ -862,6 +862,40 @@ button.full { width: 100%; }
   padding: 0 20px;
 }
 
+.access-forbidden {
+  margin: auto;
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 0 24px;
+  max-width: 360px;
+}
+
+.access-forbidden-icon {
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--danger-bg, rgba(224, 85, 79, 0.12));
+  color: var(--danger, #e0554f);
+  margin-bottom: 12px;
+}
+
+.access-forbidden-icon svg { width: 20px; height: 20px; }
+
+.access-forbidden-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.access-forbidden-text {
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
 .msg-row {
   display: flex;
   flex-direction: column;
