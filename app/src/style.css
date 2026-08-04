@@ -2222,3 +2222,125 @@ html[dir="rtl"] #weather-content .uc-section-title {
   width: 18px;
   height: 18px;
 }
+
+
+/* Header Dropdowns */
+.header-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  z-index: 1000;
+  min-width: 180px;
+  margin-top: 4px;
+}
+
+.share-option,
+.more-option {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+
+.share-option:last-child,
+.more-option:last-child {
+  border-bottom: none;
+}
+
+.share-option:hover,
+.more-option:hover {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.more-option.danger:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+/* Usage Modal */
+.modal-usage {
+  max-width: 400px;
+}
+
+.usage-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  padding: 20px;
+}
+
+.usage-stat {
+  text-align: center;
+}
+
+.usage-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.usage-value {
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* Files Modal */
+.modal-files {
+  max-width: 500px;
+}
+
+.files-content {
+  padding: 20px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.file-item:last-child {
+  border-bottom: none;
+}
+
+.file-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.file-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-size {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}

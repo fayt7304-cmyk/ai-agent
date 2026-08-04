@@ -87,18 +87,88 @@ function mountStaticIcons() {
   document.querySelector("#attach-menu-tools .attach-menu-icon")!.innerHTML = icons.tools;
   micBtn.innerHTML = icons.mic;
   document.querySelector(".send-icon")!.innerHTML = icons.send;
-  document.getElementById("header-sparkle-btn")!.innerHTML = icons.sparkle;
-  document.getElementById("header-share-btn")!.innerHTML = icons.share;
   document.getElementById("header-usage-btn")!.innerHTML = icons.chart;
   document.getElementById("header-files-btn")!.innerHTML = icons.fileSearch;
+  document.getElementById("header-share-btn")!.innerHTML = icons.share;
   document.getElementById("header-more-btn")!.innerHTML = icons.more;
-  document.getElementById("header-theme-btn")!.innerHTML = icons.brush;
 
-  document.getElementById("header-sparkle-btn")?.addEventListener("click", () => openSettings("voice"));
-  document.getElementById("header-usage-btn")?.addEventListener("click", () => openSettings("data"));
-  document.getElementById("header-files-btn")?.addEventListener("click", () => openSettings("data"));
-  document.getElementById("header-theme-btn")?.addEventListener("click", () => openSettings("preferences"));
-  document.getElementById("header-more-btn")?.addEventListener("click", () => openSettings("security"));
+  // Usage modal
+  const usageModal = document.getElementById("usage-modal") as HTMLDivElement;
+  const usageCloseBtn = document.getElementById("usage-close-btn") as HTMLButtonElement;
+  document.getElementById("header-usage-btn")?.addEventListener("click", () => {
+    usageModal.style.display = "flex";
+  });
+  usageCloseBtn.addEventListener("click", () => {
+    usageModal.style.display = "none";
+  });
+  usageModal.addEventListener("click", (e) => {
+    if (e.target === usageModal) usageModal.style.display = "none";
+  });
+
+  // Files modal
+  const filesModal = document.getElementById("files-modal") as HTMLDivElement;
+  const filesCloseBtn = document.getElementById("files-close-btn") as HTMLButtonElement;
+  document.getElementById("header-files-btn")?.addEventListener("click", () => {
+    filesModal.style.display = "flex";
+  });
+  filesCloseBtn.addEventListener("click", () => {
+    filesModal.style.display = "none";
+  });
+  filesModal.addEventListener("click", (e) => {
+    if (e.target === filesModal) filesModal.style.display = "none";
+  });
+
+  // Share menu
+  const shareMenu = document.getElementById("share-menu") as HTMLDivElement;
+  const shareBtn = document.getElementById("header-share-btn") as HTMLButtonElement;
+  document.getElementById("share-only-me")?.addEventListener("click", () => {
+    alert("Share: Only Me");
+    shareMenu.style.display = "none";
+  });
+  document.getElementById("share-with-people")?.addEventListener("click", () => {
+    alert("Share: Share with People");
+    shareMenu.style.display = "none";
+  });
+  document.getElementById("share-collaboration")?.addEventListener("click", () => {
+    alert("Share: Collaboration");
+    shareMenu.style.display = "none";
+  });
+  shareBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    shareMenu.style.display = shareMenu.style.display === "none" ? "block" : "none";
+  });
+  document.addEventListener("click", (e) => {
+    if (!shareBtn.contains(e.target as Node) && !shareMenu.contains(e.target as Node)) {
+      shareMenu.style.display = "none";
+    }
+  });
+
+  // More menu
+  const moreMenu = document.getElementById("more-menu") as HTMLDivElement;
+  const moreBtn = document.getElementById("header-more-btn") as HTMLButtonElement;
+  document.getElementById("more-rename")?.addEventListener("click", () => {
+    alert("Rename conversation");
+    moreMenu.style.display = "none";
+  });
+  document.getElementById("more-archive")?.addEventListener("click", () => {
+    alert("Archive conversation");
+    moreMenu.style.display = "none";
+  });
+  document.getElementById("more-delete")?.addEventListener("click", () => {
+    if (confirm("Delete this conversation?")) {
+      alert("Conversation deleted");
+      moreMenu.style.display = "none";
+    }
+  });
+  moreBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    moreMenu.style.display = moreMenu.style.display === "none" ? "block" : "none";
+  });
+  document.addEventListener("click", (e) => {
+    if (!moreBtn.contains(e.target as Node) && !moreMenu.contains(e.target as Node)) {
+      moreMenu.style.display = "none";
+    }
+  });
 }
 
 let currentUser: User;

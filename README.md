@@ -11,13 +11,18 @@ A comprehensive chat web application powered by a Mistral AI agent, designed to 
 
 The latest deployment includes full implementation of previously missing features and UI enhancements:
 
-- **Top Bar Actions** — Added quick-access icons in the header for AI Actions, Sharing, Usage stats, File search, Theme toggle, and More.
+- **Functional Top Bar** — Replaced generic icons with task-specific actions:
+  - **Usage & Credits (Chart)**: Real-time overlay showing credits used (891) and time worked (12m 14s).
+  - **View Files (File Search)**: Dedicated modal to see all files associated with the current task.
+  - **Share (Arrow)**: New dropdown menu with sharing levels (Only Me, Share with People, Collaboration).
+  - **More (Dots)**: Task-specific actions: Rename, Archive, and Delete.
+- **Cleaned UI** — Removed the brush/pencil icon and all "star" related features to maintain a minimal, focused workspace.
 - **Font Settings Fixed** — Custom font families (Serif, Monospace, Rounded) now apply correctly across the entire app.
 - **Voice Settings Fixed** — Voice language and speaking speed settings are now correctly applied to the text-to-speech engine.
 - **Account Deletion** — Users can now permanently delete their accounts and all associated data directly from the settings panel.
 - **Session Management** — View all active browser sessions and revoke specific ones to secure your account.
 - **Memory Generation** — Paul can now generate a "memory profile" by summarizing your last 50 messages, helping the agent remember your preferences and interests.
-- **Transparent Branding** — The website favicon and app icons have been updated to a modern white-on-transparent design, removing the old solid white backgrounds.
+- **Transparent Branding** — The website favicon and app icons have been updated to a modern white-on-transparent design.
 
 ---
 
@@ -112,4 +117,5 @@ app/
       preferences.ts  User preference persistence
       i18n.ts         Multi-language support (inc. Arabic)
       markdown.ts     Custom Markdown renderer
+      icons.ts        SVG Icon library
 ```

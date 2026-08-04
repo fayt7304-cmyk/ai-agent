@@ -172,14 +172,54 @@
       <button id="sidebar-open-btn" class="icon-btn sidebar-open-btn" title="Open sidebar" style="display:none;"></button>
       <div class="chat-title" id="chat-title" data-i18n="chat.newChat">New chat</div>
       <div class="chat-header-actions">
-        <button id="header-sparkle-btn" class="icon-btn" title="AI Actions"></button>
-        <button id="header-share-btn" class="icon-btn" title="Share chat"></button>
-        <button id="header-usage-btn" class="icon-btn" title="Usage stats"></button>
-        <button id="header-files-btn" class="icon-btn" title="View files"></button>
+        <button id="header-usage-btn" class="icon-btn" title="Usage & Credits"></button>
+        <button id="header-files-btn" class="icon-btn" title="View Files"></button>
+        <button id="header-share-btn" class="icon-btn" title="Share"></button>
         <button id="header-more-btn" class="icon-btn" title="More"></button>
-        <div class="header-divider"></div>
-        <button id="header-theme-btn" class="icon-btn" title="Theme settings"></button>
         <button id="tools-btn" class="icon-btn" title="Tools" style="display:none;">🧰</button>
+      </div>
+      
+      <!-- Usage Modal -->
+      <div id="usage-modal" class="modal-overlay" style="display:none;">
+        <div class="modal modal-usage">
+          <button id="usage-close-btn" class="icon-btn settings-close-float">✕</button>
+          <h2>Usage & Credits</h2>
+          <div class="usage-content">
+            <div class="usage-stat">
+              <div class="usage-label">Credits Used</div>
+              <div class="usage-value" id="usage-credits">891</div>
+            </div>
+            <div class="usage-stat">
+              <div class="usage-label">Time Worked</div>
+              <div class="usage-value" id="usage-time">12m 14s</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Files Modal -->
+      <div id="files-modal" class="modal-overlay" style="display:none;">
+        <div class="modal modal-files">
+          <button id="files-close-btn" class="icon-btn settings-close-float">✕</button>
+          <h2>Files</h2>
+          <div class="files-content" id="files-content">
+            <p style="color: var(--text-secondary); font-size: 13px;">No files uploaded yet</p>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Share Menu -->
+      <div id="share-menu" class="header-dropdown" style="display:none;">
+        <button id="share-only-me" class="share-option">Only Me</button>
+        <button id="share-with-people" class="share-option">Share with People</button>
+        <button id="share-collaboration" class="share-option">Collaboration</button>
+      </div>
+      
+      <!-- More Menu -->
+      <div id="more-menu" class="header-dropdown" style="display:none;">
+        <button id="more-rename" class="more-option">Rename</button>
+        <button id="more-archive" class="more-option">Archive</button>
+        <button id="more-delete" class="more-option danger">Delete</button>
       </div>
     </header>
 
