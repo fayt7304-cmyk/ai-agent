@@ -5,6 +5,7 @@ import { refreshConversations } from "./chat-view";
 import { applyAvatar } from "./lib/avatar";
 import { readFileAsDataUrl } from "./files";
 import { showCropper } from "./lib/cropper";
+import { getPreferences, updateAnimationLevel, updateFontFamily, updateFontSize, updateVoiceLanguage, updateVoiceStyle, updateVoiceSpeed, type AnimationLevel, type FontFamily, type VoiceLanguage, type VoiceStyle } from "./lib/preferences";
 
 const overlay = document.getElementById("settings-overlay") as HTMLDivElement;
 const closeBtn = document.getElementById("settings-close-btn") as HTMLButtonElement;
@@ -27,6 +28,23 @@ const navProfileEmail = document.getElementById("nav-profile-email") as HTMLDivE
 const profileUserId = document.getElementById("profile-user-id") as HTMLElement;
 const copyUserIdBtn = document.getElementById("copy-user-id-btn") as HTMLButtonElement;
 const deleteAllChatsBtn = document.getElementById("delete-all-chats-btn") as HTMLButtonElement;
+
+// Voice settings
+const voiceLanguageSelect = document.getElementById("voice-language-select") as HTMLSelectElement;
+const voiceStyleSelect = document.getElementById("voice-style-select") as HTMLSelectElement;
+const voiceSpeedSlider = document.getElementById("voice-speed-slider") as HTMLInputElement;
+const voiceSpeedValue = document.getElementById("voice-speed-value") as HTMLDivElement;
+
+// Animation & Font settings
+const animationSegmented = document.getElementById("animation-segmented") as HTMLDivElement;
+const fontFamilySelect = document.getElementById("font-family-select") as HTMLSelectElement;
+const fontSizeSlider = document.getElementById("font-size-slider") as HTMLInputElement;
+const fontSizeValue = document.getElementById("font-size-value") as HTMLDivElement;
+
+// Data & Memory
+const generateMemoryBtn = document.getElementById("generate-memory-btn") as HTMLButtonElement;
+const exportDataBtn = document.getElementById("export-data-btn") as HTMLButtonElement;
+const manageUploadsBtn = document.getElementById("manage-uploads-btn") as HTMLButtonElement;
 
 const editProfileAvatar = document.getElementById("edit-profile-avatar") as HTMLDivElement;
 const avatarUploadBtn = document.getElementById("avatar-upload-btn") as HTMLButtonElement;
@@ -96,6 +114,99 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
   languageSelect.value = getStoredLang();
   languageSelect.addEventListener("change", () => {
     setLang(languageSelect.value as Lang);
+  });
+
+  // Voice settings
+  const prefs = getPreferences();
+  voiceLanguageSelect.value = prefs.voiceLanguage;
+  voiceLanguageSelect.addEventListener("change", () => {
+    updateVoiceLanguage(voiceLanguageSelect.value as VoiceLanguage);
+    settingsSuccess.textContent = "Voice language updated";
+    settingsError.textContent = "";
+  });
+
+  voiceStyleSelect.value = prefs.voiceStyle;
+  voiceStyleSelect.addEventListener("change", () => {
+    updateVoiceStyle(voiceStyleSelect.value as VoiceStyle);
+    settingsSuccess.textContent = "Voice style updated";
+    settingsError.textContent = "";
+  });
+
+  voiceSpeedSlider.value = prefs.voiceSpeed.toString();
+  voiceSpeedValue.textContent = prefs.voiceSpeed.toFixed(1) + "x";
+  voiceSpeedSlider.addEventListener("input", () => {
+    const speed = parseFloat(voiceSpeedSlider.value);
+    updateVoiceSpeed(speed);
+    voiceSpeedValue.textContent = speed.toFixed(1) + "x";
+  });
+
+  // Animation & Font settings
+  animationSegmented.querySelectorAll<HTMLButtonElement>("button").forEach((btn) => {
+    const level = btn.dataset.animationLevel as AnimationLevel;
+    btn.classList.toggle("active", level === prefs.animationLevel);
+    btn.addEventListener("click", () => {
+      animationSegmented.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      updateAnimationLevel(level);
+      settingsSuccess.textContent = "Animation level updated";
+      settingsError.textContent = "";
+    });
+  });
+
+  fontFamilySelect.value = prefs.fontFamily;
+  fontFamilySelect.addEventListener("change", () => {
+    updateFontFamily(fontFamilySelect.value as FontFamily);
+    settingsSuccess.textContent = "Font updated";
+    settingsError.textContent = "";
+  });
+
+  fontSizeSlider.value = prefs.fontSize.toString();
+  fontSizeValue.textContent = prefs.fontSize + "px";
+  fontSizeSlider.addEventListener("input", () => {
+    const size = parseInt(fontSizeSlider.value);
+    updateFontSize(size);
+    fontSizeValue.textContent = size + "px";
+  });
+
+  // Data & Memory buttons
+  generateMemoryBtn.addEventListener("click", async () => {
+    generateMemoryBtn.disabled = true;
+    try {
+      settingsSuccess.textContent = "Memory generation feature coming soon";
+      settingsError.textContent = "";
+    } finally {
+      generateMemoryBtn.disabled = false;
+    }
+  });
+
+  exportDataBtn.addEventListener("click", async () => {
+    exportDataBtn.disabled = true;
+    try {
+      const data = {
+        user: currentUser,
+        preferences: getPreferences(),
+        exportedAt: new Date().toISOString(),
+      };
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `paul-data-${new Date().toISOString().split("T")[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      settingsSuccess.textContent = "Data exported successfully";
+      settingsError.textContent = "";
+    } catch (err) {
+      settingsError.textContent = "Failed to export data";
+    } finally {
+      exportDataBtn.disabled = false;
+    }
+  });
+
+  manageUploadsBtn.addEventListener("click", () => {
+    settingsSuccess.textContent = "Upload management feature coming soon";
+    settingsError.textContent = "";
   });
 
   copyUserIdBtn.addEventListener("click", async () => {

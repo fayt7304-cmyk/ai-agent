@@ -8,6 +8,7 @@ import { initSettingsView, openSettings } from "./settings-view";
 import { initLeadView } from "./lead-view";
 import { initToolsView } from "./tools-view";
 import { applyAvatar } from "./lib/avatar";
+import { initPreferences } from "./lib/preferences";
 
 // Apply the language + text direction immediately, before anything else touches the
 // DOM, so there's no flash of English/LTR before we know the stored preference.
@@ -18,6 +19,9 @@ initToolsView();
 
 // Apply a theme immediately so there's no flash before we know if anyone is logged in.
 initTheme();
+
+// Apply user preferences (animations, fonts, voice settings)
+initPreferences();
 
 // Register the service worker (app-shell caching, installability). Safe no-op if unsupported.
 if ("serviceWorker" in navigator) {

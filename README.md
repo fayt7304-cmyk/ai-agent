@@ -1,4 +1,4 @@
-# Mistral Agent Chat
+# Paul — Your Personal AI Agent
 
 A chat web app powered by a Mistral AI agent, running entirely on
 your own Cloudflare account:
@@ -9,7 +9,8 @@ your own Cloudflare account:
   storage provider — it's all your Worker.
 - **Frontend** — a small vanilla TS/Vite chat UI: sidebar with your
   conversation history, file attachments (images + documents), a
-  settings panel, dark/light/system theme, and a login/signup screen.
+  comprehensive settings panel with voice, animations, fonts, and data
+  management, dark/light/system theme, and a login/signup screen.
 
 ---
 
@@ -147,13 +148,19 @@ ALLOWED_ORIGINS = "https://your-frontend.workers.dev"
   Default cap is 10MB/file (`MAX_ATTACHMENT_BYTES` in
   `worker/src/index.ts`, mirrored by `MAX_FILE_BYTES` in
   `app/src/files.ts`).
-- **Settings**: theme (light/dark/system), model, and agent
-  instructions live per-account in D1 and apply to new messages after
-  saving. Theme also has an immediate local preview + `localStorage`
-  fallback for the instant before a session is confirmed.
+- **Settings**: theme (light/dark/system), model, agent instructions,
+  voice settings (language, style, speed), animation levels, font
+  family/size, and data management (export, session management, memory
+  generation) live per-account in D1 and apply after saving. Theme and
+  preferences also have immediate local preview + `localStorage` fallback
+  for the instant before a session is confirmed.
 - **Theming**: `app/src/theme.ts` applies a `data-theme` attribute on
   `<html>`; `app/src/style.css` defines light and dark variable sets
   under `:root`/`[data-theme="light"]` and `[data-theme="dark"]`.
+- **Preferences**: `app/src/lib/preferences.ts` manages voice, animation,
+  and font settings with CSS variables (`--transition-duration`,
+  `--anim-level`, `--font-family`, `--base-font-size`) that are applied
+  globally and persist in `localStorage`.
 - To add tools (web search, code execution, image generation), add a
   `tools` array to the "new conversation" payload in
   `worker/src/mistral.ts` — see
@@ -166,6 +173,29 @@ ALLOWED_ORIGINS = "https://your-frontend.workers.dev"
 
 ## What's new
 
+- **Rebranded to Paul** — the agent is now called "Paul" throughout the
+  app, with all references updated from "Agent" to "Paul".
+- **Voice Settings** — users can choose voice language (8 languages),
+  voice style (Natural, Formal, Friendly, Calm), and voice speed
+  (0.5x–2x). Settings are persisted in `localStorage` for immediate
+  application.
+- **Animation & Motion Controls** — users can set animation level
+  (None, Reduced, Normal) to control the amount of motion in the app,
+  respecting accessibility preferences. Font family (System Default,
+  Serif, Monospace, Rounded) and font size (12–18px) are also
+  customizable.
+- **Data Management** — users can export all their data as JSON,
+  manage uploaded files, view active sessions, and generate memories
+  from conversations for Paul to remember important details.
+- **Global Animations** — smooth transitions and slide-in animations
+  for messages, modals, and UI elements, with full support for
+  `prefers-reduced-motion` accessibility preference.
+- **Image Cropping** — when uploading profile pictures or photos,
+  users can interactively crop images with Cropper.js. The crop UI
+  is optimized for both desktop and mobile devices.
+- **Full Arabic Localization** — all 50+ unit categories and units in
+  the converter are now translated to Arabic, along with all new
+  settings labels.
 - **Markdown rendering** — agent replies render bold/italic/lists/
   headings/code/links instead of showing raw `**`/`#` characters
   (`app/src/lib/markdown.ts`, a small dependency-free renderer).
@@ -194,16 +224,13 @@ ALLOWED_ORIGINS = "https://your-frontend.workers.dev"
   button that appears when the browser fires `beforeinstallprompt`.
   The bundled icons (`app/public/icons/`) are placeholders — swap
   them for real branding.
-- **New migration**: `worker/migrations/0003_leads.sql` — run
-  `wrangler d1 execute mistral-agent-chat-db --file=./migrations/0003_leads.sql --remote`
-  (from `worker/`) against your existing database. Fresh installs
-  get it automatically since it's also folded into `schema.sql`.
-- **New migration**: `worker/migrations/0004_profile.sql` — adds
-  `display_name` and `avatar` columns so people can set a profile
-  picture and name from Settings → Profile. Run
-  `wrangler d1 execute mistral-agent-chat-db --file=./migrations/0004_profile.sql --remote`
-  (from `worker/`) against your existing database. Fresh installs
-  get it automatically since it's also folded into `schema.sql`.
+- **Profile customization** — users can set a display name and upload
+  a profile picture (with interactive cropping). Google login
+  automatically syncs the profile picture from their Google account.
+- **Preferences system** (`app/src/lib/preferences.ts`) — handles
+  animation levels, font settings, and voice preferences with
+  `localStorage` persistence and CSS variable injection for
+  theme-aware styling.
 - **Not done**: true streaming responses — see the note above.
 
 ## Project layout
@@ -224,8 +251,13 @@ app/
     api.ts                fetch client for the Worker
     auth-view.ts          login/signup form logic
     chat-view.ts           sidebar + messages + composer + attachments
-    settings-view.ts        settings modal logic
+    settings-view.ts        settings modal logic + voice/animation/font handlers
     theme.ts                light/dark/system theme handling
     files.ts                attachment reading/formatting helpers
-    style.css                all styling (light + dark)
+    lib/
+      preferences.ts        voice, animation, font settings with localStorage
+      cropper.ts            interactive image cropping UI
+      i18n.ts               internationalization (8 languages, full Arabic)
+      uconvert.ts           unit converter with translated categories/units
+    style.css                all styling (light + dark) + animations
 ```

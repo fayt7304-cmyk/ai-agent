@@ -1,4 +1,10 @@
-:root,
+:root {
+  --transition-duration: 0.3s;
+  --anim-level: normal;
+  --font-family: system-ui, -apple-system, sans-serif;
+  --base-font-size: 14px;
+}
+
 [data-theme="light"] {
   --bg: #f6f5f2;
   --card: #ffffff;
@@ -39,15 +45,56 @@
 
 * { box-sizing: border-box; }
 
+/* Global animations and transitions */
+@media (prefers-reduced-motion: no-preference) {
+  button, a, input, select, textarea, .icon-btn, .msg-row, .sidebar, .modal-overlay {
+    transition: all var(--transition-duration) ease;
+  }
+  .msg-row {
+    animation: slideIn var(--transition-duration) ease;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-overlay {
+  animation: fadeIn var(--transition-duration) ease;
+}
+
+/* Respect user's motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 html, body {
   height: 100%;
   margin: 0;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-family);
+  font-size: var(--base-font-size);
   background: var(--bg);
   color: var(--text);
+  line-height: 1.5;
 }
 
 button, input, textarea, select {
@@ -558,7 +605,7 @@ button.full { width: 100%; }
 .user-menu-items button {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
   text-align: start;
   padding: 12px 14px;
@@ -567,6 +614,7 @@ button.full { width: 100%; }
   cursor: pointer;
   font-size: 13.5px;
   color: var(--text);
+  min-height: 44px;
 }
 
 .user-menu-items button:hover { background: var(--accent-bg); color: var(--accent); }
