@@ -235,8 +235,8 @@ function wireHeaderActions() {
       const result = await api.archiveConversation(convo.id);
       convo.archived = result.archived;
       if (result.archived) {
-        // Remove from the active list and deselect
-        conversations = conversations.filter((c) => c.id !== convo.id);
+        // Deselect, but keep it in `conversations` — it now shows under the
+        // sidebar's collapsible "Archived" section instead of disappearing.
         currentConversationId = null;
         renderMessages([]);
         chatTitle.textContent = t("chat.newChat");
@@ -529,7 +529,8 @@ function openConvoMenu(anchor: HTMLElement, c: Conversation, startRename: () => 
       const result = await api.archiveConversation(c.id);
       c.archived = result.archived;
       if (result.archived) {
-        conversations = conversations.filter((x) => x.id !== c.id);
+        // Deselect, but keep it in `conversations` — it moves to the sidebar's
+        // collapsible "Archived" section instead of disappearing.
         if (currentConversationId === c.id) {
           currentConversationId = null;
           renderMessages([]);
@@ -580,82 +581,118 @@ function openConvoMenu(anchor: HTMLElement, c: Conversation, startRename: () => 
   menu.style.right = "auto";
 }
 
-function renderConvoList() {
-  convoList.innerHTML = "";
-  for (const c of conversations) {
-    const item = document.createElement("div");
-    item.className = "convo-item" + (c.id === currentConversationId ? " active" : "") + (c.starred ? " starred" : "");
-    const title = document.createElement("span");
-    title.className = "convo-title";
+let archivedExpanded = false;
 
-    // Show star indicator inline with title
-    if (c.starred) {
-      const starSpan = document.createElement("span");
-      starSpan.className = "convo-star-indicator";
-      starSpan.innerHTML = icons.starFilled;
-      starSpan.style.cssText = "display:inline-flex;align-items:center;margin-right:4px;color:var(--accent,#f5a623);width:14px;height:14px;flex-shrink:0;";
-      title.appendChild(starSpan);
-    }
-    const titleText = document.createTextNode(c.title);
-    title.appendChild(titleText);
+/** Builds a single sidebar row (used for both active and archived conversations). */
+function createConvoItem(c: Conversation): HTMLDivElement {
+  const item = document.createElement("div");
+  item.className =
+    "convo-item" +
+    (c.id === currentConversationId ? " active" : "") +
+    (c.starred ? " starred" : "") +
+    (c.archived ? " archived" : "");
+  const title = document.createElement("span");
+  title.className = "convo-title";
 
-    function startRename() {
-      const input = document.createElement("input");
-      input.className = "convo-title-input";
-      input.type = "text";
-      input.value = c.title;
-      item.replaceChild(input, title);
-      item.classList.add("renaming");
-      input.focus();
-      input.select();
+  // Show star indicator inline with title
+  if (c.starred) {
+    const starSpan = document.createElement("span");
+    starSpan.className = "convo-star-indicator";
+    starSpan.innerHTML = icons.starFilled;
+    starSpan.style.cssText = "display:inline-flex;align-items:center;margin-right:4px;color:var(--accent,#f5a623);width:14px;height:14px;flex-shrink:0;";
+    title.appendChild(starSpan);
+  }
+  const titleText = document.createTextNode(c.title);
+  title.appendChild(titleText);
 
-      let done = false;
-      async function commit() {
-        if (done) return;
-        done = true;
-        const newTitle = input.value.trim();
-        item.classList.remove("renaming");
-        if (newTitle && newTitle !== c.title) {
-          c.title = newTitle;
-          if (c.id === currentConversationId) chatTitle.textContent = newTitle;
-          try {
-            await api.renameConversation(c.id, newTitle);
-          } catch {
-            // Best-effort — the new title still shows locally even if the save fails.
-          }
+  function startRename() {
+    const input = document.createElement("input");
+    input.className = "convo-title-input";
+    input.type = "text";
+    input.value = c.title;
+    item.replaceChild(input, title);
+    item.classList.add("renaming");
+    input.focus();
+    input.select();
+
+    let done = false;
+    async function commit() {
+      if (done) return;
+      done = true;
+      const newTitle = input.value.trim();
+      item.classList.remove("renaming");
+      if (newTitle && newTitle !== c.title) {
+        c.title = newTitle;
+        if (c.id === currentConversationId) chatTitle.textContent = newTitle;
+        try {
+          await api.renameConversation(c.id, newTitle);
+        } catch {
+          // Best-effort — the new title still shows locally even if the save fails.
         }
+      }
+      renderConvoList();
+    }
+    input.addEventListener("blur", commit);
+    input.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") {
+        e.preventDefault();
+        input.blur();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        done = true;
+        item.classList.remove("renaming");
         renderConvoList();
       }
-      input.addEventListener("blur", commit);
-      input.addEventListener("keydown", (e) => {
-        e.stopPropagation();
-        if (e.key === "Enter") {
-          e.preventDefault();
-          input.blur();
-        } else if (e.key === "Escape") {
-          e.preventDefault();
-          done = true;
-          item.classList.remove("renaming");
-          renderConvoList();
-        }
-      });
-      input.addEventListener("click", (e) => e.stopPropagation());
-    }
-
-    const dots = document.createElement("button");
-    dots.className = "convo-dots";
-    dots.innerHTML = icons.more;
-    dots.type = "button";
-    dots.title = "More options";
-    dots.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openConvoMenu(dots, c, startRename);
     });
+    input.addEventListener("click", (e) => e.stopPropagation());
+  }
 
-    item.appendChild(title);
-    item.appendChild(dots);
-    item.addEventListener("click", () => selectConversation(c.id));
-    convoList.appendChild(item);
+  const dots = document.createElement("button");
+  dots.className = "convo-dots";
+  dots.innerHTML = icons.more;
+  dots.type = "button";
+  dots.title = "More options";
+  dots.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openConvoMenu(dots, c, startRename);
+  });
+
+  item.appendChild(title);
+  item.appendChild(dots);
+  item.addEventListener("click", () => selectConversation(c.id));
+  return item;
+}
+
+function renderConvoList() {
+  convoList.innerHTML = "";
+  const active = conversations.filter((c) => !c.archived);
+  const archived = conversations.filter((c) => c.archived);
+
+  for (const c of active) {
+    convoList.appendChild(createConvoItem(c));
+  }
+
+  if (archived.length > 0) {
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "convo-archived-toggle" + (archivedExpanded ? " expanded" : "");
+    toggle.innerHTML = `<span class="convo-archived-chevron">${icons.chevronRight}</span><span class="menu-icon">${icons.archive}</span> Archived (${archived.length})`;
+    toggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      archivedExpanded = !archivedExpanded;
+      renderConvoList();
+    });
+    convoList.appendChild(toggle);
+
+    if (archivedExpanded) {
+      const archivedWrap = document.createElement("div");
+      archivedWrap.className = "convo-archived-list";
+      for (const c of archived) {
+        archivedWrap.appendChild(createConvoItem(c));
+      }
+      convoList.appendChild(archivedWrap);
+    }
   }
 }
 

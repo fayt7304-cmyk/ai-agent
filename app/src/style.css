@@ -471,6 +471,46 @@ button.full { width: 100%; }
 
 .convo-item.renaming .convo-dots { opacity: 0; pointer-events: none; }
 
+.convo-item.archived { opacity: 0.7; }
+
+.convo-archived-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.convo-archived-toggle:hover { background: var(--card); color: var(--text); }
+
+.convo-archived-chevron {
+  display: inline-flex;
+  align-items: center;
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.convo-archived-chevron svg { width: 12px; height: 12px; }
+.convo-archived-toggle.expanded .convo-archived-chevron { transform: rotate(90deg); }
+
+.convo-archived-toggle .menu-icon { display: inline-flex; align-items: center; width: 14px; height: 14px; flex-shrink: 0; }
+.convo-archived-toggle .menu-icon svg { width: 14px; height: 14px; }
+
+.convo-archived-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 /* Sidebar per-item dropdown reuses .header-dropdown/.more-option styling but is
    positioned with inline fixed coordinates (computed in JS), not relative to a
    header button, since it's appended to <body> to escape the sidebar's scroll clip. */
