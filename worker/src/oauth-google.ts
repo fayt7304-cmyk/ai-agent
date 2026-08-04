@@ -35,6 +35,7 @@ export interface GoogleUserInfo {
   email?: string;
   email_verified?: boolean;
   name?: string;
+  picture?: string;
 }
 
 export async function fetchGoogleUserInfo(accessToken: string): Promise<GoogleUserInfo> {

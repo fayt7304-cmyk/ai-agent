@@ -105,6 +105,14 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     if (e.target === overlay) close();
   });
 
+  // Reload sessions when data tab is opened
+  const dataTabBtn = settingsNav.querySelector('[data-settings-tab="data"]') as HTMLButtonElement;
+  if (dataTabBtn) {
+    dataTabBtn.addEventListener("click", () => {
+      setTimeout(() => loadActiveSessions(), 100);
+    });
+  }
+
   settingsNav.querySelectorAll<HTMLButtonElement>(".settings-nav-btn").forEach((btn) => {
     btn.addEventListener("click", () => showTab(btn.dataset.settingsTab!));
   });
@@ -148,7 +156,7 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
       animationSegmented.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       updateAnimationLevel(level);
-      settingsSuccess.textContent = "Animation level updated";
+      settingsSuccess.textContent = t("settings.animationLevel") + " updated";
       settingsError.textContent = "";
     });
   });
@@ -156,7 +164,7 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
   fontFamilySelect.value = prefs.fontFamily;
   fontFamilySelect.addEventListener("change", () => {
     updateFontFamily(fontFamilySelect.value as FontFamily);
-    settingsSuccess.textContent = "Font updated";
+    settingsSuccess.textContent = "Font family updated";
     settingsError.textContent = "";
   });
 
@@ -166,14 +174,46 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     const size = parseInt(fontSizeSlider.value);
     updateFontSize(size);
     fontSizeValue.textContent = size + "px";
+    settingsSuccess.textContent = "Font size updated";
+    settingsError.textContent = "";
+  });
+
+  // Voice settings
+  voiceLanguageSelect.value = prefs.voiceLanguage;
+  voiceLanguageSelect.addEventListener("change", () => {
+    updateVoiceLanguage(voiceLanguageSelect.value as VoiceLanguage);
+    settingsSuccess.textContent = "Voice language updated";
+    settingsError.textContent = "";
+  });
+
+  voiceStyleSelect.value = prefs.voiceStyle;
+  voiceStyleSelect.addEventListener("change", () => {
+    updateVoiceStyle(voiceStyleSelect.value as VoiceStyle);
+    settingsSuccess.textContent = "Voice style updated";
+    settingsError.textContent = "";
+  });
+
+  voiceSpeedSlider.value = prefs.voiceSpeed.toString();
+  voiceSpeedValue.textContent = prefs.voiceSpeed.toFixed(1) + "x";
+  voiceSpeedSlider.addEventListener("input", () => {
+    const speed = parseFloat(voiceSpeedSlider.value);
+    updateVoiceSpeed(speed);
+    voiceSpeedValue.textContent = speed.toFixed(1) + "x";
+    settingsSuccess.textContent = "Voice speed updated";
+    settingsError.textContent = "";
   });
 
   // Data & Memory buttons
   generateMemoryBtn.addEventListener("click", async () => {
     generateMemoryBtn.disabled = true;
     try {
-      settingsSuccess.textContent = "Memory generation feature coming soon";
+      const res = await fetch("/api/memory/generate", { method: "POST" });
+      if (!res.ok) throw new Error("Failed to generate memory");
+      const result = await res.json();
+      settingsSuccess.textContent = result.message || "Memory generated successfully";
       settingsError.textContent = "";
+    } catch (err) {
+      settingsError.textContent = "Failed to generate memory";
     } finally {
       generateMemoryBtn.disabled = false;
     }
@@ -182,13 +222,9 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
   exportDataBtn.addEventListener("click", async () => {
     exportDataBtn.disabled = true;
     try {
-      const data = {
-        user: currentUser,
-        preferences: getPreferences(),
-        exportedAt: new Date().toISOString(),
-      };
-      const json = JSON.stringify(data, null, 2);
-      const blob = new Blob([json], { type: "application/json" });
+      const res = await fetch("/api/user/export", { method: "GET" });
+      if (!res.ok) throw new Error("Failed to export data");
+      const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -204,9 +240,80 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     }
   });
 
-  manageUploadsBtn.addEventListener("click", () => {
-    settingsSuccess.textContent = "Upload management feature coming soon";
-    settingsError.textContent = "";
+  manageUploadsBtn.addEventListener("click", async () => {
+    manageUploadsBtn.disabled = true;
+    try {
+      const res = await fetch("/api/uploads", { method: "GET" });
+      if (!res.ok) throw new Error("Failed to fetch uploads");
+      const uploads = await res.json();
+      settingsSuccess.textContent = `You have ${uploads.length} uploaded file(s)`;
+      settingsError.textContent = "";
+    } catch (err) {
+      settingsError.textContent = "Failed to load uploads";
+    } finally {
+      manageUploadsBtn.disabled = false;
+    }
+  });
+
+  // Active sessions and delete account
+  const activeSessionsList = document.getElementById("active-sessions-list") as HTMLDivElement;
+  const deleteAccountBtn = document.getElementById("delete-account-btn") as HTMLButtonElement;
+
+  async function loadActiveSessions() {
+    try {
+      const res = await fetch("/api/sessions", { method: "GET" });
+      if (!res.ok) throw new Error("Failed to fetch sessions");
+      const sessions = await res.json();
+      activeSessionsList.innerHTML = "";
+      if (sessions.length === 0) {
+        activeSessionsList.innerHTML = "<p style='padding: 12px; color: var(--text-secondary);'>No active sessions</p>";
+      } else {
+        sessions.forEach((session: any) => {
+          const sessionEl = document.createElement("div");
+          sessionEl.style.cssText = "padding: 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;";
+          const revokeBtn = document.createElement("button");
+          revokeBtn.textContent = "Revoke";
+          revokeBtn.style.cssText = "padding: 6px 12px; background: var(--danger-bg); color: var(--danger); border: none; border-radius: 6px; cursor: pointer; font-size: 12px;";
+          revokeBtn.onclick = async () => {
+            try {
+              await fetch(`/api/sessions/${session.id}`, { method: "DELETE" });
+              loadActiveSessions();
+            } catch (err) {
+              console.error("Failed to revoke session", err);
+            }
+          };
+          sessionEl.innerHTML = `
+            <div>
+              <div style='font-weight: 500;'>${session.device || "Device"}</div>
+              <div style='font-size: 12px; color: var(--text-secondary);'>${new Date(session.created_at).toLocaleString()}</div>
+            </div>
+          `;
+          sessionEl.appendChild(revokeBtn);
+          activeSessionsList.appendChild(sessionEl);
+        });
+      }
+    } catch (err) {
+      activeSessionsList.innerHTML = "<p style='padding: 12px; color: var(--danger);'>Failed to load sessions</p>";
+    }
+  }
+  loadActiveSessions();
+
+  deleteAccountBtn.addEventListener("click", async () => {
+    const confirmed = confirm(t("settings.deleteAccountConfirm") || "Are you sure? This cannot be undone.");
+    if (!confirmed) return;
+    deleteAccountBtn.disabled = true;
+    try {
+      const res = await fetch("/api/user/delete", { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete account");
+      settingsSuccess.textContent = "Account deleted. Redirecting...";
+      setTimeout(() => {
+        localStorage.clear();
+        window.location.href = "/";
+      }, 1500);
+    } catch (err) {
+      settingsError.textContent = "Failed to delete account";
+      deleteAccountBtn.disabled = false;
+    }
   });
 
   copyUserIdBtn.addEventListener("click", async () => {

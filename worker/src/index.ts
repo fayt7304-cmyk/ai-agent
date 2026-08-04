@@ -385,9 +385,15 @@ async function handleGoogleCallback(request: Request, env: Env): Promise<Respons
     }
 
     await env.DB.prepare(
-      "UPDATE users SET oauth_provider = 'google', oauth_id = ?, email = COALESCE(email, ?) WHERE id = ?"
+      "UPDATE users SET oauth_provider = 'google', oauth_id = ?, email = COALESCE(email, ?), display_name = COALESCE(display_name, ?), avatar = COALESCE(avatar, ?), is_guest = 0 WHERE id = ?"
     )
-      .bind(info.sub, info.email?.toLowerCase() || null, currentUser.id)
+      .bind(
+        info.sub,
+        info.email?.toLowerCase() || null,
+        info.name || null,
+        info.picture || null,
+        currentUser.id
+      )
       .run();
 
     const resp = new Response(null, { status: 302, headers: { Location: `${env.FRONTEND_URL}?linked=google` } });
@@ -403,8 +409,10 @@ async function handleGoogleCallback(request: Request, env: Env): Promise<Respons
   if (!user && info.email && info.email_verified) {
     user = await env.DB.prepare("SELECT * FROM users WHERE email = ?").bind(info.email.toLowerCase()).first<any>();
     if (user) {
-      await env.DB.prepare("UPDATE users SET oauth_provider = 'google', oauth_id = ? WHERE id = ?")
-        .bind(info.sub, user.id)
+      await env.DB.prepare(
+        "UPDATE users SET oauth_provider = 'google', oauth_id = ?, display_name = COALESCE(display_name, ?), avatar = COALESCE(avatar, ?), is_guest = 0 WHERE id = ?"
+      )
+        .bind(info.sub, info.name || null, info.picture || null, user.id)
         .run();
     }
   }
@@ -419,10 +427,20 @@ async function handleGoogleCallback(request: Request, env: Env): Promise<Respons
       candidate = `${base}${suffix}`;
     }
     await env.DB.prepare(
-      `INSERT INTO users (id, username, email, password_hash, password_salt, oauth_provider, oauth_id, theme, model, instructions, created_at)
-       VALUES (?, ?, ?, '', '', 'google', ?, 'system', ?, ?, ?)`
+      `INSERT INTO users (id, username, email, password_hash, password_salt, oauth_provider, oauth_id, display_name, avatar, is_guest, theme, model, instructions, created_at)
+       VALUES (?, ?, ?, '', '', 'google', ?, ?, ?, 0, 'system', ?, ?, ?)`
     )
-      .bind(id, candidate, info.email?.toLowerCase() || null, info.sub, DEFAULT_MODEL, DEFAULT_INSTRUCTIONS, nowIso())
+      .bind(
+        id,
+        candidate,
+        info.email?.toLowerCase() || null,
+        info.sub,
+        info.name || null,
+        info.picture || null,
+        DEFAULT_MODEL,
+        DEFAULT_INSTRUCTIONS,
+        nowIso()
+      )
       .run();
     user = { id };
   }
