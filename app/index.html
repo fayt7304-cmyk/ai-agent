@@ -129,9 +129,9 @@
             </button>
             <div class="user-submenu" id="learn-more-submenu" style="display:none;">
               <button id="keyboard-shortcuts-btn" type="button"><span class="menu-icon">⌨️</span><span data-i18n="menu.keyboardShortcuts">Keyboard shortcuts</span></button>
+              <button id="privacy-choices-btn" type="button"><span class="menu-icon">🔒</span><span data-i18n="menu.privacyChoices">Your privacy choices</span></button>
             </div>
           </div>
-          <button id="privacy-choices-btn" type="button"><span class="menu-icon">🔒</span><span data-i18n="menu.privacyChoices">Your privacy choices</span></button>
           <button id="logout-btn"><span class="menu-icon">↪️</span><span data-i18n="menu.logout">Log out</span></button>
         </div>
         <div class="user-menu-theme-row" id="user-menu-theme-row">
@@ -464,7 +464,7 @@
       <!-- Format converter -->
       <div class="tool-pane" id="tool-convert">
         <div class="dropzone" id="convert-drop">
-          <div id="convert-drop-text">Drop an image here, or click to choose a file</div>
+          <div id="convert-drop-text" data-i18n="tool.dropImage">Drop an image here, or click to choose a file</div>
           <input type="file" id="convert-file" accept="image/*">
         </div>
         <div class="preview" id="convert-preview" style="display:none;"><img id="convert-img"></div>
@@ -474,142 +474,142 @@
             <option value="image/jpeg">JPG</option>
             <option value="image/webp">WebP</option>
           </select>
-          <button class="primary" id="convert-download">Download converted image</button>
+          <button class="primary" id="convert-download" data-i18n="tool.convert.download">Download converted image</button>
         </div>
       </div>
 
       <!-- Background remover -->
       <div class="tool-pane" id="tool-bgremove" style="display:none;">
-        <div class="note">Runs entirely in your browser using a public, freely-licensed AI model. First run downloads the model (~80MB) and can take 15-30 seconds; cached after that.</div>
+        <div class="note" data-i18n="tool.bg.note">Runs entirely in your browser using a public, freely-licensed AI model. First run downloads the model (~80MB) and can take 15-30 seconds; cached after that.</div>
         <div class="dropzone" id="bg-drop">
-          <div id="bg-drop-text">Drop an image here, or click to choose a file</div>
+          <div id="bg-drop-text" data-i18n="tool.dropImage">Drop an image here, or click to choose a file</div>
           <input type="file" id="bg-file" accept="image/*">
         </div>
         <div class="preview" id="bg-preview" style="display:none;"><img id="bg-img"></div>
         <div class="controls" id="bg-controls" style="display:none;">
-          <button class="primary" id="bg-remove">Remove background</button>
-          <button id="bg-download" style="display:none;">Download result</button>
+          <button class="primary" id="bg-remove" data-i18n="tool.bg.remove">Remove background</button>
+          <button id="bg-download" style="display:none;" data-i18n="tool.bg.download">Download result</button>
         </div>
         <div class="status" id="bg-status"></div>
       </div>
 
       <!-- Image to text (OCR) -->
       <div class="tool-pane" id="tool-ocr" style="display:none;">
-        <div class="note">Powered by Mistral OCR — reads normal text and math notation (formulas come back as LaTeX source).</div>
+        <div class="note" data-i18n="tool.ocr.note">Powered by Mistral OCR — reads normal text and math notation (formulas come back as LaTeX source).</div>
         <div class="dropzone" id="ocr-drop">
-          <div id="ocr-drop-text">Drop an image here, or click to choose a file</div>
+          <div id="ocr-drop-text" data-i18n="tool.dropImage">Drop an image here, or click to choose a file</div>
           <input type="file" id="ocr-file" accept="image/*">
         </div>
         <div class="preview" id="ocr-preview" style="display:none;"><img id="ocr-img"></div>
         <div class="controls" id="ocr-controls" style="display:none;">
-          <button class="primary" id="ocr-run">Extract text</button>
+          <button class="primary" id="ocr-run" data-i18n="tool.ocr.run">Extract text</button>
         </div>
         <div class="status" id="ocr-status"></div>
-        <textarea id="ocr-output" placeholder="Extracted text (and LaTeX for any math) will appear here" style="display:none;"></textarea>
+        <textarea id="ocr-output" placeholder="Extracted text (and LaTeX for any math) will appear here" data-i18n-placeholder="tool.ocr.placeholder" style="display:none;"></textarea>
         <div class="controls" id="ocr-output-controls" style="display:none;">
-          <button id="ocr-copy">Copy text</button>
-          <button id="ocr-download-txt">Download .txt</button>
-          <button id="ocr-download-docx">Download .docx</button>
+          <button id="ocr-copy" data-i18n="tool.ocr.copy">Copy text</button>
+          <button id="ocr-download-txt" data-i18n="tool.ocr.downloadTxt">Download .txt</button>
+          <button id="ocr-download-docx" data-i18n="tool.ocr.downloadDocx">Download .docx</button>
         </div>
       </div>
 
       <!-- PDF to Word -->
       <div class="tool-pane" id="tool-pdf2word" style="display:none;">
-        <div class="note">Powered by Mistral OCR — preserves headings and paragraph structure, including math as LaTeX. Complex multi-column layouts may not be perfectly preserved.</div>
+        <div class="note" data-i18n="tool.pdf.note">Powered by Mistral OCR — preserves headings and paragraph structure, including math as LaTeX. Complex multi-column layouts may not be perfectly preserved.</div>
         <div class="dropzone" id="pdf-drop">
-          <div id="pdf-drop-text">Drop a PDF here, or click to choose a file</div>
+          <div id="pdf-drop-text" data-i18n="tool.dropPdf">Drop a PDF here, or click to choose a file</div>
           <input type="file" id="pdf-file" accept="application/pdf">
         </div>
         <div class="controls" id="pdf-controls" style="display:none;">
-          <button class="primary" id="pdf-run">Convert to Word</button>
+          <button class="primary" id="pdf-run" data-i18n="tool.pdf.run">Convert to Word</button>
         </div>
         <div class="status" id="pdf-status"></div>
       </div>
 
       <!-- Markdown to docx -->
       <div class="tool-pane" id="tool-docx" style="display:none;">
-        <p class="hint">Paste markdown (e.g. from an OCR result above) and export it as a Word document.</p>
+        <p class="hint" data-i18n="tool.docx.hint">Paste markdown (e.g. from an OCR result above) and export it as a Word document.</p>
         <textarea id="docx-input" rows="8" placeholder="# Heading&#10;Some **bold** text…"></textarea>
-        <button id="docx-run-btn" class="primary">Export .docx</button>
+        <button id="docx-run-btn" class="primary" data-i18n="tool.docx.export">Export .docx</button>
         <div class="tool-status" id="docx-status"></div>
       </div>
 
       <!-- Universal Converter -->
       <div class="tool-pane tool-pane-uconvert" id="tool-uconvert" style="display:none;">
         <div class="calc-mode-tabs" id="uconvert-tabs">
-          <button class="tab small active" data-uconvert-tab="convert">Convert</button>
-          <button class="tab small" data-uconvert-tab="material">Material estimate</button>
-          <button class="tab small" data-uconvert-tab="calculator">Calculator</button>
-          <button class="tab small" data-uconvert-tab="weather">Weather</button>
+          <button class="tab small active" data-uconvert-tab="convert" data-i18n="uconvert.tabConvert">Convert</button>
+          <button class="tab small" data-uconvert-tab="material" data-i18n="uconvert.tabMaterial">Material estimate</button>
+          <button class="tab small" data-uconvert-tab="calculator" data-i18n="uconvert.tabCalculator">Calculator</button>
+          <button class="tab small" data-uconvert-tab="weather" data-i18n="uconvert.tabWeather">Weather</button>
         </div>
 
         <!-- Unit / currency convert -->
         <div class="card" id="convert-panel">
           <div class="field" style="margin-bottom: 1rem;">
-            <label for="category-select">Category</label>
+            <label for="category-select" data-i18n="uconvert.category">Category</label>
             <select id="category-select"></select>
           </div>
           <div class="row">
             <div class="field">
-              <label for="conv-in">From</label>
+              <label for="conv-in" data-i18n="uconvert.from">From</label>
               <input type="number" id="conv-in" value="1" step="any">
             </div>
             <button class="swap-btn" id="conv-swap" type="button">⇄</button>
             <div class="field">
-              <label for="conv-in-unit">Unit</label>
+              <label for="conv-in-unit" data-i18n="uconvert.unit">Unit</label>
               <select id="conv-in-unit"></select>
             </div>
           </div>
           <div class="field" style="margin-bottom: 1rem;">
-            <label for="conv-out-unit">To</label>
+            <label for="conv-out-unit" data-i18n="uconvert.to">To</label>
             <select id="conv-out-unit"></select>
           </div>
           <div class="result">
             <div class="value" id="conv-result">—</div>
-            <div class="label">Result</div>
+            <div class="label" data-i18n="uconvert.result">Result</div>
           </div>
           <div class="status" id="conv-status"></div>
         </div>
 
         <!-- Material estimate -->
         <div class="card" id="material-panel" style="display:none;">
-          <h3 class="tool-subheading">Slab / flooring material estimate</h3>
+          <h3 class="tool-subheading" data-i18n="material.heading">Slab / flooring material estimate</h3>
           <div class="grid2">
             <div class="field">
-              <label for="mat-width">Width</label>
+              <label for="mat-width" data-i18n="material.width">Width</label>
               <input type="number" id="mat-width" value="4" step="any">
             </div>
             <div class="field">
-              <label for="mat-width-unit">Unit</label>
+              <label for="mat-width-unit" data-i18n="uconvert.unit">Unit</label>
               <select id="mat-width-unit"><option value="m">m</option><option value="ft">ft</option></select>
             </div>
           </div>
           <div class="grid2">
             <div class="field">
-              <label for="mat-length">Length</label>
+              <label for="mat-length" data-i18n="material.length">Length</label>
               <input type="number" id="mat-length" value="3" step="any">
             </div>
             <div class="field">
-              <label for="mat-length-unit">Unit</label>
+              <label for="mat-length-unit" data-i18n="uconvert.unit">Unit</label>
               <select id="mat-length-unit"><option value="m">m</option><option value="ft">ft</option></select>
             </div>
           </div>
           <div class="field" style="margin-bottom: 1rem;">
-            <label for="mat-waste">Waste allowance (%)</label>
+            <label for="mat-waste" data-i18n="material.waste">Waste allowance (%)</label>
             <input type="number" id="mat-waste" value="10" step="1" min="0">
           </div>
           <div class="result">
             <div class="value" id="mat-result">—</div>
-            <div class="label">Area needed</div>
+            <div class="label" data-i18n="material.areaNeeded">Area needed</div>
           </div>
         </div>
 
         <!-- Calculator -->
         <div class="card" id="calculator-panel" style="display:none;">
           <div class="calc-mode-tabs">
-            <button class="tab small active" data-calc-mode="standard" type="button">Standard</button>
-            <button class="tab small" data-calc-mode="scientific" type="button">Scientific</button>
-            <button class="tab small" data-calc-mode="graph" type="button">Graph</button>
+            <button class="tab small active" data-calc-mode="standard" type="button" data-i18n="calc.standard">Standard</button>
+            <button class="tab small" data-calc-mode="scientific" type="button" data-i18n="calc.scientific">Scientific</button>
+            <button class="tab small" data-calc-mode="graph" type="button" data-i18n="calc.graph">Graph</button>
           </div>
 
           <div id="calc-standard-view">
@@ -679,24 +679,24 @@
               <button class="calc-btn" data-sci="3" type="button">3</button>
               <button class="calc-btn op wide" data-sci="=" type="button">=</button>
             </div>
-            <div class="calc-note">Trig functions (sin/cos/tan) use degrees.</div>
+            <div class="calc-note" data-i18n="calc.trigNote">Trig functions (sin/cos/tan) use degrees.</div>
           </div>
 
           <div id="calc-graph-view" style="display:none;">
             <div class="graph-controls">
               <div class="field">
-                <label for="graph-expr">y = f(x)</label>
+                <label for="graph-expr" data-i18n="calc.yFx">y = f(x)</label>
                 <input type="text" id="graph-expr" value="2*x + 3">
               </div>
               <div class="field" style="flex: 0 0 140px;">
-                <label for="graph-range">Range</label>
+                <label for="graph-range" data-i18n="calc.range">Range</label>
                 <select id="graph-range">
                   <option value="5">-5 to 5</option>
                   <option value="10" selected>-10 to 10</option>
                   <option value="50">-50 to 50</option>
                 </select>
               </div>
-              <button class="primary" id="graph-plot" type="button" style="height: 42px;">Plot</button>
+              <button class="primary" id="graph-plot" type="button" style="height: 42px;" data-i18n="calc.plot">Plot</button>
             </div>
             <canvas id="graph-canvas"></canvas>
             <div class="status" id="graph-status"></div>
@@ -706,7 +706,7 @@
         <!-- Weather -->
         <div class="card" id="weather-panel" style="display:none;">
           <div id="weather-content">
-            <div class="status working">Getting your location...</div>
+            <div class="status working" data-i18n="weather.gettingLocation">Getting your location...</div>
           </div>
         </div>
       </div>

@@ -164,7 +164,7 @@ function renderConvoList() {
 
     const del = document.createElement("button");
     del.className = "convo-delete";
-    del.textContent = "✕";
+    del.innerHTML = icons.close;
     del.title = "Delete conversation";
     del.addEventListener("click", async (e) => {
       e.stopPropagation();
@@ -402,7 +402,7 @@ function renderAttachmentChips() {
     label.textContent = `${fileIcon(att.mime)} ${att.name} (${formatBytes(att.size)})`;
     const remove = document.createElement("button");
     remove.type = "button";
-    remove.textContent = "✕";
+    remove.innerHTML = icons.close;
     remove.addEventListener("click", () => {
       pendingAttachments.splice(idx, 1);
       renderAttachmentChips();

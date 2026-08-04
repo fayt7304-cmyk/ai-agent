@@ -1,6 +1,7 @@
 import { api, type User } from "./api";
 import { initTheme, setTheme } from "./theme";
 import { initI18n, t } from "./lib/i18n";
+import { icons } from "./lib/icons";
 import { showAuthScreen, hideAuthScreen, initAuthView, openClaimScreen, openLoginScreen } from "./auth-view";
 import { initChatView, updateChatUser, resetChatView } from "./chat-view";
 import { initSettingsView, openSettings } from "./settings-view";
@@ -78,6 +79,59 @@ const cookieAnalyticsToggle = document.getElementById("cookie-analytics-toggle")
 const cookieRejectBtn = document.getElementById("cookie-reject-btn") as HTMLButtonElement;
 const cookieAcceptBtn = document.getElementById("cookie-accept-btn") as HTMLButtonElement;
 const COOKIE_CONSENT_KEY = "cookie-consent";
+
+// Every emoji-as-icon spot that isn't already covered by chat-view.ts's own
+// mountStaticIcons() — user menu, theme row, tool grid, and the various modal
+// close/back buttons — gets its SVG mounted here in one pass.
+function mountGlobalIcons() {
+  document.querySelector("#save-account-btn .menu-icon")!.innerHTML = icons.bookmark;
+  document.querySelector("#login-menu-btn .menu-icon")!.innerHTML = icons.key;
+  document.querySelector("#open-settings-btn .menu-icon")!.innerHTML = icons.gear;
+  document.querySelector("#learn-more-btn .menu-icon")!.innerHTML = icons.lightbulb;
+  document.querySelector("#keyboard-shortcuts-btn .menu-icon")!.innerHTML = icons.keyboard;
+  document.querySelector("#privacy-choices-btn .menu-icon")!.innerHTML = icons.lock;
+  document.querySelector("#logout-btn .menu-icon")!.innerHTML = icons.logout;
+
+  document.querySelector('[data-theme-option="light"]')!.innerHTML = icons.sun;
+  document.querySelector('[data-theme-option="dark"]')!.innerHTML = icons.moon;
+  document.querySelector('[data-theme-option="system"]')!.innerHTML = icons.monitor;
+
+  const toolIcons: Record<string, string> = {
+    convert: icons.image,
+    bgremove: icons.scissors,
+    ocr: icons.textRecognize,
+    pdf2word: icons.fileDoc,
+    docx: icons.pencil,
+    uconvert: icons.grid,
+  };
+  document.querySelectorAll<HTMLElement>(".tool-card").forEach((card) => {
+    const tab = card.getAttribute("data-tool-tab");
+    const iconEl = card.querySelector(".tool-card-icon");
+    if (tab && iconEl && toolIcons[tab]) iconEl.innerHTML = toolIcons[tab];
+  });
+
+  document.getElementById("tools-back-btn")!.innerHTML = icons.chevronLeft;
+  document.getElementById("avatar-upload-btn")!.innerHTML = icons.camera;
+  const leadPhotoIcon = document.querySelector(".photo-picker-btn-icon");
+  if (leadPhotoIcon) leadPhotoIcon.innerHTML = icons.camera;
+
+  [
+    "auth-close-btn",
+    "settings-close-btn",
+    "tools-close-btn",
+    "lead-close-btn",
+    "lead-photo-remove",
+    "guest-banner-dismiss-btn",
+    "shortcuts-close-btn",
+  ].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = icons.close;
+  });
+
+  const swapBtn = document.getElementById("conv-swap");
+  if (swapBtn) swapBtn.innerHTML = icons.swap;
+}
+mountGlobalIcons();
 
 let currentUser: User | null = null;
 let chatInitialized = false;

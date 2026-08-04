@@ -1972,6 +1972,19 @@ html[dir="rtl"] code {
   text-align: right;
 }
 
+/* Weather mixes numbers, times, and icons in a fixed grid — always keep it
+   left-to-right, even in Arabic, so hours/temperatures/forecast rows don't
+   visually scramble. Arabic condition text inside still renders correctly
+   (an RTL text run inside an LTR container shapes fine per the bidi algorithm). */
+html[dir="rtl"] #weather-content {
+  direction: ltr;
+  text-align: left;
+}
+html[dir="rtl"] #weather-content .weather-place,
+html[dir="rtl"] #weather-content .uc-section-title {
+  text-align: left;
+}
+
 @media (max-width: 720px) {
   html[dir="rtl"] .sidebar { inset: 0 0 0 auto; }
   html[dir="rtl"] .sidebar.collapsed { transform: translateX(100%); }

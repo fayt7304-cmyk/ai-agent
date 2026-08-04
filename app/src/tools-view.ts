@@ -6,6 +6,7 @@ import { initUnitConverter } from "./lib/uconvert";
 import { initMaterialEstimate } from "./lib/material";
 import { initCalculator } from "./lib/calculator";
 import { initWeather, loadWeather } from "./lib/weather";
+import { t } from "./lib/i18n";
 
 const overlay = document.getElementById("tools-overlay") as HTMLDivElement;
 const closeBtn = document.getElementById("tools-close-btn") as HTMLButtonElement;
@@ -23,13 +24,13 @@ const panes: Record<string, HTMLDivElement> = {
   uconvert: document.getElementById("tool-uconvert") as HTMLDivElement,
 };
 
-const toolLabels: Record<string, string> = {
-  convert: "Convert Image",
-  bgremove: "Remove Background",
-  ocr: "Image to Text",
-  pdf2word: "PDF to Word",
-  docx: "Text to Word",
-  uconvert: "Converter & Calculator",
+const toolLabelKeys: Record<string, string> = {
+  convert: "tools.convert.label",
+  bgremove: "tools.bgremove.label",
+  ocr: "tools.ocr.label",
+  pdf2word: "tools.pdf2word.label",
+  docx: "tools.docx.label",
+  uconvert: "tools.uconvert.label",
 };
 
 function close() {
@@ -40,7 +41,7 @@ function close() {
 
 // Home screen: a simple grid of tool tiles, nothing else visible.
 function showMenu() {
-  title.textContent = "Tools";
+  title.textContent = t("tools.title");
   backBtn.style.display = "none";
   menu.style.display = "flex";
   Object.values(panes).forEach((el) => (el.style.display = "none"));
@@ -48,7 +49,7 @@ function showMenu() {
 
 // Opens one tool full-width, with a back arrow to return to the grid.
 function switchTab(tab: string) {
-  title.textContent = toolLabels[tab] || "Tools";
+  title.textContent = t(toolLabelKeys[tab]) || t("tools.title");
   backBtn.style.display = "inline-flex";
   menu.style.display = "none";
   tabs.querySelectorAll<HTMLButtonElement>("button").forEach((b) => b.classList.toggle("active", b.dataset.toolTab === tab));
@@ -131,18 +132,18 @@ function initBgRemoveTool() {
     const btn = byId<HTMLButtonElement>("bg-remove");
     btn.disabled = true;
     status.classList.add("working");
-    status.textContent = "Loading model…";
+    status.textContent = t("tool.bg.loadingModel");
 
     try {
       resultBlob = await removeBackground(currentFile, (pct) => {
-        status.textContent = `Processing… ${pct}%`;
+        status.textContent = t("tool.bg.processing").replace("{pct}", String(pct));
       });
       byId<HTMLImageElement>("bg-img").src = URL.createObjectURL(resultBlob);
       byId("bg-download").style.display = "inline-block";
-      status.textContent = "Done.";
+      status.textContent = t("tool.bg.done");
       status.classList.remove("working");
     } catch (err: any) {
-      status.textContent = "Something went wrong: " + err.message;
+      status.textContent = t("tool.bg.error") + err.message;
       status.classList.remove("working");
     } finally {
       btn.disabled = false;
@@ -175,7 +176,7 @@ function initOcrTool() {
     const btn = byId<HTMLButtonElement>("ocr-run");
     btn.disabled = true;
     status.classList.add("working");
-    status.textContent = "Reading text…";
+    status.textContent = t("tool.ocr.reading");
 
     try {
       const text = await extractText(currentFile);
@@ -183,10 +184,10 @@ function initOcrTool() {
       output.value = text || "(no text detected)";
       output.style.display = "block";
       byId("ocr-output-controls").style.display = "flex";
-      status.textContent = "Done.";
+      status.textContent = t("tool.ocr.done");
       status.classList.remove("working");
     } catch (err: any) {
-      status.textContent = "Something went wrong: " + (err?.message || "OCR failed.");
+      status.textContent = t("tool.ocr.error") + (err?.message || t("tool.ocr.failed"));
       status.classList.remove("working");
     } finally {
       btn.disabled = false;
@@ -197,7 +198,7 @@ function initOcrTool() {
     const btn = byId<HTMLButtonElement>("ocr-copy");
     navigator.clipboard.writeText(byId<HTMLTextAreaElement>("ocr-output").value).then(() => {
       const original = btn.textContent;
-      btn.textContent = "Copied!";
+      btn.textContent = t("tool.ocr.copied");
       setTimeout(() => (btn.textContent = original), 1500);
     });
   });
@@ -231,17 +232,17 @@ function initPdf2WordTool() {
     const btn = byId<HTMLButtonElement>("pdf-run");
     btn.disabled = true;
     status.classList.add("working");
-    status.textContent = "Reading PDF and extracting text…";
+    status.textContent = t("tool.pdf.reading");
 
     try {
       const markdown = await extractText(currentFile);
-      status.textContent = "Building Word document…";
+      status.textContent = t("tool.pdf.building");
       const blob = await markdownToDocxBlob(markdown);
       downloadBlob(blob, currentFile.name.replace(/\.pdf$/i, "") + ".docx");
-      status.textContent = "Done, download started.";
+      status.textContent = t("tool.pdf.done");
       status.classList.remove("working");
     } catch (err: any) {
-      status.textContent = "Something went wrong: " + (err?.message || "Conversion failed.");
+      status.textContent = t("tool.pdf.error") + (err?.message || t("tool.pdf.failed"));
       status.classList.remove("working");
     } finally {
       btn.disabled = false;
@@ -257,17 +258,17 @@ function initDocxTool() {
 
   runBtn.addEventListener("click", async () => {
     if (!input.value.trim()) {
-      status.textContent = "Paste some markdown first.";
+      status.textContent = t("tool.docx.pasteFirst");
       return;
     }
-    status.textContent = "Building document…";
+    status.textContent = t("tool.docx.building");
     runBtn.disabled = true;
     try {
       const blob = await markdownToDocxBlob(input.value);
       downloadBlob(blob, "document.docx");
-      status.textContent = "Downloaded.";
+      status.textContent = t("tool.docx.downloaded");
     } catch (e: any) {
-      status.textContent = e?.message || "Export failed.";
+      status.textContent = e?.message || t("tool.docx.exportFailed");
     } finally {
       runBtn.disabled = false;
     }

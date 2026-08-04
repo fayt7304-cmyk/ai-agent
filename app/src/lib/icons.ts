@@ -56,6 +56,55 @@ export const icons = {
   pencil: svg(
     `<path d="M12.6 3.4a1.9 1.9 0 0 1 2.7 2.7L6 15.4l-3.5.9.9-3.5Z"/><line x1="11.2" y1="4.8" x2="14.2" y2="7.8"/>`
   ),
+  bookmark: svg(
+    `<path d="M5.5 3h9a1 1 0 0 1 1 1v13l-5.5-3.5L4.5 17V4a1 1 0 0 1 1-1Z"/>`
+  ),
+  key: svg(
+    `<circle cx="6.5" cy="13.5" r="3"/><path d="M8.7 11.3 15.5 4.5"/><path d="M12.5 7.5l2 2"/><path d="M14.7 5.3l2 2"/>`
+  ),
+  gear: svg(
+    `<circle cx="10" cy="10" r="2.6"/><path d="M10 3.5v2M10 14.5v2M16.5 10h-2M5.5 10h-2M14.8 5.2l-1.4 1.4M6.6 13.4l-1.4 1.4M14.8 14.8l-1.4-1.4M6.6 6.6 5.2 5.2"/>`
+  ),
+  lightbulb: svg(
+    `<path d="M7 15.5h6M8 18h4"/><path d="M10 2.5a5 5 0 0 0-3 9c.7.55 1 1.3 1 2h4c0-.7.3-1.45 1-2a5 5 0 0 0-3-9Z"/>`
+  ),
+  lock: svg(
+    `<rect x="4.5" y="9" width="11" height="8" rx="2"/><path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9"/>`
+  ),
+  logout: svg(
+    `<path d="M8.5 17H5a1.5 1.5 0 0 1-1.5-1.5v-11A1.5 1.5 0 0 1 5 3h3.5"/><path d="M13 6.5 16.5 10 13 13.5"/><line x1="16.5" y1="10" x2="8" y2="10"/>`
+  ),
+  sun: svg(
+    `<circle cx="10" cy="10" r="3.2"/><path d="M10 2.8v2M10 15.2v2M17.2 10h-2M4.8 10h-2M15.1 4.9l-1.4 1.4M6.3 13.7l-1.4 1.4M15.1 15.1l-1.4-1.4M6.3 6.3 4.9 4.9"/>`
+  ),
+  moon: svg(
+    `<path d="M16 12.3A6.8 6.8 0 1 1 7.7 4a5.4 5.4 0 0 0 8.3 8.3Z"/>`
+  ),
+  monitor: svg(
+    `<rect x="2.5" y="3.5" width="15" height="10" rx="1.5"/><line x1="7" y1="17" x2="13" y2="17"/><line x1="10" y1="13.5" x2="10" y2="17"/>`
+  ),
+  scissors: svg(
+    `<circle cx="5.5" cy="5.5" r="2"/><circle cx="5.5" cy="14.5" r="2"/><line x1="7" y1="6.8" x2="16.5" y2="15.5"/><line x1="7" y1="13.2" x2="16.5" y2="4.5"/>`
+  ),
+  textRecognize: svg(
+    `<rect x="2.5" y="3.5" width="15" height="13" rx="2"/><line x1="5.5" y1="8" x2="14.5" y2="8"/><line x1="5.5" y1="11" x2="12" y2="11"/><line x1="5.5" y1="14" x2="10" y2="14"/>`
+  ),
+  fileDoc: svg(
+    `<path d="M6 2.5h6l3 3v11.5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-13.5a1 1 0 0 1 1-1Z"/><path d="M12 2.5V6h3"/>`
+  ),
+  camera: svg(
+    `<rect x="2.5" y="6" width="15" height="10.5" rx="2"/><circle cx="10" cy="11.2" r="3"/><path d="M7 6l1.2-2h3.6L13 6"/>`
+  ),
+  grid: svg(
+    `<rect x="2.5" y="2.5" width="6" height="6" rx="1"/><rect x="11.5" y="2.5" width="6" height="6" rx="1"/><rect x="2.5" y="11.5" width="6" height="6" rx="1"/><rect x="11.5" y="11.5" width="6" height="6" rx="1"/>`
+  ),
+  swap: svg(
+    `<path d="M4 7h11"/><path d="M11.5 3.5 15 7l-3.5 3.5"/><path d="M16 13H5"/><path d="M8.5 9.5 5 13l3.5 3.5"/>`
+  ),
+  keyboard: svg(
+    `<rect x="2.5" y="5" width="15" height="10" rx="1.8"/><line x1="5" y1="8" x2="5.01" y2="8"/><line x1="8" y1="8" x2="8.01" y2="8"/><line x1="11" y1="8" x2="11.01" y2="8"/><line x1="14" y1="8" x2="14.01" y2="8"/><line x1="5" y1="11.2" x2="15" y2="11.2"/>`
+  ),
+  chevronLeft: svg(`<path d="M12.5 4.5 6.5 10l6 5.5"/>`),
 };
 
 export function iconEl(name: keyof typeof icons, extraClass = ""): HTMLSpanElement {
