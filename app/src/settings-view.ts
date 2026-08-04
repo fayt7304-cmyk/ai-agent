@@ -118,15 +118,31 @@ async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 /**
  * Opens the settings modal.
- * @param tab The tab to show (profile, preferences, voice, animations, security, data)
- * @param user Optional user to refresh the UI with
- * @param message Optional success message to show
+ * Supports three call patterns:
+ * 1. openSettings(tabName: string)
+ * 2. openSettings(user: User)
+ * 3. openSettings(user: User, message: string)
  */
-export function openSettings(tab = "profile", user?: User, message?: string) {
+export function openSettings(tabOrUser: string | User = "profile", userOrMessage?: User | string, message?: string) {
+  let tab = "profile";
+  let user: User | undefined;
+  let msg = "";
+
+  if (typeof tabOrUser === "string") {
+    // Case 1: openSettings("voice")
+    tab = tabOrUser;
+    msg = typeof userOrMessage === "string" ? userOrMessage : "";
+  } else {
+    // Case 2 & 3: openSettings(user) or openSettings(user, "Connected!")
+    user = tabOrUser;
+    msg = typeof userOrMessage === "string" ? userOrMessage : "";
+    tab = "profile";
+  }
+
   if (user) {
     currentUser = user;
     themeSegmented.querySelectorAll<HTMLButtonElement>("button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.themeOption === user.theme);
+      b.classList.toggle("active", b.dataset.themeOption === user!.theme);
     });
     renderGoogleLinkState(user);
     renderProfile(user);
@@ -134,7 +150,7 @@ export function openSettings(tab = "profile", user?: User, message?: string) {
   
   passwordInput.value = "";
   settingsError.textContent = "";
-  settingsSuccess.textContent = message || "";
+  settingsSuccess.textContent = msg || message || "";
   
   overlay.style.display = "flex";
   showTab(tab);
@@ -143,7 +159,6 @@ export function openSettings(tab = "profile", user?: User, message?: string) {
     setTimeout(() => {
       const activeSessionsList = document.getElementById("active-sessions-list");
       if (activeSessionsList) {
-        // Trigger session load by clicking the data tab button
         const dataTabBtn = settingsNav.querySelector('[data-settings-tab="data"]') as HTMLButtonElement;
         if (dataTabBtn) dataTabBtn.click();
       }
@@ -157,7 +172,6 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     if (e.target === overlay) close();
   });
 
-  // Reload sessions when data tab is opened
   const dataTabBtn = settingsNav.querySelector('[data-settings-tab="data"]') as HTMLButtonElement;
   if (dataTabBtn) {
     dataTabBtn.addEventListener("click", () => {
@@ -169,13 +183,11 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     btn.addEventListener("click", () => showTab(btn.dataset.settingsTab!));
   });
 
-  // Language applies (and saves locally) the moment it's picked
   languageSelect.value = getStoredLang();
   languageSelect.addEventListener("change", () => {
     setLang(languageSelect.value as Lang);
   });
 
-  // Voice settings
   const prefs = getPreferences();
   voiceLanguageSelect.value = prefs.voiceLanguage;
   voiceLanguageSelect.addEventListener("change", () => {
@@ -201,7 +213,6 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     settingsError.textContent = "";
   });
 
-  // Animation & Font settings
   animationSegmented.querySelectorAll<HTMLButtonElement>("button").forEach((btn) => {
     const level = btn.dataset.animationLevel as AnimationLevel;
     btn.classList.toggle("active", level === prefs.animationLevel);
@@ -231,9 +242,6 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     settingsError.textContent = "";
   });
 
-  // ── Data & Memory buttons ─────────────────────────────────────────────────
-  // All requests go through API_BASE with credentials so the auth cookie is sent.
-
   generateMemoryBtn.addEventListener("click", async () => {
     generateMemoryBtn.disabled = true;
     settingsError.textContent = "";
@@ -242,8 +250,6 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
       const result = await apiRequest<{ message?: string }>("/api/memory/generate", { method: "POST" });
       settingsSuccess.textContent = result.message || t("settings.memoryGenerated");
     } catch (err) {
-      // If the endpoint doesn't exist on this deployment, show a friendly message
-      // instead of a raw network error.
       settingsError.textContent = err instanceof ApiError && err.status !== 404
         ? err.message
         : t("settings.memoryNotAvailable");
@@ -257,7 +263,6 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     settingsError.textContent = "";
     settingsSuccess.textContent = "";
     try {
-      // Export: download all conversations as JSON
       const { conversations } = await api.listConversations();
       const exportObj = {
         exported_at: new Date().toISOString(),
@@ -287,7 +292,6 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
       const count = (data.uploads || data.files || []).length;
       settingsSuccess.textContent = t("settings.uploadsCount").replace("{n}", String(count));
     } catch (err) {
-      // Endpoint may not be implemented yet — show graceful message
       settingsError.textContent = err instanceof ApiError && err.status !== 404
         ? err.message
         : t("settings.uploadsNotAvailable");
@@ -296,7 +300,6 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     }
   });
 
-  // ── Active Sessions ───────────────────────────────────────────────────────
   const activeSessionsList = document.getElementById("active-sessions-list") as HTMLDivElement;
   const deleteAccountBtn = document.getElementById("delete-account-btn") as HTMLButtonElement;
 
@@ -337,7 +340,6 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
         });
       }
     } catch (err) {
-      // Endpoint may not be implemented — show graceful message
       const msg = err instanceof ApiError && err.status !== 404
         ? err.message
         : t("settings.sessionsNotAvailable");
@@ -346,7 +348,6 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
   }
   loadActiveSessions();
 
-  // ── Delete Account ────────────────────────────────────────────────────────
   deleteAccountBtn.addEventListener("click", async () => {
     if (!confirm(t("settings.deleteAccountConfirm"))) return;
     deleteAccountBtn.disabled = true;
@@ -359,7 +360,6 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     }
   });
 
-  // ── Password & Google Linking ─────────────────────────────────────────────
   setPasswordBtn.addEventListener("click", async () => {
     const password = passwordInput.value.trim();
     if (password.length < 8) {
