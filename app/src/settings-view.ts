@@ -116,14 +116,34 @@ async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   return data as T;
 }
 
-export function openSettings(tab = "profile") {
+/**
+ * Opens the settings modal.
+ * @param tab The tab to show (profile, preferences, voice, animations, security, data)
+ * @param user Optional user to refresh the UI with
+ * @param message Optional success message to show
+ */
+export function openSettings(tab = "profile", user?: User, message?: string) {
+  if (user) {
+    currentUser = user;
+    themeSegmented.querySelectorAll<HTMLButtonElement>("button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.themeOption === user.theme);
+    });
+    renderGoogleLinkState(user);
+    renderProfile(user);
+  }
+  
+  passwordInput.value = "";
+  settingsError.textContent = "";
+  settingsSuccess.textContent = message || "";
+  
   overlay.style.display = "flex";
   showTab(tab);
+
   if (tab === "data") {
     setTimeout(() => {
       const activeSessionsList = document.getElementById("active-sessions-list");
       if (activeSessionsList) {
-        // Trigger session load
+        // Trigger session load by clicking the data tab button
         const dataTabBtn = settingsNav.querySelector('[data-settings-tab="data"]') as HTMLButtonElement;
         if (dataTabBtn) dataTabBtn.click();
       }
@@ -328,76 +348,37 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
 
   // ── Delete Account ────────────────────────────────────────────────────────
   deleteAccountBtn.addEventListener("click", async () => {
-    const confirmed = confirm(t("settings.deleteAccountConfirm"));
-    if (!confirmed) return;
+    if (!confirm(t("settings.deleteAccountConfirm"))) return;
     deleteAccountBtn.disabled = true;
-    settingsError.textContent = "";
-    settingsSuccess.textContent = "";
     try {
       await apiRequest("/api/user/delete", { method: "DELETE" });
-      settingsSuccess.textContent = t("settings.accountDeleted");
-      setTimeout(() => {
-        localStorage.clear();
-        window.location.href = "/";
-      }, 1500);
+      window.location.reload();
     } catch (err) {
       settingsError.textContent = err instanceof ApiError ? err.message : t("settings.deleteAccountError");
       deleteAccountBtn.disabled = false;
     }
   });
 
-  copyUserIdBtn.addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText(profileUserId.textContent || "");
-      const original = copyUserIdBtn.textContent;
-      copyUserIdBtn.textContent = t("common.copied");
-      setTimeout(() => (copyUserIdBtn.textContent = original), 1200);
-    } catch {
-      // Clipboard access can fail (unsupported/insecure context) — not worth surfacing an error for.
-    }
-  });
-
-  // Theme applies (and saves) the moment it's clicked — no separate save step.
-  themeSegmented.querySelectorAll<HTMLButtonElement>("button").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const theme = btn.dataset.themeOption as Theme;
-      themeSegmented.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      setTheme(theme);
-      settingsError.textContent = "";
-      try {
-        const { user } = await api.updateSettings({ theme });
-        currentUser = user;
-        onUserUpdated(user);
-        settingsSuccess.textContent = t("settings.themeUpdated");
-      } catch (err) {
-        settingsError.textContent = err instanceof ApiError ? err.message : t("settings.themeError");
-      }
-    });
-  });
-
+  // ── Password & Google Linking ─────────────────────────────────────────────
   setPasswordBtn.addEventListener("click", async () => {
-    settingsError.textContent = "";
-    settingsSuccess.textContent = "";
-    if (passwordInput.value.length < 8) {
-      settingsError.textContent = t("settings.passwordTooShort");
+    const password = passwordInput.value.trim();
+    if (password.length < 8) {
+      settingsError.textContent = t("auth.signupHint");
       return;
     }
+    settingsError.textContent = "";
+    settingsSuccess.textContent = "";
     setPasswordBtn.disabled = true;
     try {
-      const { user } = await api.updateSettings({ password: passwordInput.value });
-      currentUser = user;
-      onUserUpdated(user);
-      passwordInput.value = "";
+      await api.updateSettings({ password });
       settingsSuccess.textContent = t("settings.passwordUpdated");
+      passwordInput.value = "";
     } catch (err) {
       settingsError.textContent = err instanceof ApiError ? err.message : t("settings.passwordError");
     } finally {
       setPasswordBtn.disabled = false;
     }
   });
-
-  googleLinkBtn.href = api.googleLinkUrl();
 
   googleUnlinkBtn.addEventListener("click", async () => {
     settingsError.textContent = "";
@@ -483,18 +464,4 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
       saveProfileBtn.disabled = false;
     }
   });
-}
-
-export function openSettings(user: User, message?: string) {
-  currentUser = user;
-  themeSegmented.querySelectorAll<HTMLButtonElement>("button").forEach((b) => {
-    b.classList.toggle("active", b.dataset.themeOption === user.theme);
-  });
-  passwordInput.value = "";
-  settingsError.textContent = "";
-  settingsSuccess.textContent = message || "";
-  renderGoogleLinkState(user);
-  renderProfile(user);
-  showTab("profile");
-  overlay.style.display = "flex";
 }
