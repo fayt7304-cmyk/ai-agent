@@ -3,7 +3,8 @@ import { setTheme, type Theme } from "./theme";
 import { setLang, getStoredLang, t, type Lang } from "./lib/i18n";
 import { refreshConversations } from "./chat-view";
 import { applyAvatar } from "./lib/avatar";
-import { readImageAsAvatarDataUrl } from "./files";
+import { readFileAsDataUrl } from "./files";
+import { showCropper } from "./lib/cropper";
 
 const overlay = document.getElementById("settings-overlay") as HTMLDivElement;
 const closeBtn = document.getElementById("settings-close-btn") as HTMLButtonElement;
@@ -191,10 +192,13 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     if (!file) return;
     settingsError.textContent = "";
     try {
-      const dataUrl = await readImageAsAvatarDataUrl(file);
-      pendingAvatar = dataUrl;
-      applyAvatar(editProfileAvatar, { username: currentUser?.username || "?", avatar: dataUrl });
-      avatarRemoveBtn.style.display = "inline";
+      const originalUrl = await readFileAsDataUrl(file);
+      const croppedUrl = await showCropper(originalUrl, 1);
+      if (croppedUrl) {
+        pendingAvatar = croppedUrl;
+        applyAvatar(editProfileAvatar, { username: currentUser?.username || "?", avatar: croppedUrl });
+        avatarRemoveBtn.style.display = "inline";
+      }
     } catch {
       settingsError.textContent = t("settings.avatarReadError");
     }

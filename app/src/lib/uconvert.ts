@@ -1,4 +1,5 @@
 // Unit + currency converter, ported from the standalone Universal Converter tool.
+import { t } from "./i18n";
 
 export function fmt(n: number, decimals = 4): string {
   if (!isFinite(n)) return "—";
@@ -138,7 +139,7 @@ export function initUnitConverter() {
     Object.entries(categories).forEach(([key, cat]) => {
       const opt = document.createElement("option");
       opt.value = key;
-      opt.textContent = cat.label;
+      opt.textContent = t("uconvert.cat." + key);
       categorySelect.appendChild(opt);
     });
   }
@@ -150,11 +151,11 @@ export function initUnitConverter() {
     Object.keys(cat.names).forEach((u) => {
       const o1 = document.createElement("option");
       o1.value = u;
-      o1.textContent = cat.names[u];
+      o1.textContent = t("uconvert.unit." + u);
       inUnitSelect.appendChild(o1);
       const o2 = document.createElement("option");
       o2.value = u;
-      o2.textContent = cat.names[u];
+      o2.textContent = t("uconvert.unit." + u);
       outUnitSelect.appendChild(o2);
     });
     const keys = Object.keys(cat.names);
@@ -188,14 +189,15 @@ export function initUnitConverter() {
     if (categoryKey === "temperature") {
       const c = celsiusFrom(val, inUnit);
       const result = celsiusTo(c, outUnit);
-      convResult.textContent = fmt(result, 2) + " " + (cat.names[outUnit].match(/\(([^)]+)\)/)?.[1] ?? cat.names[outUnit]);
+      const name = t("uconvert.unit." + outUnit);
+      convResult.textContent = fmt(result, 2) + " " + (name.match(/\(([^)]+)\)/)?.[1] ?? name);
       return;
     }
 
     if (categoryKey === "fuel") {
       const kml = fuelToKmL(val, inUnit);
       const result = fuelFromKmL(kml, outUnit);
-      convResult.textContent = fmt(result, 3) + " " + cat.names[outUnit];
+      convResult.textContent = fmt(result, 3) + " " + t("uconvert.unit." + outUnit);
       return;
     }
 
@@ -214,8 +216,9 @@ export function initUnitConverter() {
 
     const units = cat.units!;
     const result = (val * units[inUnit]) / units[outUnit];
-    const label = cat.names[outUnit].match(/\(([^)]+)\)/);
-    convResult.textContent = fmt(result) + (label ? " " + label[1] : " " + cat.names[outUnit]);
+    const name = t("uconvert.unit." + outUnit);
+    const label = name.match(/\(([^)]+)\)/);
+    convResult.textContent = fmt(result) + (label ? " " + label[1] : " " + name);
   }
 
   categorySelect.addEventListener("change", () => {

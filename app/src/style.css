@@ -1990,3 +1990,44 @@ html[dir="rtl"] #weather-content .uc-section-title {
   html[dir="rtl"] .sidebar.collapsed { transform: translateX(100%); }
   html[dir="rtl"] .sidebar:not(.collapsed) { transform: translateX(0); }
 }
+
+/* Crop Modal */
+.modal-crop {
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.crop-container {
+  flex: 1;
+  min-height: 300px;
+  max-height: 70vh;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.crop-container img {
+  max-width: 100%;
+  display: block;
+}
+.modal-crop .modal-actions {
+  padding: 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+}
+@media (max-width: 640px) {
+  .modal-crop {
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    border-radius: 0;
+  }
+}

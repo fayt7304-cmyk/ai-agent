@@ -1,5 +1,6 @@
 import { api, ApiError } from "./api";
-import { formatBytes, readImageAsPhotoDataUrl } from "./files";
+import { formatBytes, readFileAsDataUrl } from "./files";
+import { showCropper } from "./lib/cropper";
 import { t } from "./lib/i18n";
 
 const overlay = document.getElementById("lead-overlay") as HTMLDivElement;
@@ -64,12 +65,18 @@ export function initLeadView() {
       return;
     }
     try {
-      photoDataUrl = await readImageAsPhotoDataUrl(file);
-      photoImg.src = photoDataUrl;
-      const approxBytes = Math.round((photoDataUrl.length * 3) / 4);
-      photoHint.textContent = `${file.name} (${formatBytes(approxBytes)})`;
-      photoBtn.style.display = "none";
-      photoPreview.style.display = "flex";
+      const originalUrl = await readFileAsDataUrl(file);
+      const croppedUrl = await showCropper(originalUrl); // No fixed aspect ratio for leads
+      if (croppedUrl) {
+        photoDataUrl = croppedUrl;
+        photoImg.src = photoDataUrl;
+        const approxBytes = Math.round((photoDataUrl.length * 3) / 4);
+        photoHint.textContent = `${file.name} (${formatBytes(approxBytes)})`;
+        photoBtn.style.display = "none";
+        photoPreview.style.display = "flex";
+      } else {
+        photoInput.value = "";
+      }
     } catch {
       leadError.textContent = t("lead.photoReadError");
       clearPhoto();
