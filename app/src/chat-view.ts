@@ -3,8 +3,10 @@ import { readFileAsDataUrl, formatBytes, fileIcon, MAX_FILE_BYTES } from "./file
 import { renderMarkdown } from "./lib/markdown";
 import { openLeadModal } from "./lead-view";
 import { applyAvatar } from "./lib/avatar";
+import { openSettings } from "./settings-view";
 import { t } from "./lib/i18n";
 import { icons } from "./lib/icons";
+import { getPreferences } from "./lib/preferences";
 
 interface QuickAction {
   labelKey: string;
@@ -85,6 +87,18 @@ function mountStaticIcons() {
   document.querySelector("#attach-menu-tools .attach-menu-icon")!.innerHTML = icons.tools;
   micBtn.innerHTML = icons.mic;
   document.querySelector(".send-icon")!.innerHTML = icons.send;
+  document.getElementById("header-sparkle-btn")!.innerHTML = icons.sparkle;
+  document.getElementById("header-share-btn")!.innerHTML = icons.share;
+  document.getElementById("header-usage-btn")!.innerHTML = icons.chart;
+  document.getElementById("header-files-btn")!.innerHTML = icons.fileSearch;
+  document.getElementById("header-more-btn")!.innerHTML = icons.more;
+  document.getElementById("header-theme-btn")!.innerHTML = icons.brush;
+
+  document.getElementById("header-sparkle-btn")?.addEventListener("click", () => openSettings("voice"));
+  document.getElementById("header-usage-btn")?.addEventListener("click", () => openSettings("data"));
+  document.getElementById("header-files-btn")?.addEventListener("click", () => openSettings("data"));
+  document.getElementById("header-theme-btn")?.addEventListener("click", () => openSettings("preferences"));
+  document.getElementById("header-more-btn")?.addEventListener("click", () => openSettings("security"));
 }
 
 let currentUser: User;
@@ -279,6 +293,11 @@ function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: strin
       }
       window.speechSynthesis.cancel();
       const utter = new SpeechSynthesisUtterance(content.replace(/[#*`_>-]/g, ""));
+      const prefs = getPreferences();
+      utter.lang = prefs.voiceLanguage;
+      utter.rate = prefs.voiceSpeed;
+      // Note: Voice style (natural, formal, etc.) isn't directly supported by the
+      // standard Web Speech API, but we apply the speed and language.
       utter.onend = () => {
         speakBtn.classList.remove("speaking");
         speakBtn.innerHTML = icons.volume;

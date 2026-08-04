@@ -56,13 +56,18 @@ function applyAnimationLevel(level: AnimationLevel) {
 function applyFontFamily(family: FontFamily) {
   let fontStack = "system-ui, -apple-system, sans-serif";
   if (family === "serif") {
-    fontStack = "Georgia, 'Times New Roman', serif";
+    fontStack = "'Georgia', 'Times New Roman', serif";
   } else if (family === "monospace") {
-    fontStack = "ui-monospace, 'SF Mono', Consolas, monospace";
+    fontStack = "'Fira Code', 'Consolas', 'Monaco', monospace";
   } else if (family === "rounded") {
-    fontStack = "'Segoe UI', Roboto, 'Helvetica Neue', sans-serif";
+    fontStack = "'Quicksand', 'Nunito', 'system-ui', sans-serif";
   }
   document.documentElement.style.setProperty("--font-family", fontStack);
+}
+
+function applyVoiceSettings(prefs: Preferences) {
+  // SpeechSynthesis is handled in chat-view.ts using getPreferences()
+  // This is a hook for any other voice-related global state if needed.
 }
 
 function applyFontSize(size: number) {
@@ -74,6 +79,7 @@ export function initPreferences() {
   applyAnimationLevel(prefs.animationLevel);
   applyFontFamily(prefs.fontFamily);
   applyFontSize(prefs.fontSize);
+  applyVoiceSettings(prefs);
 }
 
 export function getPreferences(): Preferences {
@@ -106,12 +112,14 @@ export function updateVoiceLanguage(lang: VoiceLanguage) {
   const prefs = getStoredPreferences();
   prefs.voiceLanguage = lang;
   savePreferences(prefs);
+  applyVoiceSettings(prefs);
 }
 
 export function updateVoiceStyle(style: VoiceStyle) {
   const prefs = getStoredPreferences();
   prefs.voiceStyle = style;
   savePreferences(prefs);
+  applyVoiceSettings(prefs);
 }
 
 export function updateVoiceSpeed(speed: number) {
@@ -119,4 +127,5 @@ export function updateVoiceSpeed(speed: number) {
   const prefs = getStoredPreferences();
   prefs.voiceSpeed = speed_clamped;
   savePreferences(prefs);
+  applyVoiceSettings(prefs);
 }

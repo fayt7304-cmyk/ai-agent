@@ -2188,3 +2188,37 @@ html[dir="rtl"] #weather-content .uc-section-title {
     width: 100%;
   }
 }
+
+/* ---------------- Header Actions ---------------- */
+.chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+.chat-header .icon-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--text-secondary);
+}
+
+.chat-header .icon-btn:hover {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.chat-header .icon-btn svg {
+  width: 18px;
+  height: 18px;
+}

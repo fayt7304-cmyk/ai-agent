@@ -116,6 +116,21 @@ async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   return data as T;
 }
 
+export function openSettings(tab = "profile") {
+  overlay.style.display = "flex";
+  showTab(tab);
+  if (tab === "data") {
+    setTimeout(() => {
+      const activeSessionsList = document.getElementById("active-sessions-list");
+      if (activeSessionsList) {
+        // Trigger session load
+        const dataTabBtn = settingsNav.querySelector('[data-settings-tab="data"]') as HTMLButtonElement;
+        if (dataTabBtn) dataTabBtn.click();
+      }
+    }, 100);
+  }
+}
+
 export function initSettingsView(onUserUpdated: (user: User) => void) {
   closeBtn.addEventListener("click", close);
   overlay.addEventListener("click", (e) => {
