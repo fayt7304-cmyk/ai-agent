@@ -715,6 +715,13 @@ button.full { width: 100%; }
   cursor: pointer;
 }
 
+.theme-icon-btn svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: block;
+}
+
 .theme-icon-btn:hover { border-color: var(--accent); }
 .theme-icon-btn.active { background: var(--accent-bg); border-color: var(--accent); }
 
