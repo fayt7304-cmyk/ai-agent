@@ -60,6 +60,8 @@ export interface ConversationRow {
   user_id: string;
   mistral_conversation_id: string | null;
   title: string;
+  starred: number;
+  archived: number;
   created_at: string;
   updated_at: string;
 }

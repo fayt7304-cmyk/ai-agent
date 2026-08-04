@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   mistral_conversation_id TEXT,
   title TEXT NOT NULL DEFAULT 'New chat',
+  starred INTEGER NOT NULL DEFAULT 0,
+  archived INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

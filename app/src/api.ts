@@ -26,6 +26,29 @@ export interface User {
 export interface Conversation {
   id: string;
   title: string;
+  starred: boolean;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConversationFile {
+  name: string;
+  mime: string;
+  size: number;
+  role: string;
+  message_id: string;
+  created_at: string;
+}
+
+export interface ConversationUsage {
+  conversation_id: string;
+  title: string;
+  user_messages: number;
+  agent_messages: number;
+  total_messages: number;
+  estimated_tokens: number;
+  time_worked: string;
   created_at: string;
   updated_at: string;
 }
@@ -128,6 +151,24 @@ export const api = {
     request<{ ok: true }>(`/api/conversations/${id}`, { method: "PATCH", body: JSON.stringify({ title }) }),
 
   deleteConversation: (id: string) => request<{ ok: true }>(`/api/conversations/${id}`, { method: "DELETE" }),
+
+  starConversation: (id: string, starred?: boolean) =>
+    request<{ ok: true; starred: boolean }>(`/api/conversations/${id}/star`, {
+      method: "PATCH",
+      body: starred !== undefined ? JSON.stringify({ starred }) : "{}",
+    }),
+
+  archiveConversation: (id: string, archived?: boolean) =>
+    request<{ ok: true; archived: boolean }>(`/api/conversations/${id}/archive`, {
+      method: "PATCH",
+      body: archived !== undefined ? JSON.stringify({ archived }) : "{}",
+    }),
+
+  getConversationFiles: (id: string) =>
+    request<{ files: ConversationFile[] }>(`/api/conversations/${id}/files`, { method: "GET" }),
+
+  getConversationUsage: (id: string) =>
+    request<ConversationUsage>(`/api/conversations/${id}/usage`, { method: "GET" }),
 
   getMessages: (id: string) => request<{ messages: Message[] }>(`/api/conversations/${id}/messages`, { method: "GET" }),
 

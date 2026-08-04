@@ -111,6 +111,11 @@ export const icons = {
   fileSearch: svg(`<path d="M11 2.5H6a1.5 1.5 0 0 0-1.5 1.5v12a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5v-7.5L11 2.5Z"/><path d="M10.5 2.5V7h4.5"/><circle cx="11.5" cy="13.5" r="2.5"/><line x1="13.2" y1="15.2" x2="15.5" y2="17.5"/>`),
   more: svg(`<circle cx="5" cy="10" r="1.2"/><circle cx="10" cy="10" r="1.2"/><circle cx="15" cy="10" r="1.2"/>`),
   brush: svg(`<path d="M14.5 2.5 17.5 5.5 8.5 14.5 5.5 11.5z"/><path d="M5.5 11.5 2.5 14.5a2 2 0 0 0 3 3l3-3z"/>`),
+  star: svg(`<path d="M10 2.5l2.2 4.5 5 .7-3.6 3.5.85 5L10 13.7l-4.45 2.5.85-5L2.8 7.7l5-.7z"/>`),
+  starFilled: svg(`<path d="M10 2.5l2.2 4.5 5 .7-3.6 3.5.85 5L10 13.7l-4.45 2.5.85-5L2.8 7.7l5-.7z" fill="currentColor"/>`),
+  archive: svg(`<rect x="2.5" y="3.5" width="15" height="3.5" rx="1"/><path d="M4 7v8.5a1.5 1.5 0 0 0 1.5 1.5h9a1.5 1.5 0 0 0 1.5-1.5V7"/><line x1="7.5" y1="11" x2="12.5" y2="11"/>`),
+  link: svg(`<path d="M8 11.5a4.5 4.5 0 0 0 6.4 0l2-2a4.5 4.5 0 0 0-6.4-6.4l-1 1"/><path d="M12 8.5a4.5 4.5 0 0 0-6.4 0l-2 2a4.5 4.5 0 0 0 6.4 6.4l1-1"/>`),
+  people: svg(`<circle cx="7" cy="7" r="3"/><path d="M1 17a6 6 0 0 1 12 0"/><circle cx="15" cy="7" r="2.5"/><path d="M13 17a4 4 0 0 1 6 0"/>`),
 };
 
 export function iconEl(name: keyof typeof icons, extraClass = ""): HTMLSpanElement {

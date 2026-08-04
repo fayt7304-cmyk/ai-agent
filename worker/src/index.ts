@@ -586,37 +586,40 @@ async function handleDeleteAccount(request: Request, env: Env): Promise<Response
 }
 
 // ---- Memory generation ----------------------------------------------
-// Stub endpoint — returns a friendly message. If you integrate a real
-// memory/summarisation pipeline (e.g. Mistral summarising past chats),
-// replace the body of this function with that logic.
+// Generates a memory profile from user's conversation history and returns it as a downloadable file.
 async function handleGenerateMemory(request: Request, env: Env): Promise<Response> {
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
 
-  // Fetch recent messages to build a lightweight "memory" summary.
-  // If MISTRAL_API_KEY is available we can call the model; otherwise we
-  // return a graceful message so the UI doesn't show a raw 404.
   if (!env.MISTRAL_API_KEY) {
-    return json({ message: "Memory generation is not configured on this deployment." });
+    return err("Memory generation is not configured on this deployment.", 500);
   }
 
   try {
-    // Pull the last 50 user messages across all conversations
+    // Pull the last 100 user messages across all conversations
     const { results } = await env.DB.prepare(
       `SELECT m.content FROM messages m
        JOIN conversations c ON c.id = m.conversation_id
        WHERE c.user_id = ? AND m.role = 'user'
-       ORDER BY m.created_at DESC LIMIT 50`
+       ORDER BY m.created_at DESC LIMIT 100`
     )
       .bind(user.id)
       .all<{ content: string }>();
 
     if (!results || results.length === 0) {
-      return json({ message: "No conversation history found to generate memory from." });
+      return err("No conversation history found to generate memory from.", 400);
     }
 
-    const combined = results.map((r) => r.content).join("\n");
-    const summaryPrompt = `Summarise the following user messages into a concise memory profile (key interests, topics discussed, preferences). Keep it under 200 words.\n\n${combined}`;
+    const combined = results.map((r) => r.content).join("\n\n");
+    const summaryPrompt = `Summarise the following user messages into a detailed memory profile. Include:
+- Key interests and topics discussed
+- Preferences and patterns
+- Important details mentioned
+- Conversation themes
+
+Keep it well-organized and under 500 words.
+
+${combined}`;
 
     const summaryResult = await callMistral({
       apiKey: env.MISTRAL_API_KEY,
@@ -626,29 +629,52 @@ async function handleGenerateMemory(request: Request, env: Env): Promise<Respons
       attachments: [],
     });
 
-    return json({ message: summaryResult.reply || "Memory generated successfully." });
+    const memoryContent = summaryResult.reply || "No memory generated.";
+    const timestamp = new Date().toISOString().split("T")[0];
+    const filename = `memory-profile-${timestamp}.txt`;
+
+    // Return as downloadable file
+    const resp = new Response(memoryContent, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+      },
+    });
+    return resp;
   } catch (e: any) {
-    return json({ message: "Memory generation encountered an error: " + (e?.message || "Unknown error.") });
+    return err("Memory generation encountered an error: " + (e?.message || "Unknown error."), 500);
   }
 }
 
-// ---- Uploads management ---------------------------------------------
-// Stub endpoint — returns a count of 0 with a friendly message.
-// Replace with real R2/storage logic if you add file upload support.
+// ---- Uploads management
 async function handleListUploads(request: Request, env: Env): Promise<Response> {
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
 
-  // Count attachments stored in message rows for this user
-  const row = await env.DB.prepare(
-    `SELECT COUNT(*) AS n FROM messages m
+  // Collect all attachments across all conversations for this user
+  const { results } = await env.DB.prepare(
+    `SELECT m.attachments, m.created_at FROM messages m
      JOIN conversations c ON c.id = m.conversation_id
-     WHERE c.user_id = ? AND m.attachments IS NOT NULL`
+     WHERE c.user_id = ? AND m.attachments IS NOT NULL
+     ORDER BY m.created_at DESC`
   )
     .bind(user.id)
-    .first<{ n: number }>();
+    .all<{ attachments: string; created_at: string }>();
 
-  return json({ uploads: [], files: [], count: row?.n || 0 });
+  const files: Array<{ name: string; mime: string; size: number; created_at: string }> = [];
+  for (const row of results || []) {
+    try {
+      const atts = JSON.parse(row.attachments) as Array<{ name: string; mime: string; size: number }>;
+      for (const a of atts) {
+        files.push({ name: a.name, mime: a.mime, size: a.size, created_at: row.created_at });
+      }
+    } catch {
+      // malformed JSON — skip
+    }
+  }
+
+  return json({ uploads: files, files, count: files.length });
 }
 
 async function handleListConversations(request: Request, env: Env): Promise<Response> {
@@ -656,7 +682,7 @@ async function handleListConversations(request: Request, env: Env): Promise<Resp
   if (!user) return err("Not authenticated.", 401);
 
   const { results } = await env.DB.prepare(
-    "SELECT id, title, created_at, updated_at FROM conversations WHERE user_id = ? ORDER BY updated_at DESC"
+    "SELECT id, title, starred, archived, created_at, updated_at FROM conversations WHERE user_id = ? ORDER BY starred DESC, updated_at DESC"
   )
     .bind(user.id)
     .all();
@@ -676,7 +702,7 @@ async function handleCreateConversation(request: Request, env: Env): Promise<Res
     .bind(id, user.id, ts, ts)
     .run();
 
-  return json({ conversation: { id, title: "New chat", created_at: ts, updated_at: ts } });
+  return json({ conversation: { id, title: "New chat", starred: 0, archived: 0, created_at: ts, updated_at: ts } });
 }
 
 async function handleRenameConversation(request: Request, env: Env, id: string): Promise<Response> {
@@ -712,6 +738,137 @@ async function handleDeleteConversation(request: Request, env: Env, id: string):
   await env.DB.prepare("DELETE FROM conversations WHERE id = ?").bind(id).run();
 
   return json({ ok: true });
+}
+
+async function handleStarConversation(request: Request, env: Env, id: string): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+
+  const convo = await env.DB.prepare("SELECT id, starred FROM conversations WHERE id = ? AND user_id = ?")
+    .bind(id, user.id)
+    .first<{ id: string; starred: number }>();
+  if (!convo) return err("Conversation not found.", 404);
+
+  const body = (await request.json().catch(() => null)) as { starred?: boolean } | null;
+  // If body provides an explicit value, use it; otherwise toggle the current state.
+  const newStarred = body?.starred !== undefined ? (body.starred ? 1 : 0) : (convo.starred ? 0 : 1);
+
+  await env.DB.prepare("UPDATE conversations SET starred = ?, updated_at = ? WHERE id = ?")
+    .bind(newStarred, nowIso(), id)
+    .run();
+
+  return json({ ok: true, starred: !!newStarred });
+}
+
+async function handleArchiveConversation(request: Request, env: Env, id: string): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+
+  const convo = await env.DB.prepare("SELECT id, archived FROM conversations WHERE id = ? AND user_id = ?")
+    .bind(id, user.id)
+    .first<{ id: string; archived: number }>();
+  if (!convo) return err("Conversation not found.", 404);
+
+  const body = (await request.json().catch(() => null)) as { archived?: boolean } | null;
+  // If body provides an explicit value, use it; otherwise toggle the current state.
+  const newArchived = body?.archived !== undefined ? (body.archived ? 1 : 0) : (convo.archived ? 0 : 1);
+
+  await env.DB.prepare("UPDATE conversations SET archived = ?, updated_at = ? WHERE id = ?")
+    .bind(newArchived, nowIso(), id)
+    .run();
+
+  return json({ ok: true, archived: !!newArchived });
+}
+
+async function handleGetConversationFiles(request: Request, env: Env, id: string): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+
+  const convo = await env.DB.prepare("SELECT id FROM conversations WHERE id = ? AND user_id = ?")
+    .bind(id, user.id)
+    .first();
+  if (!convo) return err("Conversation not found.", 404);
+
+  // Collect all messages in this conversation that have attachments.
+  const { results } = await env.DB.prepare(
+    "SELECT id, role, attachments, created_at FROM messages WHERE conversation_id = ? AND attachments IS NOT NULL ORDER BY created_at ASC"
+  )
+    .bind(id)
+    .all<{ id: string; role: string; attachments: string; created_at: string }>();
+
+  const files: Array<{ name: string; mime: string; size: number; role: string; message_id: string; created_at: string }> = [];
+  for (const row of results || []) {
+    try {
+      const atts = JSON.parse(row.attachments) as Array<{ name: string; mime: string; size: number }>;
+      for (const a of atts) {
+        files.push({ name: a.name, mime: a.mime, size: a.size, role: row.role, message_id: row.id, created_at: row.created_at });
+      }
+    } catch {
+      // malformed JSON — skip
+    }
+  }
+
+  return json({ files });
+}
+
+async function handleGetConversationUsage(request: Request, env: Env, id: string): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+
+  const convo = await env.DB.prepare("SELECT id, title, created_at, updated_at FROM conversations WHERE id = ? AND user_id = ?")
+    .bind(id, user.id)
+    .first<{ id: string; title: string; created_at: string; updated_at: string }>();
+  if (!convo) return err("Conversation not found.", 404);
+
+  // Count messages by role
+  const { results } = await env.DB.prepare(
+    "SELECT role, COUNT(*) AS n, SUM(LENGTH(content)) AS chars FROM messages WHERE conversation_id = ? GROUP BY role"
+  )
+    .bind(id)
+    .all<{ role: string; n: number; chars: number }>();
+
+  let userMessages = 0;
+  let agentMessages = 0;
+  let totalChars = 0;
+  for (const row of results || []) {
+    if (row.role === "user") userMessages = row.n;
+    else if (row.role === "agent") agentMessages = row.n;
+    totalChars += row.chars || 0;
+  }
+
+  // Rough token estimate: ~4 chars per token is a common approximation.
+  const estimatedTokens = Math.round(totalChars / 4);
+
+  // Calculate time worked: difference between first and last message
+  const firstMsg = await env.DB.prepare(
+    "SELECT created_at FROM messages WHERE conversation_id = ? ORDER BY created_at ASC LIMIT 1"
+  ).bind(id).first<{ created_at: string }>();
+  const lastMsg = await env.DB.prepare(
+    "SELECT created_at FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1"
+  ).bind(id).first<{ created_at: string }>();
+
+  let durationSeconds = 0;
+  if (firstMsg && lastMsg && firstMsg.created_at !== lastMsg.created_at) {
+    durationSeconds = Math.round(
+      (new Date(lastMsg.created_at).getTime() - new Date(firstMsg.created_at).getTime()) / 1000
+    );
+  }
+
+  const minutes = Math.floor(durationSeconds / 60);
+  const seconds = durationSeconds % 60;
+  const timeWorked = durationSeconds > 0 ? `${minutes}m ${seconds}s` : "< 1m";
+
+  return json({
+    conversation_id: id,
+    title: convo.title,
+    user_messages: userMessages,
+    agent_messages: agentMessages,
+    total_messages: userMessages + agentMessages,
+    estimated_tokens: estimatedTokens,
+    time_worked: timeWorked,
+    created_at: convo.created_at,
+    updated_at: convo.updated_at,
+  });
 }
 
 async function handleGetMessages(request: Request, env: Env, id: string): Promise<Response> {
@@ -795,7 +952,7 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
     )
       .bind(id, user.id, ts, ts)
       .run();
-    convo = { id, user_id: user.id, mistral_conversation_id: null, title: "New chat", created_at: ts, updated_at: ts };
+    convo = { id, user_id: user.id, mistral_conversation_id: null, title: "New chat", starred: 0, archived: 0, created_at: ts, updated_at: ts };
   }
 
   // Save the user's message first so it's never lost even if Mistral errors out.
@@ -984,6 +1141,14 @@ export default {
         resp = await handleRenameConversation(request, env, path.split("/").pop()!);
       } else if (path.match(/^\/api\/conversations\/[^/]+$/) && request.method === "DELETE") {
         resp = await handleDeleteConversation(request, env, path.split("/").pop()!);
+      } else if (path.match(/^\/api\/conversations\/[^/]+\/star$/) && request.method === "PATCH") {
+        resp = await handleStarConversation(request, env, path.split("/")[3]);
+      } else if (path.match(/^\/api\/conversations\/[^/]+\/archive$/) && request.method === "PATCH") {
+        resp = await handleArchiveConversation(request, env, path.split("/")[3]);
+      } else if (path.match(/^\/api\/conversations\/[^/]+\/files$/) && request.method === "GET") {
+        resp = await handleGetConversationFiles(request, env, path.split("/")[3]);
+      } else if (path.match(/^\/api\/conversations\/[^/]+\/usage$/) && request.method === "GET") {
+        resp = await handleGetConversationUsage(request, env, path.split("/")[3]);
       } else if (path.match(/^\/api\/conversations\/[^/]+\/messages$/) && request.method === "GET") {
         resp = await handleGetMessages(request, env, path.split("/")[3]);
       } else if (path === "/api/chat" && request.method === "POST") {

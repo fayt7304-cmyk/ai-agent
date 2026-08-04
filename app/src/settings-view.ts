@@ -247,8 +247,23 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     settingsError.textContent = "";
     settingsSuccess.textContent = "";
     try {
-      const result = await apiRequest<{ message?: string }>("/api/memory/generate", { method: "POST" });
-      settingsSuccess.textContent = result.message || t("settings.memoryGenerated");
+      // Fetch the memory file as a blob and download it
+      const resp = await fetch(`${API_BASE}/api/memory/generate`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => null);
+        throw new ApiError(data?.error || `Request failed (${resp.status})`, resp.status);
+      }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `memory-profile-${new Date().toISOString().split("T")[0]}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+      settingsSuccess.textContent = t("settings.memoryGenerated");
     } catch (err) {
       settingsError.textContent = err instanceof ApiError && err.status !== 404
         ? err.message
@@ -288,8 +303,9 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     settingsError.textContent = "";
     settingsSuccess.textContent = "";
     try {
-      const data = await apiRequest<{ uploads?: any[]; files?: any[] }>("/api/uploads", { method: "GET" });
-      const count = (data.uploads || data.files || []).length;
+      const data = await apiRequest<{ uploads?: any[]; files?: any[]; count?: number }>("/api/uploads", { method: "GET" });
+      const files = data.uploads || data.files || [];
+      const count = data.count || files.length;
       settingsSuccess.textContent = t("settings.uploadsCount").replace("{n}", String(count));
     } catch (err) {
       settingsError.textContent = err instanceof ApiError && err.status !== 404

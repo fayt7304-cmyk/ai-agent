@@ -92,11 +92,35 @@ function mountStaticIcons() {
   document.getElementById("header-share-btn")!.innerHTML = icons.share;
   document.getElementById("header-more-btn")!.innerHTML = icons.more;
 
-  // Usage modal
+  // Add icons to More menu items
+  const moreRenameBtn = document.getElementById("more-rename");
+  const moreStarBtn = document.getElementById("more-star");
+  const moreArchiveBtn = document.getElementById("more-archive");
+  const moreDeleteBtn = document.getElementById("more-delete");
+  if (moreRenameBtn) moreRenameBtn.innerHTML = `<span class="menu-icon">${icons.pencil}</span> Rename`;
+  if (moreStarBtn) moreStarBtn.innerHTML = `<span class="menu-icon">${icons.star}</span> Star`;
+  if (moreArchiveBtn) moreArchiveBtn.innerHTML = `<span class="menu-icon">${icons.archive}</span> Archive`;
+  if (moreDeleteBtn) moreDeleteBtn.innerHTML = `<span class="menu-icon">${icons.close}</span> Delete`;
+
+  // Add icons to Share menu items
+  const shareOnlyMe = document.getElementById("share-only-me");
+  const shareWithPeople = document.getElementById("share-with-people");
+  const shareCollab = document.getElementById("share-collaboration");
+  if (shareOnlyMe) shareOnlyMe.innerHTML = `<span class="menu-icon">${icons.lock}</span> Only Me`;
+  if (shareWithPeople) shareWithPeople.innerHTML = `<span class="menu-icon">${icons.people}</span> Share with People`;
+  if (shareCollab) shareCollab.innerHTML = `<span class="menu-icon">${icons.link}</span> Copy Link`;
+
+  wireHeaderActions();
+}
+
+// ---- Header action wiring ----
+
+function wireHeaderActions() {
+  // Usage modal — loads real stats when opened
   const usageModal = document.getElementById("usage-modal") as HTMLDivElement;
   const usageCloseBtn = document.getElementById("usage-close-btn") as HTMLButtonElement;
   document.getElementById("header-usage-btn")?.addEventListener("click", () => {
-    usageModal.style.display = "flex";
+    openUsageModal();
   });
   usageCloseBtn.addEventListener("click", () => {
     usageModal.style.display = "none";
@@ -105,11 +129,11 @@ function mountStaticIcons() {
     if (e.target === usageModal) usageModal.style.display = "none";
   });
 
-  // Files modal
+  // Files modal — loads real files when opened
   const filesModal = document.getElementById("files-modal") as HTMLDivElement;
   const filesCloseBtn = document.getElementById("files-close-btn") as HTMLButtonElement;
   document.getElementById("header-files-btn")?.addEventListener("click", () => {
-    filesModal.style.display = "flex";
+    openFilesModal();
   });
   filesCloseBtn.addEventListener("click", () => {
     filesModal.style.display = "none";
@@ -118,21 +142,34 @@ function mountStaticIcons() {
     if (e.target === filesModal) filesModal.style.display = "none";
   });
 
-  // Share menu
+  // Share menu — real actions
   const shareMenu = document.getElementById("share-menu") as HTMLDivElement;
   const shareBtn = document.getElementById("header-share-btn") as HTMLButtonElement;
+
   document.getElementById("share-only-me")?.addEventListener("click", () => {
-    alert("Share: Only Me");
     shareMenu.style.display = "none";
+    showToast("Visibility set to Only Me");
   });
   document.getElementById("share-with-people")?.addEventListener("click", () => {
-    alert("Share: Share with People");
     shareMenu.style.display = "none";
+    showToast("Sharing with people is not yet configured for this deployment.");
   });
-  document.getElementById("share-collaboration")?.addEventListener("click", () => {
-    alert("Share: Collaboration");
+  document.getElementById("share-collaboration")?.addEventListener("click", async () => {
     shareMenu.style.display = "none";
+    if (!currentConversationId) {
+      showToast("No active conversation to share.");
+      return;
+    }
+    // Copy a deep-link to this conversation to the clipboard
+    const url = `${window.location.origin}${window.location.pathname}#conv=${currentConversationId}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast("Link copied to clipboard!");
+    } catch {
+      showToast("Could not copy link. URL: " + url);
+    }
   });
+
   shareBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     shareMenu.style.display = shareMenu.style.display === "none" ? "block" : "none";
@@ -143,25 +180,102 @@ function mountStaticIcons() {
     }
   });
 
-  // More menu
+  // More menu — real actions
   const moreMenu = document.getElementById("more-menu") as HTMLDivElement;
   const moreBtn = document.getElementById("header-more-btn") as HTMLButtonElement;
+
   document.getElementById("more-rename")?.addEventListener("click", () => {
-    alert("Rename conversation");
     moreMenu.style.display = "none";
-  });
-  document.getElementById("more-archive")?.addEventListener("click", () => {
-    alert("Archive conversation");
-    moreMenu.style.display = "none";
-  });
-  document.getElementById("more-delete")?.addEventListener("click", () => {
-    if (confirm("Delete this conversation?")) {
-      alert("Conversation deleted");
-      moreMenu.style.display = "none";
+    if (!currentConversationId) {
+      showToast("No active conversation to rename.");
+      return;
+    }
+    const convo = conversations.find((c) => c.id === currentConversationId);
+    if (!convo) return;
+    const newTitle = prompt("Rename conversation:", convo.title);
+    if (newTitle && newTitle.trim() && newTitle.trim() !== convo.title) {
+      const trimmed = newTitle.trim();
+      convo.title = trimmed;
+      chatTitle.textContent = trimmed;
+      renderConvoList();
+      api.renameConversation(convo.id, trimmed).catch(() => {
+        // Best-effort — title still shows locally
+      });
     }
   });
+
+  document.getElementById("more-star")?.addEventListener("click", async () => {
+    moreMenu.style.display = "none";
+    if (!currentConversationId) {
+      showToast("No active conversation to star.");
+      return;
+    }
+    const convo = conversations.find((c) => c.id === currentConversationId);
+    if (!convo) return;
+    try {
+      const result = await api.starConversation(convo.id);
+      convo.starred = result.starred;
+      renderConvoList();
+      updateMoreMenuStarLabel();
+      showToast(result.starred ? "⭐ Conversation starred" : "Conversation unstarred");
+    } catch (e) {
+      showToast("Could not update star status.");
+    }
+  });
+
+  document.getElementById("more-archive")?.addEventListener("click", async () => {
+    moreMenu.style.display = "none";
+    if (!currentConversationId) {
+      showToast("No active conversation to archive.");
+      return;
+    }
+    const convo = conversations.find((c) => c.id === currentConversationId);
+    if (!convo) return;
+    try {
+      const result = await api.archiveConversation(convo.id);
+      convo.archived = result.archived;
+      if (result.archived) {
+        // Remove from the active list and deselect
+        conversations = conversations.filter((c) => c.id !== convo.id);
+        currentConversationId = null;
+        renderMessages([]);
+        chatTitle.textContent = t("chat.newChat");
+        showToast("Conversation archived");
+      } else {
+        showToast("Conversation unarchived");
+      }
+      renderConvoList();
+    } catch (e) {
+      showToast("Could not archive conversation.");
+    }
+  });
+
+  document.getElementById("more-delete")?.addEventListener("click", async () => {
+    moreMenu.style.display = "none";
+    if (!currentConversationId) {
+      showToast("No active conversation to delete.");
+      return;
+    }
+    const convo = conversations.find((c) => c.id === currentConversationId);
+    if (!convo) return;
+    if (!confirm(`Delete "${convo.title}"? This cannot be undone.`)) return;
+    try {
+      await api.deleteConversation(convo.id);
+      conversations = conversations.filter((c) => c.id !== convo.id);
+      currentConversationId = null;
+      renderMessages([]);
+      chatTitle.textContent = t("chat.newChat");
+      renderConvoList();
+      showToast("Conversation deleted");
+    } catch (e) {
+      showToast("Could not delete conversation.");
+    }
+  });
+
   moreBtn.addEventListener("click", (e) => {
     e.stopPropagation();
+    updateMoreMenuStarLabel();
+    updateMoreMenuArchiveLabel();
     moreMenu.style.display = moreMenu.style.display === "none" ? "block" : "none";
   });
   document.addEventListener("click", (e) => {
@@ -169,6 +283,159 @@ function mountStaticIcons() {
       moreMenu.style.display = "none";
     }
   });
+}
+
+/** Update the Star menu item label to reflect current state */
+function updateMoreMenuStarLabel() {
+  const moreStarBtn = document.getElementById("more-star");
+  if (!moreStarBtn) return;
+  const convo = currentConversationId ? conversations.find((c) => c.id === currentConversationId) : null;
+  const isStarred = convo?.starred ?? false;
+  moreStarBtn.innerHTML = `<span class="menu-icon">${isStarred ? icons.starFilled : icons.star}</span> ${isStarred ? "Unstar" : "Star"}`;
+}
+
+/** Update the Archive menu item label to reflect current state */
+function updateMoreMenuArchiveLabel() {
+  const moreArchiveBtn = document.getElementById("more-archive");
+  if (!moreArchiveBtn) return;
+  const convo = currentConversationId ? conversations.find((c) => c.id === currentConversationId) : null;
+  const isArchived = convo?.archived ?? false;
+  moreArchiveBtn.innerHTML = `<span class="menu-icon">${icons.archive}</span> ${isArchived ? "Unarchive" : "Archive"}`;
+}
+
+/** Open the Usage modal and populate it with real data for the current conversation */
+async function openUsageModal() {
+  const usageModal = document.getElementById("usage-modal") as HTMLDivElement;
+  const creditsEl = document.getElementById("usage-credits");
+  const timeEl = document.getElementById("usage-time");
+
+  // Show loading state
+  if (creditsEl) creditsEl.textContent = "…";
+  if (timeEl) timeEl.textContent = "…";
+  usageModal.style.display = "flex";
+
+  if (!currentConversationId) {
+    if (creditsEl) creditsEl.textContent = "0";
+    if (timeEl) timeEl.textContent = "—";
+    return;
+  }
+
+  try {
+    const usage = await api.getConversationUsage(currentConversationId);
+    if (creditsEl) creditsEl.textContent = String(usage.estimated_tokens);
+    if (timeEl) timeEl.textContent = usage.time_worked;
+
+    // Update the label for credits to say "Est. Tokens" since that's what we're showing
+    const creditsLabel = creditsEl?.previousElementSibling as HTMLElement;
+    if (creditsLabel) creditsLabel.textContent = "Est. Tokens";
+
+    // Add extra stats if the modal has room
+    const usageContent = usageModal.querySelector(".usage-content");
+    if (usageContent) {
+      // Remove any previously-added dynamic stats
+      usageContent.querySelectorAll(".usage-stat-dynamic").forEach((el) => el.remove());
+
+      const addStat = (label: string, value: string) => {
+        const stat = document.createElement("div");
+        stat.className = "usage-stat usage-stat-dynamic";
+        stat.innerHTML = `<div class="usage-label">${label}</div><div class="usage-value">${value}</div>`;
+        usageContent.appendChild(stat);
+      };
+
+      addStat("Your Messages", String(usage.user_messages));
+      addStat("AI Responses", String(usage.agent_messages));
+    }
+  } catch {
+    if (creditsEl) creditsEl.textContent = "—";
+    if (timeEl) timeEl.textContent = "—";
+  }
+}
+
+/** Open the Files modal and populate it with real attachment data */
+async function openFilesModal() {
+  const filesModal = document.getElementById("files-modal") as HTMLDivElement;
+  const filesContent = document.getElementById("files-content") as HTMLDivElement;
+
+  filesContent.innerHTML = `<p style="color: var(--text-secondary); font-size: 13px;">Loading…</p>`;
+  filesModal.style.display = "flex";
+
+  if (!currentConversationId) {
+    filesContent.innerHTML = `<p style="color: var(--text-secondary); font-size: 13px;">No active conversation.</p>`;
+    return;
+  }
+
+  try {
+    const { files } = await api.getConversationFiles(currentConversationId);
+
+    if (!files || files.length === 0) {
+      filesContent.innerHTML = `<p style="color: var(--text-secondary); font-size: 13px;">No files uploaded in this conversation yet.</p>`;
+      return;
+    }
+
+    filesContent.innerHTML = "";
+    for (const f of files) {
+      const item = document.createElement("div");
+      item.className = "files-item";
+      item.style.cssText = "display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);";
+
+      const icon = document.createElement("span");
+      icon.style.cssText = "font-size:20px;flex-shrink:0;";
+      icon.textContent = fileIcon(f.mime);
+
+      const info = document.createElement("div");
+      info.style.cssText = "flex:1;min-width:0;";
+      const name = document.createElement("div");
+      name.style.cssText = "font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+      name.textContent = f.name;
+      const meta = document.createElement("div");
+      meta.style.cssText = "font-size:11px;color:var(--text-secondary);margin-top:2px;";
+      const date = new Date(f.created_at).toLocaleDateString();
+      meta.textContent = `${formatBytes(f.size)} · ${f.role === "user" ? "Uploaded by you" : "From AI"} · ${date}`;
+      info.appendChild(name);
+      info.appendChild(meta);
+
+      item.appendChild(icon);
+      item.appendChild(info);
+      filesContent.appendChild(item);
+    }
+  } catch {
+    filesContent.innerHTML = `<p style="color: var(--text-secondary); font-size: 13px;">Could not load files.</p>`;
+  }
+}
+
+// ---- Toast notification ----
+let toastTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function showToast(message: string, duration = 3000) {
+  let toast = document.getElementById("chat-toast") as HTMLDivElement;
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "chat-toast";
+    toast.style.cssText = `
+      position: fixed;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--surface-elevated, #333);
+      color: var(--text, #fff);
+      padding: 8px 18px;
+      border-radius: 20px;
+      font-size: 13px;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+      white-space: nowrap;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+    `;
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.style.opacity = "1";
+  if (toastTimeout) clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => {
+    toast.style.opacity = "0";
+  }, duration);
 }
 
 let currentUser: User;
@@ -188,10 +455,20 @@ function renderConvoList() {
   convoList.innerHTML = "";
   for (const c of conversations) {
     const item = document.createElement("div");
-    item.className = "convo-item" + (c.id === currentConversationId ? " active" : "");
+    item.className = "convo-item" + (c.id === currentConversationId ? " active" : "") + (c.starred ? " starred" : "");
     const title = document.createElement("span");
     title.className = "convo-title";
-    title.textContent = c.title;
+
+    // Show star indicator inline with title
+    if (c.starred) {
+      const starSpan = document.createElement("span");
+      starSpan.className = "convo-star-indicator";
+      starSpan.innerHTML = icons.starFilled;
+      starSpan.style.cssText = "display:inline-flex;align-items:center;margin-right:4px;color:var(--accent,#f5a623);width:14px;height:14px;flex-shrink:0;";
+      title.appendChild(starSpan);
+    }
+    const titleText = document.createTextNode(c.title);
+    title.appendChild(titleText);
 
     function startRename() {
       const input = document.createElement("input");
@@ -272,7 +549,12 @@ function renderConvoList() {
 
 async function loadConversations() {
   const { conversations: list } = await api.listConversations();
-  conversations = list;
+  // Normalize starred/archived from 0/1 integers to booleans
+  conversations = list.map((c: any) => ({
+    ...c,
+    starred: !!c.starred,
+    archived: !!c.archived,
+  }));
   renderConvoList();
 }
 
