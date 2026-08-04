@@ -107,8 +107,8 @@ function mountStaticIcons() {
   const shareWithPeople = document.getElementById("share-with-people");
   const shareCollab = document.getElementById("share-collaboration");
   if (shareOnlyMe) shareOnlyMe.innerHTML = `<span class="menu-icon">${icons.lock}</span> Only Me`;
-  if (shareWithPeople) shareWithPeople.innerHTML = `<span class="menu-icon">${icons.people}</span> Share with People`;
-  if (shareCollab) shareCollab.innerHTML = `<span class="menu-icon">${icons.link}</span> Copy Link`;
+  if (shareWithPeople) shareWithPeople.innerHTML = `<span class="menu-icon">${icons.people}</span> Everyone`;
+  if (shareCollab) shareCollab.innerHTML = `<span class="menu-icon">${icons.link}</span> Collab`;
 
   wireHeaderActions();
 }

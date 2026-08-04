@@ -734,6 +734,7 @@ button.full { width: 100%; }
 }
 
 .chat-header {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
