@@ -9,7 +9,26 @@
 // wrangler.toml (GOOGLE_REDIRECT_URI, COOKIE_DOMAIN) — both must point at this same
 // custom domain, and the Worker needs that custom domain added in the Cloudflare
 // dashboard (Workers & Pages → mistral-agent-chat → Settings → Domains & Routes).
-export const API_BASE = "https://api.afmarbre.com";
+//
+// The value can be overridden without editing code, which matters when the
+// custom domain isn't attached to the Worker yet (that shows up in the app as
+// "the worker doesn't work" — every request fails because nothing answers at
+// api.afmarbre.com). Precedence:
+//   1. VITE_API_BASE at build time  (echo 'VITE_API_BASE=https://xxx.workers.dev' > .env)
+//   2. localStorage "api-base"      (for quick debugging in a live browser)
+//   3. the custom domain below
+function resolveApiBase(): string {
+  const fromEnv = (import.meta as any).env?.VITE_API_BASE as string | undefined;
+  let fromStorage: string | null = null;
+  try {
+    fromStorage = localStorage.getItem("api-base");
+  } catch {
+    // storage blocked — ignore
+  }
+  return (fromEnv || fromStorage || "https://api.afmarbre.com").replace(/\/+$/, "");
+}
+
+export const API_BASE = resolveApiBase();
 
 export interface User {
   id: string;
@@ -77,12 +96,86 @@ export class ApiError extends Error {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Session token (the fix for "it shows the login page even though I was logged in")
+//
+// The session used to live only in a cookie set by api.afmarbre.com. Browsers
+// that block third-party/cross-site cookies — iOS Safari, Firefox ETP, Chrome
+// incognito — dropped it, so /api/auth/me came back 401 and the app fell back
+// to the login/guest screen on every visit. The Worker now also returns the
+// session token in the response body (and in the URL fragment after Google
+// sign-in); we keep a copy here and send it as a Bearer token on every request,
+// so the session survives whatever the browser does with cookies.
+// ---------------------------------------------------------------------------
+const TOKEN_KEY = "session-token";
+
+function readStoredToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+let sessionToken: string | null = readStoredToken();
+
+export function setSessionToken(token: string | null) {
+  sessionToken = token || null;
+  try {
+    if (sessionToken) localStorage.setItem(TOKEN_KEY, sessionToken);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // Private mode with storage disabled — the cookie path still applies.
+  }
+}
+
+export function getSessionToken(): string | null {
+  return sessionToken;
+}
+
+/** Headers to attach to any hand-rolled fetch against the Worker. */
+export function authHeaders(): Record<string, string> {
+  return sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {};
+}
+
+/**
+ * Google sign-in comes back as a redirect to the frontend with `#session=<token>`.
+ * Pick it up (and scrub it from the URL) before anything calls the API.
+ */
+export function captureSessionFromUrl() {
+  const hash = window.location.hash || "";
+  const match = hash.match(/[#&]session=([^&]+)/);
+  if (!match) return;
+  setSessionToken(decodeURIComponent(match[1]));
+  const cleaned = hash.replace(/[#&]session=[^&]*/, "");
+  window.history.replaceState(
+    {},
+    "",
+    window.location.pathname + window.location.search + (cleaned === "#" ? "" : cleaned)
+  );
+}
+
+captureSessionFromUrl();
+
+// Anything in the app that fetches the Worker directly (settings, text-to-speech)
+// gets the credentials and the Bearer token without having to remember to add
+// them at each call site.
+const nativeFetch = window.fetch.bind(window);
+window.fetch = ((input: RequestInfo | URL, init: RequestInit = {}) => {
+  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  if (!url.startsWith(API_BASE)) return nativeFetch(input as any, init);
+  const headers = new Headers(init.headers || (input instanceof Request ? input.headers : undefined));
+  if (sessionToken && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${sessionToken}`);
+  return nativeFetch(input as any, { ...init, credentials: "include", headers });
+}) as typeof window.fetch;
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const resp = await fetch(`${API_BASE}${path}`, {
     ...init,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
       ...(init.headers || {}),
     },
   });
@@ -95,29 +188,33 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   if (!resp.ok) {
+    // A rejected session is worth forgetting — otherwise a stale token keeps
+    // being replayed on every request.
+    if (resp.status === 401 && path !== "/api/auth/login") setSessionToken(null);
     throw new ApiError(data?.error || `Request failed (${resp.status})`, resp.status);
   }
+  if (data && typeof data.session_token === "string") setSessionToken(data.session_token);
   return data as T;
 }
 
 export const api = {
   signup: (username: string, email: string, password: string) =>
-    request<{ user: User }>("/api/auth/signup", {
+    request<{ user: User; session_token?: string }>("/api/auth/signup", {
       method: "POST",
       body: JSON.stringify({ username, email, password }),
     }),
 
   login: (username: string, password: string) =>
-    request<{ user: User }>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
+    request<{ user: User; session_token?: string }>("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
 
   // Silently creates (or resumes) an anonymous account — no credentials needed.
   // Used so people land straight in the app instead of a login form.
-  guestLogin: () => request<{ user: User }>("/api/auth/guest", { method: "POST", body: "{}" }),
+  guestLogin: () => request<{ user: User; session_token?: string }>("/api/auth/guest", { method: "POST", body: "{}" }),
 
   // Upgrades the current guest account into a real one in place, keeping the
   // same id (and therefore all of its conversation history).
   claimAccount: (username: string, email: string, password: string) =>
-    request<{ user: User }>("/api/auth/claim", {
+    request<{ user: User; session_token?: string }>("/api/auth/claim", {
       method: "POST",
       body: JSON.stringify({ username, email, password }),
     }),
@@ -127,7 +224,7 @@ export const api = {
 
   googleLinkUrl: () => `${API_BASE}/api/auth/google?mode=link`,
 
-  unlinkGoogle: () => request<{ user: User }>("/api/auth/google/link", { method: "DELETE" }),
+  unlinkGoogle: () => request<{ user: User; session_token?: string }>("/api/auth/google/link", { method: "DELETE" }),
 
   forgotPassword: (email: string) =>
     request<{ ok: true }>("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) }),
@@ -135,13 +232,21 @@ export const api = {
   resetPassword: (token: string, password: string) =>
     request<{ ok: true }>("/api/auth/reset-password", { method: "POST", body: JSON.stringify({ token, password }) }),
 
-  logout: () => request<{ ok: true }>("/api/auth/logout", { method: "POST" }),
+  logout: async () => {
+    try {
+      return await request<{ ok: true }>("/api/auth/logout", { method: "POST" });
+    } finally {
+      // Drop the local copy even if the network call failed, so "log out" always
+      // actually logs out on this device.
+      setSessionToken(null);
+    }
+  },
 
-  me: () => request<{ user: User }>("/api/auth/me", { method: "GET" }),
+  me: () => request<{ user: User; session_token?: string }>("/api/auth/me", { method: "GET" }),
 
   updateSettings: (
     patch: Partial<Pick<User, "theme" | "username" | "display_name" | "avatar">> & { password?: string }
-  ) => request<{ user: User }>("/api/settings", { method: "PATCH", body: JSON.stringify(patch) }),
+  ) => request<{ user: User; session_token?: string }>("/api/settings", { method: "PATCH", body: JSON.stringify(patch) }),
 
   listConversations: () => request<{ conversations: Conversation[] }>("/api/conversations", { method: "GET" }),
 

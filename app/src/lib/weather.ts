@@ -133,8 +133,8 @@ export function loadWeather() {
     content.innerHTML = `
       <div class="weather-place">${placeName}
         <a href="https://www.google.com/search?q=${encodeURIComponent("weather in " + placeName)}"
-           target="_blank" rel="noopener"
-           style="margin-left:10px; font-size:12px; color:var(--accent); text-decoration:none;">
+           target="_blank" rel="noopener" class="weather-google-link"
+           style="font-size:12px; color:var(--accent); text-decoration:none;">
           ${t("weather.openGoogle")} ↗
         </a>
       </div>

@@ -196,7 +196,10 @@ function setUserMenuOpen(open: boolean) {
   // this menu whenever it needs to be wider than the collapsed 64px rail — so lift
   // the clip only while the menu is actually open.
   sidebar.classList.toggle("menu-open", open);
-  if (!open) learnMoreSubmenu.style.display = "none";
+  if (!open) {
+    learnMorePinned = false;
+    learnMoreSubmenu.style.display = "none";
+  }
 }
 
 userMenuBtn.addEventListener("click", () => {
@@ -215,6 +218,11 @@ openSettingsBtn.addEventListener("click", () => {
 });
 
 let learnMoreCloseTimer: ReturnType<typeof setTimeout> | null = null;
+// On a mouse, hovering "Learn more" already opens the flyout, so a plain
+// click-toggle immediately closed it again and the submenu looked broken.
+// Clicking now pins the flyout open (and a second click unpins it), while
+// hover-only opens still close on mouse-out.
+let learnMorePinned = false;
 
 function openLearnMore() {
   if (learnMoreCloseTimer) {
@@ -224,7 +232,8 @@ function openLearnMore() {
   learnMoreSubmenu.style.display = "block";
 }
 
-function closeLearnMore(delay = 0) {
+function closeLearnMore(delay = 0, force = false) {
+  if (!force && learnMorePinned) return;
   if (learnMoreCloseTimer) clearTimeout(learnMoreCloseTimer);
   learnMoreCloseTimer = setTimeout(() => {
     learnMoreSubmenu.style.display = "none";
@@ -246,9 +255,13 @@ learnMoreSubmenu.addEventListener("mouseleave", () => closeLearnMore(150));
 // Touch/keyboard still needs a tap-to-toggle, since there's no hover to rely on.
 learnMoreBtn.addEventListener("click", (e) => {
   e.stopPropagation();
-  const open = learnMoreSubmenu.style.display !== "none";
-  if (open) closeLearnMore();
-  else openLearnMore();
+  if (learnMorePinned) {
+    learnMorePinned = false;
+    closeLearnMore(0, true);
+  } else {
+    learnMorePinned = true;
+    openLearnMore();
+  }
 });
 
 function closeShortcuts() {

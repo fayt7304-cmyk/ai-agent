@@ -72,6 +72,16 @@ export function clearSessionCookieHeader(domain?: string): string {
 }
 
 export function readSessionToken(request: Request): string | null {
+  // 1) Bearer token — the reliable path. Some mobile browsers (and any browser
+  //    with third-party cookies disabled) drop the session cookie on the way to
+  //    the API subdomain, which made the app show the login screen even though
+  //    the user had just logged in. The frontend keeps a copy of the token and
+  //    sends it here, so auth survives regardless of cookie policy.
+  const authHeader = request.headers.get("Authorization") || "";
+  const bearer = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (bearer && bearer[1].trim()) return bearer[1].trim();
+
+  // 2) Cookie — still used when it works (and for the OAuth redirect hop).
   const cookie = request.headers.get("Cookie") || "";
   const match = cookie.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`));
   return match ? decodeURIComponent(match[1]) : null;

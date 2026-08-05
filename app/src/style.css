@@ -1,48 +1,66 @@
 :root {
-  --transition-duration: 0.3s;
+  --transition-duration: 0.2s;
   --anim-level: normal;
-  --font-family: system-ui, -apple-system, sans-serif;
+  --font-family: "Inter", system-ui, -apple-system, sans-serif;
+  --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
   --base-font-size: 14px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
 }
 
 [data-theme="light"] {
-  --bg: #f6f5f2;
+  --bg: #faf9f5;
   --card: #ffffff;
-  --sidebar: #f0efe9;
-  --text: #1c1c1a;
-  --text-secondary: #6b6a64;
-  --border: #e3e1da;
-  --accent: #a9802f;
-  --accent-bg: #f7efdd;
-  --accent-text: #ffffff;
-  --accent-strong: #8c6821;
-  --bubble-user: #a9802f;
-  --bubble-user-text: #ffffff;
-  --bubble-agent: #ffffff;
-  --bubble-agent-text: #1c1c1a;
+  --card-elevated: #ffffff;
+  --sidebar: #f4f1e9;
+  --surface-hover: #efeade;
+  --text: #2a2721;
+  --text-secondary: #75705f;
+  --border: #e7e1d2;
+  --border-strong: #d8cfb7;
+  --ring: rgba(176, 132, 40, 0.35);
+  --accent: #b08428;
+  --accent-bg: #f3e7c9;
+  --accent-text: #fffdf8;
+  --accent-strong: #8c6720;
+  --accent-hover: #9c7423;
+  --bubble-user: #b08428;
+  --bubble-user-text: #fffdf8;
+  --bubble-agent: transparent;
+  --bubble-agent-text: #2a2721;
   --danger: #b3261e;
   --danger-bg: #fbe6e2;
-  --shadow: 0 8px 30px rgba(20, 20, 18, 0.08);
+  --shadow-sm: 0 1px 3px rgba(41, 34, 14, 0.06);
+  --shadow: 0 8px 30px rgba(41, 34, 14, 0.08);
+  --shadow-lg: 0 20px 60px rgba(41, 34, 14, 0.16);
 }
 
 [data-theme="dark"] {
-  --bg: #17181a;
-  --card: #202124;
-  --sidebar: #1b1c1f;
-  --text: #f1f0ec;
-  --text-secondary: #9a9a94;
-  --border: #34353a;
-  --accent: #d7b264;
-  --accent-bg: #3a2f18;
-  --accent-text: #17130a;
-  --accent-strong: #e6c780;
-  --bubble-user: #d7b264;
-  --bubble-user-text: #17130a;
-  --bubble-agent: #26272b;
-  --bubble-agent-text: #f1f0ec;
+  --bg: #16140f;
+  --card: #211e17;
+  --card-elevated: #29251c;
+  --sidebar: #1b1811;
+  --surface-hover: #2c2820;
+  --text: #f2ede1;
+  --text-secondary: #a89e88;
+  --border: #38321f;
+  --border-strong: #4a4228;
+  --ring: rgba(216, 175, 96, 0.35);
+  --accent: #d8af60;
+  --accent-bg: #3a2f16;
+  --accent-text: #201803;
+  --accent-strong: #e8c37f;
+  --accent-hover: #e2bb70;
+  --bubble-user: #d8af60;
+  --bubble-user-text: #201803;
+  --bubble-agent: transparent;
+  --bubble-agent-text: #f2ede1;
   --danger: #ff8a80;
   --danger-bg: #3a201d;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 24px 70px rgba(0, 0, 0, 0.55);
 }
 
 * { box-sizing: border-box; }
@@ -99,6 +117,12 @@ body {
   line-height: 1.5;
 }
 
+h1, h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
 button, input, textarea, select {
   font-family: inherit;
   color: inherit;
@@ -122,15 +146,16 @@ button, input, textarea, select {
   max-width: 380px;
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   padding: 1.75rem;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-lg);
 }
 
 .auth-header h1 {
   margin: 0 0 4px;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 600;
+  font-family: var(--font-display);
 }
 
 .auth-header p {
@@ -146,7 +171,7 @@ button, input, textarea, select {
 .auth-close-btn {
   position: absolute;
   top: -6px;
-  right: -6px;
+  inset-inline-end: -6px;
 }
 
 .guest-continue-btn {
@@ -269,17 +294,29 @@ button, input, textarea, select {
 
 button.primary {
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--accent);
   color: var(--accent-text);
   padding: 10px 20px;
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
+  transition: background 0.15s ease, filter 0.15s ease;
 }
 
+button.primary:hover:not(:disabled) { background: var(--accent-hover); }
 button.primary:disabled { opacity: 0.6; cursor: default; }
 button.full { width: 100%; }
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+.icon-btn:focus-visible,
+.composer-icon-btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
 
 /* ---------------- App shell ---------------- */
 .app-shell {
@@ -291,7 +328,7 @@ button.full { width: 100%; }
   width: 260px;
   flex-shrink: 0;
   background: var(--sidebar);
-  border-right: 1px solid var(--border);
+  border-inline-end: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   transition: width 0.2s ease;
@@ -303,7 +340,13 @@ button.full { width: 100%; }
    collapsed 64px rail, where the menu is deliberately wider than its container.
    overflow-x:hidden above exists for the collapse/expand width transition, not
    to clip open menus, so lift it only while a menu is actually open. */
-.sidebar.menu-open { overflow: visible; }
+.sidebar.menu-open {
+  overflow: visible;
+  /* Also raise the whole rail: the flyout paints inside the sidebar's stacking
+     context, so without this the main chat column covered it. */
+  position: relative;
+  z-index: 40;
+}
 
 /* Desktop collapsed state becomes a slim icon rail (not fully hidden) so the
    toggle/new-chat/search/avatar stay reachable with one click — matches how
@@ -361,14 +404,15 @@ button.full { width: 100%; }
   align-items: center;
   gap: 8px;
   padding: 9px 12px;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--card);
   cursor: pointer;
   font-size: 13.5px;
+  font-weight: 500;
   text-align: start;
   color: var(--text);
-  transition: border-color 0.15s ease, color 0.15s ease;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 
 .new-chat-btn:hover { border-color: var(--accent); color: var(--accent); }
@@ -421,14 +465,15 @@ button.full { width: 100%; }
   align-items: center;
   gap: 6px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 13.5px;
   color: var(--text-secondary);
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
-.convo-item:hover { background: var(--card); }
-.convo-item.active { background: var(--accent-bg); color: var(--accent); font-weight: 500; }
+.convo-item:hover { background: var(--surface-hover); }
+.convo-item.active { background: var(--accent-bg); color: var(--accent-strong); font-weight: 500; }
 
 .convo-title {
   flex: 1;
@@ -550,7 +595,7 @@ button.full { width: 100%; }
 .install-app-dot {
   position: absolute;
   top: -1px;
-  right: -1px;
+  inset-inline-end: -1px;
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -599,14 +644,17 @@ button.full { width: 100%; }
 .user-menu {
   position: absolute;
   bottom: 56px;
-  left: 10px;
-  right: 10px;
+  inset-inline-start: 10px;
+  inset-inline-end: 10px;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 14px;
   box-shadow: 0 12px 40px rgba(20, 20, 18, 0.14), 0 2px 8px rgba(20, 20, 18, 0.06);
   z-index: 5;
-  overflow: hidden;
+  /* No overflow:hidden here — the "Learn more" flyout is positioned outside this
+     box, and clipping it made the submenu invisible even though it was open.
+     Rounded corners are preserved by the children's own radii. */
+  overflow: visible;
 }
 
 /* Collapsed sidebar is only 64px wide — anchoring the menu to left:10px/right:10px
@@ -615,8 +663,8 @@ button.full { width: 100%; }
    it a real fixed width and let it float out over the main content, anchored to
    the rail's left edge, the same way the collapsed rail's other flyouts behave. */
 .sidebar.collapsed .user-menu {
-  left: 10px;
-  right: auto;
+  inset-inline-start: 10px;
+  inset-inline-end: auto;
   width: 260px;
 }
 
@@ -702,7 +750,8 @@ button.full { width: 100%; }
 .user-submenu {
   position: absolute;
   top: 0;
-  left: calc(100% + 6px);
+  /* Logical inset so the flyout opens to the correct side in RTL layouts. */
+  inset-inline-start: calc(100% + 6px);
   min-width: 180px;
   background: var(--card);
   border: 1px solid var(--border);
@@ -780,13 +829,15 @@ button.full { width: 100%; }
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 16px;
+  padding: 12px 18px;
   border-bottom: 1px solid var(--border);
+  background: var(--bg);
 }
 
 .chat-title {
-  font-size: 14.5px;
+  font-size: 15px;
   font-weight: 500;
+  font-family: var(--font-display);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -847,11 +898,11 @@ button.full { width: 100%; }
 .messages {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 4px;
+  padding: 24px 4px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  max-width: 760px;
+  gap: 20px;
+  max-width: 46rem;
   width: 100%;
   margin: 0 auto;
 }
@@ -860,7 +911,8 @@ button.full { width: 100%; }
   margin: auto;
   text-align: center;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 17px;
+  font-family: var(--font-display);
   padding: 0 20px;
 }
 
@@ -901,33 +953,45 @@ button.full { width: 100%; }
 .msg-row {
   display: flex;
   flex-direction: column;
-  max-width: 80%;
+  max-width: 88%;
 }
+
+.msg-row.agent { max-width: 100%; width: 100%; }
 
 .msg-row.user { align-self: flex-end; align-items: flex-end; }
 .msg-row.agent { align-self: flex-start; align-items: flex-start; }
 .msg-row.error { align-self: center; align-items: center; max-width: 90%; }
 
 .msg {
-  padding: 10px 14px;
-  border-radius: 14px;
-  line-height: 1.5;
+  padding: 10px 16px;
+  border-radius: 20px;
+  line-height: 1.65;
   white-space: pre-wrap;
   word-wrap: break-word;
   font-size: var(--base-font-size);
 }
 
+/* Claude-style user bubble: filled, high-contrast gold pill. */
 .msg-row.user .msg {
   background: var(--bubble-user);
   color: var(--bubble-user-text);
-  border-bottom-right-radius: 4px;
+  border-bottom-right-radius: 6px;
+  box-shadow: var(--shadow-sm);
 }
 
+html[dir="rtl"] .msg-row.user .msg {
+  border-bottom-right-radius: 20px;
+  border-bottom-left-radius: 6px;
+}
+
+/* Claude-style assistant reply: plain text on the page, no bubble chrome. */
 .msg-row.agent .msg {
   background: var(--bubble-agent);
   color: var(--bubble-agent-text);
-  border: 1px solid var(--border);
-  border-bottom-left-radius: 4px;
+  border: none;
+  border-radius: 0;
+  padding: 4px 0;
+  line-height: 1.7;
 }
 
 .msg-row.error .msg {
@@ -1080,9 +1144,16 @@ button.full { width: 100%; }
   align-items: flex-end;
   gap: 6px;
   background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
   padding: 6px 8px;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.composer-row:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--ring);
 }
 
 .composer-row.drag-over {
@@ -1136,7 +1207,7 @@ button.full { width: 100%; }
 .attach-menu {
   position: absolute;
   bottom: 42px;
-  left: 0;
+  inset-inline-start: 0;
   min-width: 210px;
   background: var(--card);
   border: 1px solid var(--border);
@@ -1180,13 +1251,15 @@ button.full { width: 100%; }
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
+  transition: background 0.15s ease, filter 0.15s ease;
 }
+
+#send-btn:hover:not(:disabled) { background: var(--accent-hover); filter: none; }
 
 #send-btn .send-icon { display: flex; width: 18px; height: 18px; }
 #send-btn .send-icon svg { width: 18px; height: 18px; }
 
 #send-btn:disabled { opacity: 0.5; cursor: default; }
-#send-btn:hover:not(:disabled) { filter: brightness(1.08); }
 
 .composer-hint {
   font-size: 11.5px;
@@ -1201,7 +1274,8 @@ button.full { width: 100%; }
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(20, 16, 6, 0.45);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1213,9 +1287,10 @@ button.full { width: 100%; }
   width: 100%;
   max-width: 460px;
   max-height: 88vh;
-  background: var(--card);
-  border-radius: 14px;
-  box-shadow: var(--shadow);
+  background: var(--card-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1229,7 +1304,7 @@ button.full { width: 100%; }
   border-bottom: 1px solid var(--border);
 }
 
-.modal-header h2 { margin: 0; font-size: 16px; }
+.modal-header h2 { margin: 0; font-size: 17px; font-family: var(--font-display); }
 
 .modal-body {
   padding: 18px;
@@ -1465,19 +1540,20 @@ select, .modal-body input, .modal-body textarea {
   align-items: center;
   gap: 14px;
   width: 100%;
-  padding: 11px 12px;
-  border: none;
-  border-radius: 10px;
+  padding: 12px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text);
   cursor: pointer;
   text-align: start;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .tool-card:hover,
 .tool-card:focus-visible {
-  background: var(--sidebar);
+  background: var(--surface-hover);
+  border-color: var(--border);
 }
 
 .tool-card-icon { font-size: 20px; line-height: 1; flex-shrink: 0; width: 22px; text-align: center; }
@@ -1574,7 +1650,7 @@ select, .modal-body input, .modal-body textarea {
 .settings-close-float {
   position: absolute;
   top: 14px;
-  right: 14px;
+  inset-inline-end: 14px;
   z-index: 2;
 }
 
@@ -1586,13 +1662,14 @@ select, .modal-body input, .modal-body textarea {
 }
 
 .settings-nav {
-  width: 210px;
+  width: 220px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: 16px 10px;
   background: var(--sidebar);
+  border-inline-end: 1px solid var(--border);
   overflow-y: auto;
 }
 
@@ -1630,8 +1707,8 @@ select, .modal-body input, .modal-body textarea {
   gap: 8px;
 }
 
-.settings-nav-btn:hover { background: var(--card); color: var(--text); }
-.settings-nav-btn.active { background: var(--card); color: var(--accent); font-weight: 600; border-inline-start: 2px solid var(--accent); }
+.settings-nav-btn:hover { background: var(--surface-hover); color: var(--text); }
+.settings-nav-btn.active { background: var(--accent-bg); color: var(--accent-strong); font-weight: 600; border-inline-start: 2px solid var(--accent); }
 
 .settings-panels {
   flex: 1;
@@ -1643,14 +1720,14 @@ select, .modal-body input, .modal-body textarea {
   gap: 16px;
 }
 
-.settings-panel-title { margin: 0; font-size: 20px; font-weight: 700; }
+.settings-panel-title { margin: 0; font-size: 20px; font-weight: 700; font-family: var(--font-display); }
 
 .settings-panel { display: none; flex-direction: column; gap: 16px; }
 .settings-panel.active { display: flex; }
 
 .settings-card {
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   padding: 18px 20px;
   display: flex;
   flex-direction: column;
@@ -1660,7 +1737,7 @@ select, .modal-body input, .modal-body textarea {
 }
 
 .settings-card:hover {
-  box-shadow: 0 2px 12px rgba(20, 20, 18, 0.06);
+  box-shadow: var(--shadow-sm);
 }
 
 .settings-card-title { font-size: 14.5px; font-weight: 600; margin-bottom: 4px; }
@@ -1730,7 +1807,7 @@ select, .modal-body input, .modal-body textarea {
 
 .avatar-upload-btn {
   position: absolute;
-  right: -4px;
+  inset-inline-end: -4px;
   bottom: -4px;
   width: 28px;
   height: 28px;
@@ -1996,7 +2073,7 @@ select, .modal-body input, .modal-body textarea {
 .tool-pane-uconvert .card {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   padding: 1.25rem;
 }
 
@@ -2106,9 +2183,9 @@ canvas#graph-canvas {
 }
 
 /* Weather */
-.weather-place { font-size: 15px; font-weight: 500; margin-bottom: 8px; }
+.weather-place { font-size: 16px; font-weight: 600; margin-bottom: 8px; font-family: var(--font-display); }
 .weather-main { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.1rem; }
-.weather-temp { font-size: 38px; font-weight: 600; color: var(--accent); }
+.weather-temp { font-size: 38px; font-weight: 600; color: var(--accent-strong); }
 .weather-details { color: var(--text-secondary); font-size: 13.5px; line-height: 1.6; }
 
 .uc-section-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); margin: 0 0 10px; }
@@ -2118,7 +2195,7 @@ canvas#graph-canvas {
   flex: 0 0 auto;
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   padding: 9px 11px;
   text-align: center;
   min-width: 60px;
@@ -2159,19 +2236,17 @@ canvas#graph-canvas {
    properties instead of direction-aware ones, plus content that should stay
    left-to-right regardless of language (numbers, codes, phone numbers). */
 
-html[dir="rtl"] .sidebar {
-  border-right: none;
-  border-left: 1px solid var(--border);
+/* Directional chevrons/arrows mirror in RTL; text, avatars and logos never do. */
+html[dir="rtl"] #tools-back-btn,
+html[dir="rtl"] .convo-archived-chevron,
+html[dir="rtl"] #send-btn .send-icon,
+html[dir="rtl"] .sidebar-toggle-btn svg,
+html[dir="rtl"] .sidebar-open-btn svg {
+  transform: scaleX(-1);
 }
-
-html[dir="rtl"] .auth-close-btn { right: auto; left: -6px; }
-
-html[dir="rtl"] .settings-close-float { right: auto; left: 14px; }
-
-html[dir="rtl"] .avatar-upload-btn { right: auto; left: -4px; }
-
-/* The "back to tools" chevron should point the way "back" actually is in RTL. */
-html[dir="rtl"] #tools-back-btn { transform: scaleX(-1); }
+html[dir="rtl"] .convo-archived-toggle.expanded .convo-archived-chevron {
+  transform: scaleX(-1) rotate(90deg);
+}
 
 /* Numbers, codes, and phone numbers read more naturally kept left-to-right. */
 html[dir="rtl"] input[type="tel"],
@@ -2340,14 +2415,15 @@ html[dir="rtl"] #weather-content .uc-section-title {
 .header-dropdown {
   position: absolute;
   top: 100%;
-  right: 0;
-  background: var(--card);
+  inset-inline-end: 0;
+  background: var(--card-elevated);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
   z-index: 1000;
   min-width: 180px;
-  margin-top: 4px;
+  margin-top: 6px;
+  overflow: hidden;
 }
 
 .share-option,
@@ -2358,7 +2434,7 @@ html[dir="rtl"] #weather-content .uc-section-title {
   border: none;
   background: transparent;
   color: var(--text);
-  text-align: left;
+  text-align: start;
   cursor: pointer;
   font-size: 13px;
   border-bottom: 1px solid var(--border);
@@ -2465,7 +2541,7 @@ html[dir="rtl"] #weather-content .uc-section-title {
 .convo-star-indicator {
   display: inline-flex;
   align-items: center;
-  margin-right: 4px;
+  margin-inline-end: 4px;
   color: #f5a623;
   width: 14px;
   height: 14px;
@@ -2521,7 +2597,7 @@ html[dir="rtl"] #weather-content .uc-section-title {
   bottom: 80px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--card, #333);
+  background: var(--card-elevated, #333);
   color: var(--text, #fff);
   border: 1px solid var(--border);
   padding: 8px 18px;
@@ -2532,7 +2608,7 @@ html[dir="rtl"] #weather-content .uc-section-title {
   opacity: 0;
   transition: opacity 0.2s;
   white-space: nowrap;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-lg);
 }
 
 
@@ -2653,7 +2729,7 @@ html[dir="rtl"] #weather-content .uc-section-title {
 .switch .switch-thumb {
   position: absolute;
   top: 2px;
-  left: 2px;
+  inset-inline-start: 2px;
   width: 20px;
   height: 20px;
   border-radius: 50%;
@@ -2757,7 +2833,7 @@ html[dir="rtl"] #weather-content .uc-section-title {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding-right: 34px;
+  padding-inline-end: 34px;
 }
 .modal-files-head h2 { margin: 0; }
 
@@ -2800,3 +2876,188 @@ html[dir="rtl"] #weather-content .uc-section-title {
   .crop-ctrl-btn { width: 44px; height: 44px; }
   .modal-crop .crop-container { max-height: 52vh; }
 }
+
+/* ================================================================
+   Settings: flat preference rows (label left, control right)
+   ================================================================ */
+.settings-panels { padding: 22px 28px 40px; gap: 0; }
+.settings-panel { gap: 0; }
+.settings-panel-title { font-size: 19px; margin-bottom: 4px; }
+
+.settings-subheading {
+  margin: 26px 0 2px;
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+}
+.settings-panel-title + .settings-subheading { margin-top: 10px; }
+
+.settings-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 24px;
+  row-gap: 2px;
+  padding: 15px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+.settings-card:hover { background: var(--surface-hover); box-shadow: none; }
+.settings-card:hover { box-shadow: none; }
+.settings-card.danger-card { background: transparent; }
+
+.settings-card-title { grid-column: 1; margin-bottom: 0; font-size: 14px; font-weight: 600; }
+.settings-card-desc { grid-column: 1; font-size: 13px; }
+
+/* Controls sit on the right-hand column */
+.settings-card > select,
+.settings-card > .segmented,
+.settings-card > .switch,
+.settings-card > .user-id-row,
+.settings-card > .settings-card-actions,
+.settings-card > button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  justify-self: end;
+  align-self: center;
+  margin: 0;
+}
+.settings-card > .settings-card-title:only-child,
+.settings-card > select,
+.settings-card > .segmented { min-width: 0; }
+.settings-card > select { width: auto; min-width: 170px; }
+
+/* Sliders keep their value label next to them on the right */
+.settings-card > .settings-range {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+  width: 160px;
+}
+.settings-card > .settings-range-value {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: end;
+  margin: 0;
+  text-align: end;
+}
+
+/* Blocks that need the full width of the row */
+.settings-card > .settings-card-row,
+.settings-card > .field,
+.settings-card > .avatar-edit-row,
+.settings-card > .inline-action-row,
+.settings-card > .file-list,
+.settings-card > .sessions-list,
+.settings-card > div:not([class]) {
+  grid-column: 1 / -1;
+}
+.settings-card > .settings-card-row { row-gap: 10px; }
+
+.settings-panels select,
+.settings-panels .segmented { width: auto; }
+
+@media (max-width: 720px) {
+  .settings-panels { padding: 14px 16px 32px; background: var(--card); }
+  .settings-card { padding: 13px 0; }
+  .settings-card > select { min-width: 0; max-width: 55%; }
+  .settings-card > .settings-range { width: 130px; }
+  .settings-card > .settings-card-actions { flex-direction: row; }
+  .settings-card > .settings-card-actions .secondary-btn { width: auto; }
+}
+
+/* ================================================================
+   Chat: uploaded-file cards inside a message
+   ================================================================ */
+.msg-attachments { gap: 8px; margin-top: 8px; }
+
+.msg-attachment-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  font-size: 13px;
+  max-width: 260px;
+  text-decoration: none;
+  transition: border-color var(--transition-duration) ease, background var(--transition-duration) ease;
+}
+.msg-attachment-chip:hover { border-color: var(--accent); background: var(--accent-bg); }
+
+.msg-attachment-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.msg-attachment-text { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.msg-attachment-name {
+  font-weight: 600;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.msg-attachment-meta { font-size: 11.5px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em; }
+
+/* Mic button while held down */
+.composer-icon-btn.recording {
+  color: var(--accent-text);
+  background: var(--accent);
+}
+.composer-icon-btn.recording svg { animation: mic-pulse 1s ease-in-out infinite; }
+@keyframes mic-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* ---------------- RTL adjustments for the above ---------------- */
+html[dir="rtl"] .settings-card > .settings-range { direction: rtl; }
+html[dir="rtl"] .msg-attachment-meta,
+html[dir="rtl"] .msg-attachment-name { text-align: right; }
+html[dir="rtl"] .settings-nav-btn.active { border-inline-start: 2px solid var(--accent); }
+
+
+/* ---- Dropdown menu row alignment ----------------------------------------
+   Labels are wrapped in .menu-label so the icon/label distance is defined
+   purely by the flex gap, keeping every row identical. */
+.menu-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: start;
+}
+
+.share-option,
+.more-option {
+  gap: 10px;
+  padding-inline: 12px;
+}
+
+/* Keep the "Learn more" flyout on screen inside a narrow/RTL sidebar. */
+.user-submenu {
+  min-width: 210px;
+  max-width: calc(100vw - 24px);
+}
+
+.user-submenu button {
+  white-space: nowrap;
+}
+
+/* Toggle switch thumb travels in physical px; flip its direction under RTL
+   so it still slides toward the inline-end (matches the logical thumb start). */
+html[dir="rtl"] .switch.on .switch-thumb { transform: translateX(-18px); }

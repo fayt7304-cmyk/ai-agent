@@ -1,0 +1,103 @@
+/*
+ * RTL layout fixes.
+ * This file is owned by the front-end (view) layer and is intentionally kept
+ * separate from style.css. It only contains overrides scoped to
+ * html[dir="rtl"] so LTR languages are completely unaffected.
+ */
+
+/* Header "Share" dropdown and the sidebar "..." conversation menu (.header-dropdown,
+   reused by .convo-dropdown) are positioned with a hardcoded `right: 0` in the base
+   stylesheet, which pins them to the wrong inline edge once the page flips to RTL. */
+html[dir="rtl"] .header-dropdown {
+  right: auto;
+  left: 0;
+}
+
+/* Menu item text/icons should read from the trailing edge in RTL too. */
+html[dir="rtl"] .share-option,
+html[dir="rtl"] .more-option {
+  text-align: right;
+}
+
+/* Sidebar "..." dropdown is positioned in JS (chat-view.ts) with inline
+   left/top styles that are already direction-aware; just make sure text
+   inside it is right-aligned to match. */
+html[dir="rtl"] .convo-dropdown {
+  text-align: right;
+}
+
+/* Icon + label rows built via innerHTML (menuItemHtml / the "..." menu items)
+   use a plain flex/inline layout that already mirrors correctly under
+   `direction: rtl`, but make sure the gap between icon and label stays
+   symmetric regardless of direction. */
+html[dir="rtl"] .menu-icon {
+  margin-inline-end: 8px;
+  margin-inline-start: 0;
+}
+
+/* Attach menu / tool menus anchored near the composer: mirror the caret edge. */
+html[dir="rtl"] #attach-menu,
+html[dir="rtl"] .tool-menu,
+html[dir="rtl"] .tools-menu {
+  right: auto;
+  left: 0;
+}
+
+/* Weather panel: keep the numeric grid readable (times, %, temperatures) while
+   letting Arabic labels/condition text and the overall panel align to the
+   trailing edge like the rest of the RTL UI. */
+html[dir="rtl"] #weather-content {
+  text-align: right;
+}
+html[dir="rtl"] #weather-content .weather-place {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-start;
+  flex-direction: row-reverse;
+  text-align: right;
+}
+html[dir="rtl"] #weather-content .weather-place .weather-google-link {
+  margin-inline-start: 10px;
+  margin-inline-end: 0;
+}
+html[dir="rtl"] #weather-content .weather-main {
+  flex-direction: row-reverse;
+}
+html[dir="rtl"] #weather-content .weather-details {
+  text-align: right;
+}
+html[dir="rtl"] #weather-content .uc-section-title {
+  text-align: right;
+}
+/* Individual hour/day cards keep their internal LTR number formatting (times,
+   percentages, temperatures) so digits/units never reverse, but the cards
+   themselves flow start-to-end like the rest of the RTL page. */
+html[dir="rtl"] #weather-content .hourly-scroll {
+  flex-direction: row-reverse;
+}
+html[dir="rtl"] #weather-content .hour-card,
+html[dir="rtl"] #weather-content .day-row {
+  direction: ltr;
+  text-align: left;
+}
+html[dir="rtl"] #weather-content .day-row {
+  direction: rtl;
+  text-align: right;
+}
+html[dir="rtl"] #weather-content .day-row > * {
+  direction: ltr;
+}
+html[dir="rtl"] #weather-content .d-precip {
+  text-align: right;
+  direction: rtl;
+  unicode-bidi: plaintext;
+}
+
+/* Settings modal: form rows/help text should read start-to-end. Scoped so it
+   only affects the settings overlay, not global form defaults owned elsewhere. */
+html[dir="rtl"] #settings-overlay .settings-help {
+  text-align: right;
+}
+html[dir="rtl"] #settings-overlay .settings-section-title {
+  text-align: right;
+}

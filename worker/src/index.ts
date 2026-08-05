@@ -94,6 +94,9 @@ async function handleSignup(request: Request, env: Env): Promise<Response> {
       display_name: null,
       avatar: null,
     },
+    // Returned so the frontend can authenticate with a Bearer token when the
+    // browser refuses to keep the cross-subdomain session cookie.
+    session_token: token,
   });
   resp.headers.set("Set-Cookie", sessionCookieHeader(token, maxAge, env.COOKIE_DOMAIN));
   return resp;
@@ -116,7 +119,7 @@ async function handleLogin(request: Request, env: Env): Promise<Response> {
   if (!ok) return err("Invalid username or password.", 401);
 
   const { token, maxAge } = await createSession(env, user.id);
-  const resp = json({ user: toPublicUser(user) });
+  const resp = json({ user: toPublicUser(user), session_token: token });
   resp.headers.set("Set-Cookie", sessionCookieHeader(token, maxAge, env.COOKIE_DOMAIN));
   return resp;
 }
@@ -254,6 +257,9 @@ async function handleGuestLogin(env: Env): Promise<Response> {
       display_name: null,
       avatar: null,
     },
+    // Returned so the frontend can authenticate with a Bearer token when the
+    // browser refuses to keep the cross-subdomain session cookie.
+    session_token: token,
   });
   resp.headers.set("Set-Cookie", sessionCookieHeader(token, maxAge, env.COOKIE_DOMAIN));
   return resp;
@@ -446,7 +452,11 @@ async function handleGoogleCallback(request: Request, env: Env): Promise<Respons
   }
 
   const { token, maxAge } = await createSession(env, user.id);
-  const resp = new Response(null, { status: 302, headers: { Location: env.FRONTEND_URL } });
+  const resp = new Response(null, {
+    status: 302,
+    // Fragment (not query) so the token is never sent to a server or logged.
+    headers: { Location: `${env.FRONTEND_URL}#session=${token}` },
+  });
   resp.headers.append("Set-Cookie", sessionCookieHeader(token, maxAge, env.COOKIE_DOMAIN));
   resp.headers.append("Set-Cookie", clearOauthStateCookieHeader());
   return resp;
@@ -706,45 +716,39 @@ async function handleTts(request: Request, env: Env): Promise<Response> {
   // Hard cap so one request can't run away with the account's quota.
   const input = text.slice(0, 4000);
 
-  const voiceId = typeof body?.voiceId === "string" && /^[A-Za-z0-9]{8,40}$/.test(body.voiceId)
-    ? body.voiceId
-    : "EXAVITQu4vr4xnSDxMaL"; // Sarah
+  const voiceId =
+    typeof body?.voiceId === "string" && /^[A-Za-z0-9]{8,40}$/.test(body.voiceId)
+      ? body.voiceId
+      : "EXAVITQu4vr4xnSDxMaL"; // Sarah
   const speedRaw = Number(body?.speed);
   const speed = Number.isFinite(speedRaw) ? Math.min(1.2, Math.max(0.7, speedRaw)) : 1.0;
+  const language = typeof body?.language === "string" ? body.language : "en-US";
 
-  const model = env.TTS_MODEL || "@cf/elevenlabs/eleven-multilingual-v2";
-
-  // --- Path 1: Cloudflare Workers AI
-  if (env.CLOUDFLARE_AI_TOKEN && env.CLOUDFLARE_ACCOUNT_ID) {
-    const url = `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/ai/run/${model}`;
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.CLOUDFLARE_AI_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ text: input, voice_id: voiceId }),
-    });
-    if (!resp.ok) {
-      const detail = await resp.text();
-      return err(`Voice service error (${resp.status}): ${detail.slice(0, 300)}`, 502);
-    }
-    return new Response(resp.body, {
+  const audio = (stream: BodyInit) =>
+    new Response(stream, {
       status: 200,
       headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" },
     });
-  }
 
-  // --- Path 2: ElevenLabs directly
-  if (env.ELEVENLABS_API_KEY) {
-    // output_format MUST be a query param, not part of the JSON body.
+  // Secrets pasted through a terminal often pick up a trailing newline or space.
+  // An account id with whitespace in it produced a Cloudflare API 400 / error
+  // 7000 "no route for that URI", which surfaced in the app as a broken
+  // "high-quality voice" instead of a clean fallback.
+  const elevenKey = env.ELEVENLABS_API_KEY?.trim();
+  const cfToken = env.CLOUDFLARE_AI_TOKEN?.trim();
+  const cfAccount = env.CLOUDFLARE_ACCOUNT_ID?.trim();
+
+  // --- Path 1: ElevenLabs directly (most reliable when a key is present)
+  if (elevenKey) {
     const resp = await fetch(
+      // output_format MUST be a query param, not part of the JSON body.
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
       {
         method: "POST",
         headers: {
-          "xi-api-key": env.ELEVENLABS_API_KEY,
+          "xi-api-key": elevenKey,
           "Content-Type": "application/json",
+          Accept: "audio/mpeg",
         },
         body: JSON.stringify({
           text: input,
@@ -758,14 +762,75 @@ async function handleTts(request: Request, env: Env): Promise<Response> {
         }),
       }
     );
-    if (!resp.ok) {
-      const detail = await resp.text();
-      return err(`Voice service error (${resp.status}): ${detail.slice(0, 300)}`, 502);
+    if (resp.ok) return audio(resp.body!);
+    const detail = (await resp.text().catch(() => "")).slice(0, 300);
+    console.log("TTS: ElevenLabs failed", resp.status, detail);
+    // Fall through to Workers AI if it's configured; otherwise report the real reason.
+    if (!(cfToken && cfAccount)) {
+      return err(`Voice service error (${resp.status}): ${detail}`, 502);
     }
-    return new Response(resp.body, {
-      status: 200,
-      headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" },
+  }
+
+  // --- Path 2: Cloudflare Workers AI
+  if (cfToken && cfAccount) {
+    // NOTE: there is no ElevenLabs model on Workers AI — the old default
+    // ("@cf/elevenlabs/eleven-multilingual-v2") does not exist, which is exactly
+    // what made the Cloudflare API answer 400 / code 7000 "no route for that
+    // URI". MeloTTS is the supported text-to-speech model.
+    const model = env.TTS_MODEL?.trim() || "@cf/myshell-ai/melotts";
+    const url = `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/ai/run/${model}`;
+
+    // MeloTTS takes { prompt, lang }; other models take { text }. Send a payload
+    // that satisfies whichever model is configured.
+    const lang = (language.split("-")[0] || "en").toLowerCase();
+    const payload: Record<string, unknown> = {
+      prompt: input,
+      text: input,
+      lang: ["en", "es", "fr", "zh", "jp", "kr"].includes(lang) ? lang : "en",
+    };
+
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${cfToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
     });
+
+    if (!resp.ok) {
+      const detail = (await resp.text().catch(() => "")).slice(0, 300);
+      console.log("TTS: Workers AI failed", resp.status, url, detail);
+      // 400/404 here means this deployment isn't wired up correctly (wrong model
+      // id, wrong account id, token without Workers AI permission). Report it as
+      // "not configured" so the app quietly falls back to the device voice
+      // instead of showing a raw Cloudflare error to the person chatting.
+      const misconfigured = resp.status === 400 || resp.status === 403 || resp.status === 404;
+      return err(
+        misconfigured
+          ? "High-quality voice isn't configured on this deployment."
+          : `Voice service error (${resp.status}): ${detail}`,
+        misconfigured ? 501 : 502
+      );
+    }
+
+    const contentType = resp.headers.get("Content-Type") || "";
+    // Workers AI answers either with raw audio or with JSON carrying base64 audio,
+    // depending on the model. Handling only the first case is why this path
+    // produced unplayable "audio" before.
+    if (contentType.includes("application/json")) {
+      const data: any = await resp.json().catch(() => null);
+      const b64 = data?.result?.audio || data?.audio || data?.result?.audio_base64;
+      if (typeof b64 !== "string" || !b64) {
+        console.log("TTS: Workers AI returned no audio", JSON.stringify(data)?.slice(0, 300));
+        return err("High-quality voice isn't configured on this deployment.", 501);
+      }
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return audio(bytes);
+    }
+    return audio(resp.body!);
   }
 
   return err("High-quality voice isn't configured on this deployment.", 501);
@@ -834,7 +899,32 @@ async function handleDeleteConversation(request: Request, env: Env, id: string):
   return json({ ok: true });
 }
 
+// Some deployments were created before migrations 0005/0006 existed, so their
+// `conversations` table can be missing the starred/archived/visibility columns.
+// That made Star, Archive and Share fail with an opaque 500. Rather than depend
+// on the operator remembering to run migrations, add the columns on demand the
+// first time one of those endpoints is hit (ALTER TABLE errors for an existing
+// column are ignored, and the result is cached per isolate).
+let conversationColumnsReady = false;
+async function ensureConversationColumns(env: Env): Promise<void> {
+  if (conversationColumnsReady) return;
+  const alters = [
+    "ALTER TABLE conversations ADD COLUMN starred INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE conversations ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'",
+  ];
+  for (const sql of alters) {
+    try {
+      await env.DB.prepare(sql).run();
+    } catch {
+      // Column already exists — nothing to do.
+    }
+  }
+  conversationColumnsReady = true;
+}
+
 async function handleStarConversation(request: Request, env: Env, id: string): Promise<Response> {
+  await ensureConversationColumns(env);
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
 
@@ -855,6 +945,7 @@ async function handleStarConversation(request: Request, env: Env, id: string): P
 }
 
 async function handleArchiveConversation(request: Request, env: Env, id: string): Promise<Response> {
+  await ensureConversationColumns(env);
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
 
@@ -998,6 +1089,7 @@ async function handleGetMessages(request: Request, env: Env, id: string): Promis
 }
 
 async function handleSetConversationVisibility(request: Request, env: Env, id: string): Promise<Response> {
+  await ensureConversationColumns(env);
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
 

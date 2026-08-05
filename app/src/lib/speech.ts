@@ -9,7 +9,7 @@
  *    speechSynthesis voice, exactly as before.
  */
 
-import { API_BASE } from "../api";
+import { API_BASE, authHeaders } from "../api";
 import { getPreferences, type VoiceStyle } from "./preferences";
 
 /** Studio voices chosen to roughly match each "voice style" option. */
@@ -21,6 +21,15 @@ const VOICE_IDS: Record<VoiceStyle, string> = {
 };
 
 let currentAudio: HTMLAudioElement | null = null;
+
+/** Thrown when the studio-voice proxy can't serve audio (not configured, upstream error…). */
+export class TtsUnavailableError extends Error {
+  status: number;
+  constructor(status: number) {
+    super(`TTS unavailable (${status})`);
+    this.status = status;
+  }
+}
 
 /** Strip markdown so the voice doesn't read out asterisks and backticks. */
 function toPlainText(markdown: string): string {
@@ -73,7 +82,7 @@ async function speakWithProxy(text: string, onEnd?: () => void): Promise<void> {
   const resp = await fetch(`${API_BASE}/api/tts`, {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({
       text,
       voiceId: VOICE_IDS[prefs.voiceStyle] || VOICE_IDS.natural,
@@ -81,7 +90,7 @@ async function speakWithProxy(text: string, onEnd?: () => void): Promise<void> {
       speed: prefs.voiceSpeed,
     }),
   });
-  if (!resp.ok) throw new Error(`TTS failed (${resp.status})`);
+  if (!resp.ok) throw new TtsUnavailableError(resp.status);
 
   const blob = await resp.blob();
   const url = URL.createObjectURL(blob);
@@ -125,9 +134,17 @@ export async function speak(markdown: string, opts: { onEnd?: () => void } = {})
 
   try {
     await speakWithProxy(text, opts.onEnd);
-  } catch {
-    // The studio voice needs a configured server key; quietly fall back rather
-    // than leaving the user with no audio at all.
+  } catch (err) {
+    // The studio voice needs a configured server key. Still fall back to the
+    // device voice, but announce it instead of failing silently — that silence
+    // was why "high-quality voice" looked broken.
+    const status = err instanceof TtsUnavailableError ? err.status : 0;
+    // 501 = the studio voice simply isn't configured on this deployment. That's a
+    // known state, not a fault worth interrupting the conversation for, so the
+    // device voice takes over silently. Anything else still gets announced.
+    if (status !== 501) {
+      document.dispatchEvent(new CustomEvent("tts-fallback", { detail: { status } }));
+    }
     await speakWithBrowser(text, opts.onEnd);
   }
 }

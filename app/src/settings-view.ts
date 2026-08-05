@@ -188,6 +188,55 @@ export function openSettings(tabOrUser: string | User = "general", userOrMessage
   document.querySelector<HTMLElement>(`.settings-panel[data-settings-panel="${tab}"]`)?.scrollTo({ top: 0 });
 }
 
+/** Copy text to the clipboard, with a fallback for browsers/contexts without the async API. */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // fall through to the legacy path
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Ask the Worker whether the studio-voice proxy is actually configured. */
+async function checkHighQualityVoice(): Promise<{ ok: boolean; message: string }> {
+  try {
+    const resp = await fetch(`${API_BASE}/api/tts`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "Test." }),
+    });
+    if (resp.ok) {
+      // Drain the body so the connection closes cleanly; we don't play this clip.
+      await resp.blob().catch(() => null);
+      return { ok: true, message: "" };
+    }
+    const data = await resp.json().catch(() => null);
+    if (resp.status === 501) return { ok: false, message: t("settings.hqVoiceNotConfigured") };
+    return { ok: false, message: data?.error || t("settings.hqVoiceError") };
+  } catch {
+    return { ok: false, message: t("settings.hqVoiceError") };
+  }
+}
+
 export function initSettingsView(onUserUpdated: (user: User) => void) {
   closeBtn.addEventListener("click", close);
   overlay.addEventListener("click", (e) => {
@@ -200,6 +249,24 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
       showTab(tab);
       if (tab === "account") loadActiveSessions();
     });
+  });
+
+  // The Copy button next to the user ID was rendered but never wired up.
+  copyUserIdBtn.addEventListener("click", async () => {
+    const id = profileUserId.textContent?.trim() || "";
+    if (!id || id === "\u2014") return;
+    const ok = await copyText(id);
+    settingsError.textContent = ok ? "" : t("settings.copyFailed");
+    settingsSuccess.textContent = ok ? t("settings.copied") : "";
+    if (ok) {
+      const original = copyUserIdBtn.textContent;
+      copyUserIdBtn.textContent = t("settings.copied");
+      copyUserIdBtn.disabled = true;
+      setTimeout(() => {
+        copyUserIdBtn.textContent = original || t("settings.copy");
+        copyUserIdBtn.disabled = false;
+      }, 1400);
+    }
   });
 
   // The theme buttons rendered an "active" state but had no click handler, so
@@ -259,12 +326,25 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     hqVoiceToggle.setAttribute("aria-checked", on ? "true" : "false");
   };
   syncHqVoice(prefs.highQualityVoice);
-  hqVoiceToggle.addEventListener("click", () => {
+  hqVoiceToggle.addEventListener("click", async () => {
     const on = !hqVoiceToggle.classList.contains("on");
     syncHqVoice(on);
     updateHighQualityVoice(on);
-    settingsSuccess.textContent = t("settings.hqVoice") + " " + t("settings.updated");
     settingsError.textContent = "";
+    settingsSuccess.textContent = t("settings.hqVoice") + " " + t("settings.updated");
+    if (!on) return;
+    // Turning it on used to fail silently: if the server has no voice key the
+    // app just kept using the device voice with no explanation. Probe the proxy
+    // once and say exactly what happened.
+    hqVoiceToggle.setAttribute("aria-busy", "true");
+    const status = await checkHighQualityVoice();
+    hqVoiceToggle.removeAttribute("aria-busy");
+    if (status.ok) {
+      settingsSuccess.textContent = t("settings.hqVoiceReady");
+    } else {
+      settingsSuccess.textContent = "";
+      settingsError.textContent = status.message;
+    }
   });
 
   animationSegmented.querySelectorAll<HTMLButtonElement>("button").forEach((btn) => {

@@ -39,3 +39,59 @@ npx wrangler deploy
 - **"Not authenticated" on phone**: the login cookie was cross-site (frontend on `ai.afmarbre.com`, API on an unrelated `*.workers.dev` domain). Mobile browsers frequently block that. Moving the API to `api.afmarbre.com` and setting `COOKIE_DOMAIN=".afmarbre.com"` makes the cookie same-site, which is what phones honor reliably.
 - **Page "zoomed in"**: iOS Safari auto-zooms when a focused input's font-size is under 16px, and often doesn't zoom back out. All form controls are now 16px on mobile.
 - **Google account linking**: new — Settings now has a Connect/Disconnect control that links your Google account to your existing username/password account (rather than only working at sign-in and possibly creating a duplicate account).
+
+---
+
+# Update — session, voice, RTL and UI pass
+
+## Session no longer depends on cookies
+The login screen kept coming back for already-logged-in users because the
+session lived only in a cookie set by `api.afmarbre.com`. Browsers that block
+cross-site cookies dropped it, so `/api/auth/me` answered 401 on every visit.
+
+The Worker now also returns the session token in the response body
+(`session_token`) and, after Google sign-in, in the redirect fragment
+(`#session=…`). The frontend stores it and sends
+`Authorization: Bearer <token>` on every request, so the session survives
+regardless of cookie policy. Cookies still work as before — this is an
+additional path, not a replacement.
+
+Nothing to configure. Just redeploy both halves (the Worker must be deployed
+too, or the browser will send a Bearer token the old Worker ignores).
+
+## If "the worker doesn't work"
+Every request failing usually means nothing is answering at
+`https://api.afmarbre.com`. Check:
+1. Cloudflare dashboard → Workers & Pages → `mistral-agent-chat` → Settings →
+   Domains & Routes → `api.afmarbre.com` is listed and active.
+2. `curl -i https://api.afmarbre.com/api/auth/me` returns JSON (a 401 is fine —
+   it means the Worker is alive). An HTML error page or a Cloudflare error
+   means the domain isn't routed to the Worker.
+3. Until the domain is attached you can point the frontend straight at the
+   workers.dev URL without editing code:
+   `echo 'VITE_API_BASE=https://mistral-agent-chat.<your-subdomain>.workers.dev' > app/.env`
+   then rebuild. (In a live browser: `localStorage.setItem("api-base", "…")`.)
+
+## High-quality voice ("Voice service error 400 … code 7000")
+`code 7000 / "no route for that URI"` came from the Cloudflare API: the default
+model id was `@cf/elevenlabs/eleven-multilingual-v2`, and **there is no
+ElevenLabs model on Workers AI**, so the URL pointed at nothing. Fixed:
+- Workers AI now defaults to `@cf/myshell-ai/melotts` (a real TTS model) and
+  sends the payload that model expects.
+- Secrets are trimmed — a trailing newline in `CLOUDFLARE_ACCOUNT_ID` produced
+  the exact same 7000 error.
+- A misconfigured deployment now answers `501` and the app quietly falls back
+  to the device voice instead of showing a raw Cloudflare error mid-chat.
+
+For the best quality, use ElevenLabs directly (it is tried first when present):
+```bash
+cd worker
+npx wrangler secret put ELEVENLABS_API_KEY
+```
+Optional Workers AI path instead:
+```bash
+npx wrangler secret put CLOUDFLARE_AI_TOKEN     # token with Workers AI permission
+npx wrangler secret put CLOUDFLARE_ACCOUNT_ID   # no trailing spaces/newlines
+# optional: TTS_MODEL to override @cf/myshell-ai/melotts
+```
+With neither set, "high-quality voice" falls back to the browser voice silently.

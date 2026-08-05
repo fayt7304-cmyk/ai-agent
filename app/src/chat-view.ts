@@ -76,6 +76,13 @@ const quickActionsEl = document.getElementById("quick-actions") as HTMLDivElemen
 
 // Fill in the static icon buttons that only carry an aria/title in markup — kept out
 // of index.html so all icon markup lives in one place (lib/icons.ts).
+/** Menu rows render as `[icon][label]` with the gap owned by CSS only — a raw
+ *  text node after the icon span added an extra whitespace character, which is
+ *  what made the icon/label spacing look uneven between rows. */
+function menuItemHtml(icon: string, label: string) {
+  return `<span class="menu-icon">${icon}</span><span class="menu-label">${label}</span>`;
+}
+
 function mountStaticIcons() {
   sidebarToggle.innerHTML = icons.panel;
   sidebarOpenBtn.innerHTML = icons.panel;
@@ -99,18 +106,18 @@ function mountStaticIcons() {
   const moreStarBtn = document.getElementById("more-star");
   const moreArchiveBtn = document.getElementById("more-archive");
   const moreDeleteBtn = document.getElementById("more-delete");
-  if (moreRenameBtn) moreRenameBtn.innerHTML = `<span class="menu-icon">${icons.pencil}</span> Rename`;
-  if (moreStarBtn) moreStarBtn.innerHTML = `<span class="menu-icon">${icons.star}</span> Star`;
-  if (moreArchiveBtn) moreArchiveBtn.innerHTML = `<span class="menu-icon">${icons.archive}</span> Archive`;
-  if (moreDeleteBtn) moreDeleteBtn.innerHTML = `<span class="menu-icon">${icons.close}</span> Delete`;
+  if (moreRenameBtn) moreRenameBtn.innerHTML = menuItemHtml(icons.pencil, t("convo.rename"));
+  if (moreStarBtn) moreStarBtn.innerHTML = menuItemHtml(icons.star, t("convo.star"));
+  if (moreArchiveBtn) moreArchiveBtn.innerHTML = menuItemHtml(icons.archive, t("convo.archive"));
+  if (moreDeleteBtn) moreDeleteBtn.innerHTML = menuItemHtml(icons.close, t("convo.delete"));
 
   // Add icons to Share menu items
   const shareOnlyMe = document.getElementById("share-only-me");
   const shareWithPeople = document.getElementById("share-with-people");
   const shareCollab = document.getElementById("share-collaboration");
-  if (shareOnlyMe) shareOnlyMe.innerHTML = `<span class="menu-icon">${icons.lock}</span> Only Me`;
-  if (shareWithPeople) shareWithPeople.innerHTML = `<span class="menu-icon">${icons.people}</span> Everyone`;
-  if (shareCollab) shareCollab.innerHTML = `<span class="menu-icon">${icons.link}</span> Collab`;
+  if (shareOnlyMe) shareOnlyMe.innerHTML = menuItemHtml(icons.lock, t("share.onlyMe"));
+  if (shareWithPeople) shareWithPeople.innerHTML = menuItemHtml(icons.people, t("share.everyone"));
+  if (shareCollab) shareCollab.innerHTML = menuItemHtml(icons.link, t("share.collab"));
 
   wireHeaderActions();
 }
@@ -155,7 +162,7 @@ function wireHeaderActions() {
   // signed-in user of the app, not live co-editing.
   async function shareCurrentConversation(visibility: "private" | "shared", copyLink: boolean) {
     if (!currentConversationId) {
-      showToast("No active conversation to share.");
+      showToast(t("share.needsChat"));
       return;
     }
     const id = currentConversationId;
@@ -164,21 +171,17 @@ function wireHeaderActions() {
       const convo = conversations.find((c) => c.id === id);
       if (convo) convo.visibility = visibility;
     } catch {
-      showToast("Could not update sharing settings.");
+      showToast(t("share.failed"));
       return;
     }
     if (!copyLink) {
-      showToast(visibility === "private" ? "Visibility set to Only Me" : "Visibility updated");
+      showToast(visibility === "private" ? t("share.private") : t("share.shared"));
       return;
     }
     const url = `${window.location.origin}${window.location.pathname}#conv=${id}`;
     try {
       await navigator.clipboard.writeText(url);
-      showToast(
-        visibility === "private"
-          ? "Private link copied — only your account can open it."
-          : "Link copied — any signed-in user can open it."
-      );
+      showToast(visibility === "private" ? t("share.private") : t("share.shared"));
     } catch {
       showToast("Could not copy link. URL: " + url);
     }
@@ -214,7 +217,7 @@ function wireHeaderActions() {
   document.getElementById("more-rename")?.addEventListener("click", async () => {
     moreMenu.style.display = "none";
     if (!currentConversationId) {
-      showToast("No active conversation to rename.");
+      showToast(t("convo.needsChat"));
       return;
     }
     const convo = conversations.find((c) => c.id === currentConversationId);
@@ -238,7 +241,7 @@ function wireHeaderActions() {
   document.getElementById("more-star")?.addEventListener("click", async () => {
     moreMenu.style.display = "none";
     if (!currentConversationId) {
-      showToast("No active conversation to star.");
+      showToast(t("convo.needsChat"));
       return;
     }
     const convo = conversations.find((c) => c.id === currentConversationId);
@@ -248,16 +251,16 @@ function wireHeaderActions() {
       convo.starred = result.starred;
       renderConvoList();
       updateMoreMenuStarLabel();
-      showToast(result.starred ? "⭐ Conversation starred" : "Conversation unstarred");
+      showToast(result.starred ? t("convo.starred") : t("convo.unstarred"));
     } catch (e) {
-      showToast("Could not update star status.");
+      showToast(t("convo.actionFailed"));
     }
   });
 
   document.getElementById("more-archive")?.addEventListener("click", async () => {
     moreMenu.style.display = "none";
     if (!currentConversationId) {
-      showToast("No active conversation to archive.");
+      showToast(t("convo.needsChat"));
       return;
     }
     const convo = conversations.find((c) => c.id === currentConversationId);
@@ -271,20 +274,20 @@ function wireHeaderActions() {
         currentConversationId = null;
         renderMessages([]);
         chatTitle.textContent = t("chat.newChat");
-        showToast("Conversation archived");
+        showToast(t("convo.archived"));
       } else {
-        showToast("Conversation unarchived");
+        showToast(t("convo.unarchived"));
       }
       renderConvoList();
     } catch (e) {
-      showToast("Could not archive conversation.");
+      showToast(t("convo.actionFailed"));
     }
   });
 
   document.getElementById("more-delete")?.addEventListener("click", async () => {
     moreMenu.style.display = "none";
     if (!currentConversationId) {
-      showToast("No active conversation to delete.");
+      showToast(t("convo.needsChat"));
       return;
     }
     const convo = conversations.find((c) => c.id === currentConversationId);
@@ -328,7 +331,10 @@ function updateMoreMenuStarLabel() {
   if (!moreStarBtn) return;
   const convo = currentConversationId ? conversations.find((c) => c.id === currentConversationId) : null;
   const isStarred = convo?.starred ?? false;
-  moreStarBtn.innerHTML = `<span class="menu-icon">${isStarred ? icons.starFilled : icons.star}</span> ${isStarred ? "Unstar" : "Star"}`;
+  moreStarBtn.innerHTML = menuItemHtml(
+    isStarred ? icons.starFilled : icons.star,
+    isStarred ? t("convo.unstar") : t("convo.star")
+  );
 }
 
 /** Update the Archive menu item label to reflect current state */
@@ -337,7 +343,7 @@ function updateMoreMenuArchiveLabel() {
   if (!moreArchiveBtn) return;
   const convo = currentConversationId ? conversations.find((c) => c.id === currentConversationId) : null;
   const isArchived = convo?.archived ?? false;
-  moreArchiveBtn.innerHTML = `<span class="menu-icon">${icons.archive}</span> ${isArchived ? "Unarchive" : "Archive"}`;
+  moreArchiveBtn.innerHTML = menuItemHtml(icons.archive, isArchived ? t("convo.unarchive") : t("convo.archive"));
 }
 
 /** Open the Usage modal and populate it with real data for the current conversation */
@@ -581,12 +587,15 @@ function openConvoMenu(anchor: HTMLElement, c: Conversation, startRename: () => 
   );
 
   // Position after the menu has real dimensions, anchored to the dots button,
-  // flipped to stay inside the viewport on narrow / mobile screens.
+  // flipped to stay inside the viewport on narrow / mobile screens. Direction-aware:
+  // in RTL the menu should hug the anchor's left edge (its "start" side) instead of
+  // its right edge.
+  const isRtl = document.documentElement.dir === "rtl" || getComputedStyle(document.documentElement).direction === "rtl";
   const rect = anchor.getBoundingClientRect();
   const menuRect = menu.getBoundingClientRect();
   let top = rect.bottom + 4;
   if (top + menuRect.height > window.innerHeight) top = Math.max(4, rect.top - menuRect.height - 4);
-  let left = rect.right - menuRect.width;
+  let left = isRtl ? rect.left : rect.right - menuRect.width;
   if (left < 4) left = 4;
   if (left + menuRect.width > window.innerWidth - 4) left = window.innerWidth - menuRect.width - 4;
   menu.style.position = "fixed";
@@ -613,7 +622,7 @@ function createConvoItem(c: Conversation): HTMLDivElement {
     const starSpan = document.createElement("span");
     starSpan.className = "convo-star-indicator";
     starSpan.innerHTML = icons.starFilled;
-    starSpan.style.cssText = "display:inline-flex;align-items:center;margin-right:4px;color:var(--accent,#f5a623);width:14px;height:14px;flex-shrink:0;";
+    starSpan.style.cssText = "display:inline-flex;align-items:center;margin-inline-end:4px;color:var(--accent,#f5a623);width:14px;height:14px;flex-shrink:0;";
     title.appendChild(starSpan);
   }
   const titleText = document.createTextNode(c.title);
@@ -826,9 +835,32 @@ function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: strin
         link.appendChild(img);
         chipsWrap.appendChild(link);
       } else {
-        const chip = document.createElement("div");
+        // Uploaded files show as a card: icon tile, file name, then type + size.
+        const isDownloadable = Boolean(a.dataUrl);
+        const chip = document.createElement(isDownloadable ? "a" : "div");
         chip.className = "msg-attachment-chip";
-        chip.textContent = `${fileIcon(a.mime)} ${a.name}`;
+        if (isDownloadable) {
+          const anchor = chip as HTMLAnchorElement;
+          anchor.href = dataUrlToObjectUrl(a.dataUrl!);
+          anchor.download = a.name;
+          anchor.title = t("chat.openAttachment");
+        }
+        const icon = document.createElement("div");
+        icon.className = "msg-attachment-icon";
+        icon.textContent = fileIcon(a.mime);
+        const text = document.createElement("div");
+        text.className = "msg-attachment-text";
+        const name = document.createElement("div");
+        name.className = "msg-attachment-name";
+        name.textContent = a.name;
+        const meta = document.createElement("div");
+        meta.className = "msg-attachment-meta";
+        const ext = a.name.includes(".") ? a.name.split(".").pop()!.toUpperCase() : (a.mime.split("/")[1] || "file").toUpperCase();
+        meta.textContent = a.size ? `${ext} · ${formatBytes(a.size)}` : ext;
+        text.appendChild(name);
+        text.appendChild(meta);
+        chip.appendChild(icon);
+        chip.appendChild(text);
         chipsWrap.appendChild(chip);
       }
     }
@@ -1158,21 +1190,55 @@ function setupMic() {
     recording = false;
     micBtn.classList.remove("recording");
   };
-  micBtn.addEventListener("click", () => {
-    if (recording) {
+  // Hold-to-speak: recording runs only while the button is held down, and stops
+  // as soon as it's released (or the pointer/focus leaves the button).
+  const startRecording = () => {
+    if (recording) return;
+    try {
+      recognizer.start();
+      recording = true;
+      micBtn.classList.add("recording");
+      micBtn.title = t("composer.listening");
+    } catch {
+      // already started / permission denied — ignore, button state stays off
+    }
+  };
+
+  const stopRecording = () => {
+    micBtn.title = t("composer.holdToSpeak");
+    if (!recording) return;
+    recording = false;
+    micBtn.classList.remove("recording");
+    try {
       recognizer.stop();
-      recording = false;
-      micBtn.classList.remove("recording");
-    } else {
-      try {
-        recognizer.start();
-        recording = true;
-        micBtn.classList.add("recording");
-      } catch {
-        // already started / permission denied — ignore, button state stays off
-      }
+    } catch {
+      // nothing to stop
+    }
+    chatInput.focus();
+  };
+
+  micBtn.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    micBtn.setPointerCapture?.(e.pointerId);
+    startRecording();
+  });
+  micBtn.addEventListener("pointerup", stopRecording);
+  micBtn.addEventListener("pointercancel", stopRecording);
+  micBtn.addEventListener("pointerleave", stopRecording);
+  micBtn.addEventListener("blur", stopRecording);
+  micBtn.addEventListener("contextmenu", (e) => e.preventDefault());
+  // Keyboard equivalent: hold Space/Enter while the mic button is focused.
+  micBtn.addEventListener("keydown", (e) => {
+    if (e.key === " " || e.key === "Enter") {
+      e.preventDefault();
+      startRecording();
     }
   });
+  micBtn.addEventListener("keyup", (e) => {
+    if (e.key === " " || e.key === "Enter") stopRecording();
+  });
+  // A click never starts recording anymore, so a stray tap does nothing.
+  micBtn.addEventListener("click", (e) => e.preventDefault());
 }
 
 function closeAttachMenu() {
@@ -1191,6 +1257,12 @@ export function initChatView(user: User) {
   // after switching chats, leaving no way to reopen the sidebar.
   if (window.innerWidth <= 720) toggleSidebar(true);
   syncSidebarOpenBtn();
+
+  // If the studio voice isn't available, tell the user why the device voice spoke.
+  document.addEventListener("tts-fallback", (e) => {
+    const status = (e as CustomEvent).detail?.status;
+    setHint(status === 501 ? t("settings.hqVoiceNotConfigured") : t("settings.hqVoiceError"), true);
+  });
 
   newChatBtn.addEventListener("click", startNewConversation);
   sidebarToggle.addEventListener("click", () => toggleSidebar());
