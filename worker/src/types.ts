@@ -24,6 +24,19 @@ export interface Env {
   /** Optional: max chat messages a single user can send in a rolling 24h window.
    *  Unset = unlimited. */
   MAX_MESSAGES_PER_DAY?: string;
+  /** Optional: ElevenLabs key for the /api/tts studio-voice proxy.
+   *  Set with: npx wrangler secret put ELEVENLABS_API_KEY
+   *  Never put this in code or in wrangler.toml [vars]. */
+  ELEVENLABS_API_KEY?: string;
+  /** Optional: use Cloudflare Workers AI (eleven-multilingual) instead of calling
+   *  ElevenLabs directly. Needs BOTH of these:
+   *    npx wrangler secret put CLOUDFLARE_AI_TOKEN
+   *    npx wrangler secret put CLOUDFLARE_ACCOUNT_ID
+   *  When both are present this path is preferred. */
+  CLOUDFLARE_AI_TOKEN?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  /** Optional: override the TTS model id used on the Cloudflare path. */
+  TTS_MODEL?: string;
 }
 
 export interface UserRow {

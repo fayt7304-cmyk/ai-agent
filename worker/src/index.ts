@@ -662,12 +662,14 @@ async function handleListUploads(request: Request, env: Env): Promise<Response> 
     .bind(user.id)
     .all<{ attachments: string; created_at: string }>();
 
-  const files: Array<{ name: string; mime: string; size: number; created_at: string }> = [];
+  const files: Array<{ name: string; mime: string; size: number; created_at: string; dataUrl?: string }> = [];
   for (const row of results || []) {
     try {
-      const atts = JSON.parse(row.attachments) as Array<{ name: string; mime: string; size: number }>;
+      const atts = JSON.parse(row.attachments) as Array<{ name: string; mime: string; size: number; dataUrl?: string }>;
       for (const a of atts) {
-        files.push({ name: a.name, mime: a.mime, size: a.size, created_at: row.created_at });
+        // dataUrl is only present for files uploaded after content retention was
+        // added; older rows list fine but can't be downloaded.
+        files.push({ name: a.name, mime: a.mime, size: a.size, created_at: row.created_at, ...(a.dataUrl ? { dataUrl: a.dataUrl } : {}) });
       }
     } catch {
       // malformed JSON — skip
@@ -675,6 +677,98 @@ async function handleListUploads(request: Request, env: Env): Promise<Response> 
   }
 
   return json({ uploads: files, files, count: files.length });
+}
+
+// ---- Text-to-speech proxy
+/**
+ * POST /api/tts  { text, voiceId?, language?, speed? } -> audio/mpeg
+ *
+ * The synthesis key lives only on the Worker (a wrangler secret), so the browser
+ * never sees it. Two backends are supported:
+ *   1. Cloudflare Workers AI (preferred when CLOUDFLARE_AI_TOKEN + CLOUDFLARE_ACCOUNT_ID are set)
+ *   2. ElevenLabs directly (ELEVENLABS_API_KEY)
+ * When neither is configured this returns 501 and the frontend falls back to the
+ * browser's built-in voice.
+ */
+async function handleTts(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+
+  let body: any = null;
+  try {
+    body = await request.json();
+  } catch {
+    return err("Invalid JSON body.", 400);
+  }
+
+  const text = typeof body?.text === "string" ? body.text.trim() : "";
+  if (!text) return err("Nothing to read aloud.", 400);
+  // Hard cap so one request can't run away with the account's quota.
+  const input = text.slice(0, 4000);
+
+  const voiceId = typeof body?.voiceId === "string" && /^[A-Za-z0-9]{8,40}$/.test(body.voiceId)
+    ? body.voiceId
+    : "EXAVITQu4vr4xnSDxMaL"; // Sarah
+  const speedRaw = Number(body?.speed);
+  const speed = Number.isFinite(speedRaw) ? Math.min(1.2, Math.max(0.7, speedRaw)) : 1.0;
+
+  const model = env.TTS_MODEL || "@cf/elevenlabs/eleven-multilingual-v2";
+
+  // --- Path 1: Cloudflare Workers AI
+  if (env.CLOUDFLARE_AI_TOKEN && env.CLOUDFLARE_ACCOUNT_ID) {
+    const url = `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/ai/run/${model}`;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.CLOUDFLARE_AI_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ text: input, voice_id: voiceId }),
+    });
+    if (!resp.ok) {
+      const detail = await resp.text();
+      return err(`Voice service error (${resp.status}): ${detail.slice(0, 300)}`, 502);
+    }
+    return new Response(resp.body, {
+      status: 200,
+      headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" },
+    });
+  }
+
+  // --- Path 2: ElevenLabs directly
+  if (env.ELEVENLABS_API_KEY) {
+    // output_format MUST be a query param, not part of the JSON body.
+    const resp = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
+      {
+        method: "POST",
+        headers: {
+          "xi-api-key": env.ELEVENLABS_API_KEY,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text: input,
+          model_id: "eleven_multilingual_v2",
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75,
+            use_speaker_boost: true,
+            speed,
+          },
+        }),
+      }
+    );
+    if (!resp.ok) {
+      const detail = await resp.text();
+      return err(`Voice service error (${resp.status}): ${detail.slice(0, 300)}`, 502);
+    }
+    return new Response(resp.body, {
+      status: 200,
+      headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" },
+    });
+  }
+
+  return err("High-quality voice isn't configured on this deployment.", 501);
 }
 
 async function handleListConversations(request: Request, env: Env): Promise<Response> {
@@ -796,12 +890,12 @@ async function handleGetConversationFiles(request: Request, env: Env, id: string
     .bind(id)
     .all<{ id: string; role: string; attachments: string; created_at: string }>();
 
-  const files: Array<{ name: string; mime: string; size: number; role: string; message_id: string; created_at: string }> = [];
+  const files: Array<{ name: string; mime: string; size: number; role: string; message_id: string; created_at: string; dataUrl?: string }> = [];
   for (const row of results || []) {
     try {
-      const atts = JSON.parse(row.attachments) as Array<{ name: string; mime: string; size: number }>;
+      const atts = JSON.parse(row.attachments) as Array<{ name: string; mime: string; size: number; dataUrl?: string }>;
       for (const a of atts) {
-        files.push({ name: a.name, mime: a.mime, size: a.size, role: row.role, message_id: row.id, created_at: row.created_at });
+        files.push({ name: a.name, mime: a.mime, size: a.size, role: row.role, message_id: row.id, created_at: row.created_at, ...(a.dataUrl ? { dataUrl: a.dataUrl } : {}) });
       }
     } catch {
       // malformed JSON — skip
@@ -985,7 +1079,9 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
 
   // Save the user's message first so it's never lost even if Mistral errors out.
   const userMsgId = crypto.randomUUID();
-  const attMeta = attachments.map((a) => ({ name: a.name, mime: a.mime, size: a.size }));
+  // Keep dataUrl alongside the metadata so "Uploaded files" and the per-chat
+  // Files list can offer a real download later (agent attachments already do).
+  const attMeta = attachments.map((a) => ({ name: a.name, mime: a.mime, size: a.size, dataUrl: a.dataUrl }));
   await env.DB.prepare(
     "INSERT INTO messages (id, conversation_id, role, content, attachments, created_at) VALUES (?, ?, 'user', ?, ?, ?)"
   )
@@ -1158,6 +1254,9 @@ export default {
       } else if (path === "/api/memory/generate" && request.method === "POST") {
         // Generate a memory summary from the user's conversation history
         resp = await handleGenerateMemory(request, env);
+      } else if (path === "/api/tts" && request.method === "POST") {
+        // Studio text-to-speech, proxied so the key stays server-side
+        resp = await handleTts(request, env);
       } else if (path === "/api/uploads" && request.method === "GET") {
         // List uploads/attachments for the current user
         resp = await handleListUploads(request, env);

@@ -6,7 +6,9 @@ import { refreshConversations } from "./chat-view";
 import { applyAvatar } from "./lib/avatar";
 import { readFileAsDataUrl } from "./files";
 import { showCropper } from "./lib/cropper";
-import { getPreferences, updateAnimationLevel, updateFontFamily, updateFontSize, updateVoiceLanguage, updateVoiceStyle, updateVoiceSpeed, type AnimationLevel, type FontFamily, type VoiceLanguage, type VoiceStyle } from "./lib/preferences";
+import { getPreferences, updateAnimationLevel, updateFontFamily, updateFontSize, updateVoiceLanguage, updateVoiceStyle, updateVoiceSpeed, updateHighQualityVoice, type AnimationLevel, type FontFamily, type VoiceLanguage, type VoiceStyle } from "./lib/preferences";
+import { showConfirm } from "./lib/dialog";
+import { renderFileList, downloadAllFiles, type StoredFile } from "./lib/file-downloads";
 
 const overlay = document.getElementById("settings-overlay") as HTMLDivElement;
 const closeBtn = document.getElementById("settings-close-btn") as HTMLButtonElement;
@@ -46,6 +48,9 @@ const fontSizeValue = document.getElementById("font-size-value") as HTMLDivEleme
 const generateMemoryBtn = document.getElementById("generate-memory-btn") as HTMLButtonElement;
 const exportDataBtn = document.getElementById("export-data-btn") as HTMLButtonElement;
 const manageUploadsBtn = document.getElementById("manage-uploads-btn") as HTMLButtonElement;
+const uploadsList = document.getElementById("uploads-list") as HTMLDivElement;
+const downloadAllUploadsBtn = document.getElementById("download-all-uploads-btn") as HTMLButtonElement;
+const hqVoiceToggle = document.getElementById("hq-voice-toggle") as HTMLButtonElement;
 
 const editProfileAvatar = document.getElementById("edit-profile-avatar") as HTMLDivElement;
 const avatarUploadBtn = document.getElementById("avatar-upload-btn") as HTMLButtonElement;
@@ -123,8 +128,32 @@ async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
  * 2. openSettings(user: User)
  * 3. openSettings(user: User, message: string)
  */
-export function openSettings(tabOrUser: string | User = "profile", userOrMessage?: User | string, message?: string) {
-  let tab = "profile";
+/**
+ * Settings collapsed from 7 tabs to 3 (General / Account / Privacy). Older call
+ * sites (and the user menu) still ask for the previous tab names, so map them
+ * onto the panel that now contains that section.
+ */
+const TAB_ALIASES: Record<string, string> = {
+  profile: "general",
+  preferences: "general",
+  voice: "general",
+  animations: "general",
+  security: "account",
+  sessions: "account",
+  data: "privacy",
+  memory: "privacy",
+  uploads: "privacy",
+  general: "general",
+  account: "account",
+  privacy: "privacy",
+};
+
+function resolveTab(tab: string): string {
+  return TAB_ALIASES[tab] || "general";
+}
+
+export function openSettings(tabOrUser: string | User = "general", userOrMessage?: User | string, message?: string) {
+  let tab = "general";
   let user: User | undefined;
   let msg = "";
 
@@ -136,8 +165,9 @@ export function openSettings(tabOrUser: string | User = "profile", userOrMessage
     // Case 2 & 3: openSettings(user) or openSettings(user, "Connected!")
     user = tabOrUser;
     msg = typeof userOrMessage === "string" ? userOrMessage : "";
-    tab = "profile";
+    tab = "general";
   }
+  tab = resolveTab(tab);
 
   if (user) {
     currentUser = user;
@@ -154,16 +184,8 @@ export function openSettings(tabOrUser: string | User = "profile", userOrMessage
   
   overlay.style.display = "flex";
   showTab(tab);
-
-  if (tab === "data") {
-    setTimeout(() => {
-      const activeSessionsList = document.getElementById("active-sessions-list");
-      if (activeSessionsList) {
-        const dataTabBtn = settingsNav.querySelector('[data-settings-tab="data"]') as HTMLButtonElement;
-        if (dataTabBtn) dataTabBtn.click();
-      }
-    }, 100);
-  }
+  // The panels scroll independently; always open at the top of the chosen tab.
+  document.querySelector<HTMLElement>(`.settings-panel[data-settings-panel="${tab}"]`)?.scrollTo({ top: 0 });
 }
 
 export function initSettingsView(onUserUpdated: (user: User) => void) {
@@ -172,15 +194,34 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     if (e.target === overlay) close();
   });
 
-  const dataTabBtn = settingsNav.querySelector('[data-settings-tab="data"]') as HTMLButtonElement;
-  if (dataTabBtn) {
-    dataTabBtn.addEventListener("click", () => {
-      setTimeout(() => loadActiveSessions(), 100);
-    });
-  }
-
   settingsNav.querySelectorAll<HTMLButtonElement>(".settings-nav-btn").forEach((btn) => {
-    btn.addEventListener("click", () => showTab(btn.dataset.settingsTab!));
+    btn.addEventListener("click", () => {
+      const tab = btn.dataset.settingsTab!;
+      showTab(tab);
+      if (tab === "account") loadActiveSessions();
+    });
+  });
+
+  // The theme buttons rendered an "active" state but had no click handler, so
+  // choosing a theme in Settings did nothing at all. Wire them to setTheme().
+  themeSegmented.querySelectorAll<HTMLButtonElement>("button").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const theme = btn.dataset.themeOption as Theme;
+      if (!theme) return;
+      themeSegmented.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      setTheme(theme);
+      settingsError.textContent = "";
+      settingsSuccess.textContent = t("settings.theme") + " " + t("settings.updated");
+      // Persist to the account so the choice follows the user to other devices.
+      try {
+        const { user } = await api.updateSettings({ theme });
+        currentUser = user;
+        onUserUpdated(user);
+      } catch {
+        // Theme is already applied locally; a failed sync isn't worth an error.
+      }
+    });
   });
 
   languageSelect.value = getStoredLang();
@@ -210,6 +251,19 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     updateVoiceSpeed(speed);
     voiceSpeedValue.textContent = speed.toFixed(1) + "x";
     settingsSuccess.textContent = t("settings.voiceSpeed") + " " + t("settings.updated");
+    settingsError.textContent = "";
+  });
+
+  const syncHqVoice = (on: boolean) => {
+    hqVoiceToggle.classList.toggle("on", on);
+    hqVoiceToggle.setAttribute("aria-checked", on ? "true" : "false");
+  };
+  syncHqVoice(prefs.highQualityVoice);
+  hqVoiceToggle.addEventListener("click", () => {
+    const on = !hqVoiceToggle.classList.contains("on");
+    syncHqVoice(on);
+    updateHighQualityVoice(on);
+    settingsSuccess.textContent = t("settings.hqVoice") + " " + t("settings.updated");
     settingsError.textContent = "";
   });
 
@@ -298,14 +352,18 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     }
   });
 
+  let loadedUploads: StoredFile[] = [];
+
   manageUploadsBtn.addEventListener("click", async () => {
     manageUploadsBtn.disabled = true;
     settingsError.textContent = "";
     settingsSuccess.textContent = "";
     try {
-      const data = await apiRequest<{ uploads?: any[]; files?: any[]; count?: number }>("/api/uploads", { method: "GET" });
-      const files = data.uploads || data.files || [];
-      const count = data.count || files.length;
+      const data = await apiRequest<{ uploads?: StoredFile[]; files?: StoredFile[]; count?: number }>("/api/uploads", { method: "GET" });
+      loadedUploads = data.uploads || data.files || [];
+      const count = data.count ?? loadedUploads.length;
+      renderFileList(uploadsList, loadedUploads);
+      downloadAllUploadsBtn.style.display = loadedUploads.some((f) => f.dataUrl) ? "inline-flex" : "none";
       settingsSuccess.textContent = t("settings.uploadsCount").replace("{n}", String(count));
     } catch (err) {
       settingsError.textContent = err instanceof ApiError && err.status !== 404
@@ -315,6 +373,8 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
       manageUploadsBtn.disabled = false;
     }
   });
+
+  downloadAllUploadsBtn.addEventListener("click", () => downloadAllFiles(loadedUploads));
 
   const activeSessionsList = document.getElementById("active-sessions-list") as HTMLDivElement;
   const deleteAccountBtn = document.getElementById("delete-account-btn") as HTMLButtonElement;
@@ -365,7 +425,13 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
   loadActiveSessions();
 
   deleteAccountBtn.addEventListener("click", async () => {
-    if (!confirm(t("settings.deleteAccountConfirm"))) return;
+    const ok = await showConfirm({
+      title: t("settings.deleteAccount"),
+      message: t("settings.deleteAccountConfirm"),
+      confirmLabel: t("settings.deleteAccount"),
+      danger: true,
+    });
+    if (!ok) return;
     deleteAccountBtn.disabled = true;
     try {
       await apiRequest("/api/user/delete", { method: "DELETE" });
@@ -413,7 +479,13 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
   });
 
   deleteAllChatsBtn.addEventListener("click", async () => {
-    if (!confirm(t("settings.deleteAllChatsConfirm"))) return;
+    const ok = await showConfirm({
+      title: t("settings.deleteAllChats"),
+      message: t("settings.deleteAllChatsConfirm"),
+      confirmLabel: t("settings.deleteAllChats"),
+      danger: true,
+    });
+    if (!ok) return;
     settingsError.textContent = "";
     settingsSuccess.textContent = "";
     deleteAllChatsBtn.disabled = true;

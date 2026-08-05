@@ -1,12 +1,14 @@
 import { api, ApiError, type Conversation, type Message, type Attachment, type User } from "./api";
 import { readFileAsDataUrl, formatBytes, fileIcon, MAX_FILE_BYTES } from "./files";
+import { showConfirm, showPrompt } from "./lib/dialog";
+import { renderFileList, downloadAllFiles } from "./lib/file-downloads";
+import { speak, stopSpeaking } from "./lib/speech";
 import { renderMarkdown } from "./lib/markdown";
 import { openLeadModal } from "./lead-view";
 import { applyAvatar } from "./lib/avatar";
 import { openSettings } from "./settings-view";
 import { t } from "./lib/i18n";
 import { icons } from "./lib/icons";
-import { getPreferences } from "./lib/preferences";
 
 interface QuickAction {
   labelKey: string;
@@ -209,7 +211,7 @@ function wireHeaderActions() {
   const moreMenu = document.getElementById("more-menu") as HTMLDivElement;
   const moreBtn = document.getElementById("header-more-btn") as HTMLButtonElement;
 
-  document.getElementById("more-rename")?.addEventListener("click", () => {
+  document.getElementById("more-rename")?.addEventListener("click", async () => {
     moreMenu.style.display = "none";
     if (!currentConversationId) {
       showToast("No active conversation to rename.");
@@ -217,13 +219,17 @@ function wireHeaderActions() {
     }
     const convo = conversations.find((c) => c.id === currentConversationId);
     if (!convo) return;
-    const newTitle = prompt("Rename conversation:", convo.title);
-    if (newTitle && newTitle.trim() && newTitle.trim() !== convo.title) {
-      const trimmed = newTitle.trim();
-      convo.title = trimmed;
-      chatTitle.textContent = trimmed;
+    const newTitle = await showPrompt({
+      title: t("convo.rename"),
+      message: t("convo.renamePrompt"),
+      value: convo.title,
+      confirmLabel: t("convo.save"),
+    });
+    if (newTitle && newTitle !== convo.title) {
+      convo.title = newTitle;
+      chatTitle.textContent = newTitle;
       renderConvoList();
-      api.renameConversation(convo.id, trimmed).catch(() => {
+      api.renameConversation(convo.id, newTitle).catch(() => {
         // Best-effort — title still shows locally
       });
     }
@@ -283,7 +289,13 @@ function wireHeaderActions() {
     }
     const convo = conversations.find((c) => c.id === currentConversationId);
     if (!convo) return;
-    if (!confirm(`Delete "${convo.title}"? This cannot be undone.`)) return;
+    const ok = await showConfirm({
+      title: t("convo.deleteTitle"),
+      message: t("convo.deleteMessage").replace("{title}", convo.title),
+      confirmLabel: t("convo.delete"),
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.deleteConversation(convo.id);
       conversations = conversations.filter((c) => c.id !== convo.id);
@@ -331,48 +343,34 @@ function updateMoreMenuArchiveLabel() {
 /** Open the Usage modal and populate it with real data for the current conversation */
 async function openUsageModal() {
   const usageModal = document.getElementById("usage-modal") as HTMLDivElement;
-  const creditsEl = document.getElementById("usage-credits");
+  const tokensEl = document.getElementById("usage-credits");
+  const messagesCountEl = document.getElementById("usage-messages");
   const timeEl = document.getElementById("usage-time");
 
-  // Show loading state
-  if (creditsEl) creditsEl.textContent = "…";
-  if (timeEl) timeEl.textContent = "…";
+  // Placeholders are em dashes, never invented numbers.
+  const setAll = (value: string) => {
+    if (tokensEl) tokensEl.textContent = value;
+    if (messagesCountEl) messagesCountEl.textContent = value;
+    if (timeEl) timeEl.textContent = value;
+  };
+
+  setAll("…");
   usageModal.style.display = "flex";
 
   if (!currentConversationId) {
-    if (creditsEl) creditsEl.textContent = "0";
-    if (timeEl) timeEl.textContent = "—";
+    setAll("—");
     return;
   }
 
   try {
     const usage = await api.getConversationUsage(currentConversationId);
-    if (creditsEl) creditsEl.textContent = String(usage.estimated_tokens);
-    if (timeEl) timeEl.textContent = usage.time_worked;
-
-    // Update the label for credits to say "Est. Tokens" since that's what we're showing
-    const creditsLabel = creditsEl?.previousElementSibling as HTMLElement;
-    if (creditsLabel) creditsLabel.textContent = "Est. Tokens";
-
-    // Add extra stats if the modal has room
-    const usageContent = usageModal.querySelector(".usage-content");
-    if (usageContent) {
-      // Remove any previously-added dynamic stats
-      usageContent.querySelectorAll(".usage-stat-dynamic").forEach((el) => el.remove());
-
-      const addStat = (label: string, value: string) => {
-        const stat = document.createElement("div");
-        stat.className = "usage-stat usage-stat-dynamic";
-        stat.innerHTML = `<div class="usage-label">${label}</div><div class="usage-value">${value}</div>`;
-        usageContent.appendChild(stat);
-      };
-
-      addStat("Your Messages", String(usage.user_messages));
-      addStat("AI Responses", String(usage.agent_messages));
+    if (tokensEl) tokensEl.textContent = usage.estimated_tokens.toLocaleString();
+    if (messagesCountEl) {
+      messagesCountEl.textContent = String(usage.user_messages + usage.agent_messages);
     }
+    if (timeEl) timeEl.textContent = usage.time_worked;
   } catch {
-    if (creditsEl) creditsEl.textContent = "—";
-    if (timeEl) timeEl.textContent = "—";
+    setAll("—");
   }
 }
 
@@ -380,12 +378,14 @@ async function openUsageModal() {
 async function openFilesModal() {
   const filesModal = document.getElementById("files-modal") as HTMLDivElement;
   const filesContent = document.getElementById("files-content") as HTMLDivElement;
+  const downloadAllBtn = document.getElementById("files-download-all-btn") as HTMLButtonElement | null;
 
-  filesContent.innerHTML = `<p style="color: var(--text-secondary); font-size: 13px;">Loading…</p>`;
+  filesContent.innerHTML = `<p class="settings-muted">${t("files.loading")}</p>`;
+  if (downloadAllBtn) downloadAllBtn.style.display = "none";
   filesModal.style.display = "flex";
 
   if (!currentConversationId) {
-    filesContent.innerHTML = `<p style="color: var(--text-secondary); font-size: 13px;">No active conversation.</p>`;
+    filesContent.innerHTML = `<p class="settings-muted">${t("files.noConversation")}</p>`;
     return;
   }
 
@@ -393,38 +393,21 @@ async function openFilesModal() {
     const { files } = await api.getConversationFiles(currentConversationId);
 
     if (!files || files.length === 0) {
-      filesContent.innerHTML = `<p style="color: var(--text-secondary); font-size: 13px;">No files uploaded in this conversation yet.</p>`;
+      filesContent.innerHTML = `<p class="settings-muted">${t("files.emptyConversation")}</p>`;
       return;
     }
 
-    filesContent.innerHTML = "";
-    for (const f of files) {
-      const item = document.createElement("div");
-      item.className = "files-item";
-      item.style.cssText = "display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);";
-
-      const icon = document.createElement("span");
-      icon.style.cssText = "font-size:20px;flex-shrink:0;";
-      icon.textContent = fileIcon(f.mime);
-
-      const info = document.createElement("div");
-      info.style.cssText = "flex:1;min-width:0;";
-      const name = document.createElement("div");
-      name.style.cssText = "font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
-      name.textContent = f.name;
-      const meta = document.createElement("div");
-      meta.style.cssText = "font-size:11px;color:var(--text-secondary);margin-top:2px;";
-      const date = new Date(f.created_at).toLocaleDateString();
-      meta.textContent = `${formatBytes(f.size)} · ${f.role === "user" ? "Uploaded by you" : "From AI"} · ${date}`;
-      info.appendChild(name);
-      info.appendChild(meta);
-
-      item.appendChild(icon);
-      item.appendChild(info);
-      filesContent.appendChild(item);
+    if (downloadAllBtn) {
+      const downloadable = files.filter((f: any) => f.dataUrl);
+      downloadAllBtn.style.display = downloadable.length ? "inline-flex" : "none";
+      downloadAllBtn.onclick = () => downloadAllFiles(files as any);
     }
+
+    renderFileList(filesContent, files as any, (f: any) =>
+      `${formatBytes(f.size)} · ${f.role === "user" ? t("files.fromYou") : t("files.fromPaul")} · ${new Date(f.created_at).toLocaleDateString()}`
+    );
   } catch {
-    filesContent.innerHTML = `<p style="color: var(--text-secondary); font-size: 13px;">Could not load files.</p>`;
+    filesContent.innerHTML = `<p class="settings-muted">${t("files.loadError")}</p>`;
   }
 }
 
@@ -574,7 +557,13 @@ function openConvoMenu(anchor: HTMLElement, c: Conversation, startRename: () => 
     "Delete",
     icons.close,
     async () => {
-      if (!confirm(`Delete "${c.title}"?`)) return;
+      const ok = await showConfirm({
+        title: t("convo.deleteTitle"),
+        message: t("convo.deleteMessage").replace("{title}", c.title),
+        confirmLabel: t("convo.delete"),
+        danger: true,
+      });
+      if (!ok) return;
       try {
         await api.deleteConversation(c.id);
         conversations = conversations.filter((x) => x.id !== c.id);
@@ -774,8 +763,10 @@ async function openConversationLink(id: string) {
       renderAccessForbidden("This conversation doesn't exist or is no longer available.");
     }
   }
-  if (window.innerWidth <= 720) sidebar.classList.add("collapsed");
-  syncSidebarBackdrop();
+  // Use toggleSidebar() rather than touching the class directly: it also syncs
+  // the header "open sidebar" button, which otherwise stayed hidden on mobile
+  // after switching chats, leaving no way to reopen the sidebar.
+  if (window.innerWidth <= 720) toggleSidebar(true);
 }
 
 /** Checks the URL for a `#conv=<id>` share link and opens it if present. */
@@ -862,28 +853,26 @@ function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: strin
     actions.appendChild(copyBtn);
 
     const speakBtn = makeIconActionBtn("volume", "Read aloud");
-    speakBtn.addEventListener("click", () => {
-      if (!("speechSynthesis" in window)) return;
-      if (speakBtn.classList.contains("speaking")) {
-        window.speechSynthesis.cancel();
-        speakBtn.classList.remove("speaking");
-        speakBtn.innerHTML = icons.volume;
-        return;
-      }
-      window.speechSynthesis.cancel();
-      const utter = new SpeechSynthesisUtterance(content.replace(/[#*`_>-]/g, ""));
-      const prefs = getPreferences();
-      utter.lang = prefs.voiceLanguage;
-      utter.rate = prefs.voiceSpeed;
-      // Note: Voice style (natural, formal, etc.) isn't directly supported by the
-      // standard Web Speech API, but we apply the speed and language.
-      utter.onend = () => {
+    speakBtn.addEventListener("click", async () => {
+      const stopUi = () => {
         speakBtn.classList.remove("speaking");
         speakBtn.innerHTML = icons.volume;
       };
+      if (speakBtn.classList.contains("speaking")) {
+        stopSpeaking();
+        stopUi();
+        return;
+      }
       speakBtn.classList.add("speaking");
       speakBtn.innerHTML = icons.volumeOff;
-      window.speechSynthesis.speak(utter);
+      try {
+        // speak() uses the studio voice when "High-quality voice" is on in
+        // settings, and falls back to the device voice otherwise (or on error).
+        await speak(content, { onEnd: stopUi });
+      } catch {
+        stopUi();
+        showToast("Could not read this message aloud.");
+      }
     });
     actions.appendChild(speakBtn);
 
@@ -953,8 +942,10 @@ async function selectConversation(id: string) {
   messagesEl.innerHTML = "";
   const { messages } = await api.getMessages(id);
   renderMessages(messages);
-  if (window.innerWidth <= 720) sidebar.classList.add("collapsed");
-  syncSidebarBackdrop();
+  // Use toggleSidebar() rather than touching the class directly: it also syncs
+  // the header "open sidebar" button, which otherwise stayed hidden on mobile
+  // after switching chats, leaving no way to reopen the sidebar.
+  if (window.innerWidth <= 720) toggleSidebar(true);
 }
 
 function startNewConversation() {
@@ -966,8 +957,10 @@ function startNewConversation() {
   renderConvoList();
   renderMessages([]);
   chatInput.focus();
-  if (window.innerWidth <= 720) sidebar.classList.add("collapsed");
-  syncSidebarBackdrop();
+  // Use toggleSidebar() rather than touching the class directly: it also syncs
+  // the header "open sidebar" button, which otherwise stayed hidden on mobile
+  // after switching chats, leaving no way to reopen the sidebar.
+  if (window.innerWidth <= 720) toggleSidebar(true);
 }
 
 function renderQuickActions() {
@@ -1193,8 +1186,10 @@ export function initChatView(user: User) {
   applyAvatar(userAvatar, user);
 
   // On small screens the sidebar overlays the chat, so it should start closed.
-  if (window.innerWidth <= 720) sidebar.classList.add("collapsed");
-  syncSidebarBackdrop();
+  // Use toggleSidebar() rather than touching the class directly: it also syncs
+  // the header "open sidebar" button, which otherwise stayed hidden on mobile
+  // after switching chats, leaving no way to reopen the sidebar.
+  if (window.innerWidth <= 720) toggleSidebar(true);
   syncSidebarOpenBtn();
 
   newChatBtn.addEventListener("click", startNewConversation);

@@ -13,6 +13,7 @@ export interface Preferences {
   voiceLanguage: VoiceLanguage;
   voiceStyle: VoiceStyle;
   voiceSpeed: number; // 0.5-2.0
+  highQualityVoice: boolean; // route speech through the ElevenLabs proxy instead of the browser voice
 }
 
 const STORAGE_KEY = "paul_preferences";
@@ -24,6 +25,7 @@ const DEFAULT_PREFS: Preferences = {
   voiceLanguage: "en",
   voiceStyle: "natural",
   voiceSpeed: 1.0,
+  highQualityVoice: false,
 };
 
 function getStoredPreferences(): Preferences {
@@ -120,6 +122,12 @@ export function updateVoiceStyle(style: VoiceStyle) {
   prefs.voiceStyle = style;
   savePreferences(prefs);
   applyVoiceSettings(prefs);
+}
+
+export function updateHighQualityVoice(enabled: boolean) {
+  const prefs = getStoredPreferences();
+  prefs.highQualityVoice = enabled;
+  savePreferences(prefs);
 }
 
 export function updateVoiceSpeed(speed: number) {
