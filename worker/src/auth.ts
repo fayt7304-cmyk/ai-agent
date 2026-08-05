@@ -177,3 +177,50 @@ export function readOauthState(request: Request): string | null {
   const match = cookie.match(new RegExp(`(?:^|;\\s*)${OAUTH_STATE_COOKIE}=([^;]+)`));
   return match ? decodeURIComponent(match[1]) : null;
 }
+
+// ---------------------------------------------------------------------------
+// Signed OAuth state
+//
+// The "Connect Google" flow used to rely purely on the oauth_state cookie being
+// echoed back on the callback hop. Google's callback is a cross-site navigation
+// to the Worker's own domain, and browsers that partition or drop those cookies
+// (iOS Safari, Chrome incognito, in-app webviews) sent nothing back — so every
+// callback answered "Invalid OAuth state." and linking silently never worked.
+// The state now carries its own HMAC signature, so it can be verified without
+// any cookie. The cookie is still set and checked when present.
+// ---------------------------------------------------------------------------
+async function hmacHex(secret: string, data: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(data));
+  return Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function stateSecret(env: Env): string {
+  // GOOGLE_CLIENT_SECRET is always present for this flow and never leaves the Worker.
+  return env.GOOGLE_CLIENT_SECRET || env.MISTRAL_API_KEY || "oauth-state";
+}
+
+/** Turn an opaque state payload into "<payload>.<sig>". */
+export async function signOauthState(env: Env, payload: string): Promise<string> {
+  const sig = (await hmacHex(stateSecret(env), payload)).slice(0, 32);
+  return `${payload}.${sig}`;
+}
+
+/** True when the state was produced by signOauthState with this Worker's secret. */
+export async function verifyOauthState(env: Env, state: string): Promise<boolean> {
+  const dot = state.lastIndexOf(".");
+  if (dot < 1) return false;
+  const payload = state.slice(0, dot);
+  const sig = state.slice(dot + 1);
+  const expected = (await hmacHex(stateSecret(env), payload)).slice(0, 32);
+  if (sig.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < sig.length; i++) diff |= sig.charCodeAt(i) ^ expected.charCodeAt(i);
+  return diff === 0;
+}

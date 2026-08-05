@@ -5,8 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Paul</title>
 <link rel="manifest" href="/manifest.json">
-<meta name="theme-color" content="#185fa5">
+<!-- Installed-app chrome follows the app's own theme instead of the old blue, which
+     is what made the PWA flash an all-white/blue shell before the CSS loaded. -->
+<meta name="theme-color" content="#faf8f4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14110c" media="(prefers-color-scheme: dark)">
+<!-- Paints the saved theme background before any stylesheet arrives, so launching
+     the installed app no longer shows a blank white screen first. -->
+<script>
+  (function () {
+    try {
+      var stored = localStorage.getItem("mac_theme") || "system";
+      var dark = stored === "dark" || (stored === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.style.background = dark ? "#16140f" : "#faf9f5";
+      document.documentElement.style.colorScheme = dark ? "dark" : "light";
+    } catch (e) {}
+  })();
+</script>
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png">
@@ -137,7 +153,7 @@
             <span data-i18n="menu.login">Log in</span>
           </button>
           <button id="open-settings-btn">
-            <span class="menu-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="3"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42"/></svg></span>
+            <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.1"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.32a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6h.05A1.7 1.7 0 0 0 10.1 3V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.13 4.6a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9v.05c.28.63.9 1.04 1.6 1.05H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"/></svg></span>
             <span data-i18n="menu.settings">Settings</span>
           </button>
           <div class="user-menu-item-wrap" id="learn-more-wrap">
@@ -315,6 +331,7 @@
           <button type="button" class="settings-nav-btn active" data-settings-tab="general" data-i18n="settings.tabGeneral">General</button>
           <button type="button" class="settings-nav-btn" data-settings-tab="account" data-i18n="settings.tabAccount">Account</button>
           <button type="button" class="settings-nav-btn" data-settings-tab="privacy" data-i18n="settings.tabPrivacy">Privacy</button>
+          <button type="button" class="settings-nav-btn" data-settings-tab="memory" data-i18n="settings.tabMemory">Memory</button>
         </div>
       </nav>
 
@@ -529,14 +546,6 @@
             <div id="uploads-list" class="file-list"></div>
           </div>
 
-          <h3 class="settings-subheading" data-i18n="settings.groupMemory">Memory preferences</h3>
-          <div class="settings-card">
-            <div class="settings-card-title" data-i18n="settings.paulMemory">Paul's Memory</div>
-            <div class="settings-card-desc" data-i18n="settings.paulMemoryDesc">Generate memories from your conversations for Paul to remember important details.</div>
-            <button type="button" id="generate-memory-btn" class="secondary-btn" data-i18n="settings.generateMemory">Generate Memory from Chats</button>
-            <div id="memory-list" class="sessions-list"></div>
-          </div>
-
           <h3 class="settings-subheading" data-i18n="settings.groupDangerZone">Danger zone</h3>
           <div class="settings-card danger-card">
             <div class="settings-card-row">
@@ -546,6 +555,41 @@
               </div>
               <button type="button" id="delete-all-chats-btn" class="danger-btn" data-i18n="settings.deleteAllChats">Delete all chats</button>
             </div>
+          </div>
+        </section>
+
+        <!-- ===================== MEMORY ===================== -->
+        <section class="settings-panel" data-settings-panel="memory">
+          <h2 class="settings-panel-title" data-i18n="settings.tabMemory">Memory</h2>
+
+          <div class="settings-card">
+            <div class="settings-card-row">
+              <div>
+                <div class="settings-card-title" data-i18n="settings.memoryToggle">Generate memory from chats</div>
+                <div class="settings-card-desc" data-i18n="settings.memoryToggleDesc">Paul remembers details from your conversations and uses them in new chats.</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="memory-enabled-toggle">
+                <span class="switch-track"><span class="switch-thumb"></span></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="settings-card">
+            <div class="settings-card-row">
+              <div>
+                <div class="settings-card-title" data-i18n="settings.manageMemory">Manage memory</div>
+                <div class="settings-card-desc" data-i18n="settings.manageMemoryDesc">Review what Paul remembers about you. Remove anything you'd rather he forgot.</div>
+              </div>
+              <div class="settings-card-actions">
+                <button type="button" id="generate-memory-btn" class="secondary-btn" data-i18n="settings.refreshMemory">Update from chats</button>
+              </div>
+            </div>
+            <div id="memory-list" class="memory-list"></div>
+            <form class="memory-add-row" id="memory-add-form">
+              <input type="text" id="memory-input" placeholder="Tell Paul what to remember" data-i18n-placeholder="settings.memoryAddPh" maxlength="600">
+              <button type="submit" class="secondary-btn" data-i18n="settings.memoryAdd">Add</button>
+            </form>
           </div>
         </section>
 

@@ -119,3 +119,83 @@ app/
       markdown.ts     Custom Markdown renderer
       icons.ts        SVG Icon library
 ```
+
+---
+
+## 🧠 Paul's Memory (cross-chat)
+
+Paul remembers durable facts about you — who you are, what you prefer, what you're
+working on — and reuses them in **every** new conversation, not just the current one.
+
+- **Settings → Memory** is its own tab (next to General / Account / Privacy).
+  - *Generate memory from chats* switch (`users.memory_enabled`).
+  - *Manage memory*: review each entry, delete anything, add your own with
+    "Tell Paul what to remember", or hit **Update from chats** to re-read your
+    recent history.
+- Memory is injected into the first turn of every new conversation as a short
+  "known about this user" block; later turns already carry it in the thread.
+- New entries are extracted in the background after each exchange, so replies are
+  never slowed down by it.
+
+### API
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/memory` | List entries + the on/off state |
+| `POST` | `/api/memory` | Add / update one entry (`{ content, title? }`) |
+| `DELETE` | `/api/memory/:id` | Forget one entry |
+| `PATCH` | `/api/memory/settings` | Toggle `{ enabled }` |
+| `POST` | `/api/memory/generate` | Re-read recent chats and store entries |
+
+### Database migration (terminal)
+
+The memory feature adds a `memories` table and a `users.memory_enabled` column.
+Apply it with Wrangler:
+
+```sh
+cd worker
+
+# Local D1 (dev)
+npx wrangler d1 execute mistral-agent-chat-db --file=./migrations/0007_memory.sql --local
+
+# Production D1
+npx wrangler d1 execute mistral-agent-chat-db --file=./migrations/0007_memory.sql --remote
+
+# Verify
+npx wrangler d1 execute mistral-agent-chat-db --command "SELECT COUNT(*) FROM memories;" --remote
+```
+
+If the last statement errors with `duplicate column name: memory_enabled`, the
+column already exists and the rest of the migration has been applied — safe to ignore.
+
+Then redeploy the Worker so the new endpoints go live:
+
+```sh
+cd worker && npx wrangler deploy
+```
+
+---
+
+## 🗒 Recent changes
+
+- **Arabic (and other non-Latin) read-aloud fixed** — `POST /api/tts` returned
+  **502** because `eleven_turbo_v2` is English-only. The Worker now picks a
+  language-appropriate ElevenLabs model (`eleven_multilingual_v2` for Arabic),
+  retries without the unsupported `speed` parameter, and answers **501** instead of
+  502 when a language genuinely isn't available so the app quietly uses the device
+  voice with no red error banner. MeloTTS (the Workers AI fallback) also returns
+  501 for languages it has no voice for, instead of reading Arabic with an English voice.
+- **High-quality voice latency / double-talk** — TTS streams (`/stream` +
+  `optimize_streaming_latency`), and a generation counter discards superseded audio
+  so the device voice and the studio voice can no longer talk over each other.
+- **Google connect works** — the OAuth `state` is now HMAC-signed, so the callback
+  verifies it without needing the `oauth_state` cookie (which mobile browsers drop
+  on the cross-site callback hop). The session is refreshed before the redirect so
+  the linking token is always present.
+- **Memory** — new Memory settings tab, `memories` table, and cross-chat recall
+  (replaces the old "Generate Memory from Chats" .txt download).
+- **Settings redesigned Claude-style** — flat rows with hairline dividers, labels
+  left / controls right, sidebar section icons, and corrected mobile rows.
+- **Golden branding** — new gold "P" favicon (`app/public/favicon.svg` + PNG/ICO set).
+- **Installed app no longer flashes white** — manifest `background_color` /
+  `theme_color` follow the app theme, plus an inline pre-CSS background paint.

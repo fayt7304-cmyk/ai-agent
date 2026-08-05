@@ -55,6 +55,8 @@ export interface UserRow {
   is_guest: number;
   display_name: string | null;
   avatar: string | null;
+  /** "Generate memory from chats" switch; missing/NULL is treated as on. */
+  memory_enabled?: number | null;
   created_at: string;
 }
 
@@ -68,6 +70,7 @@ export interface PublicUser {
   is_guest: boolean;
   display_name: string | null;
   avatar: string | null;
+  memory_enabled: boolean;
 }
 
 export interface ConversationRow {
@@ -121,5 +124,6 @@ export function toPublicUser(u: UserRow): PublicUser {
     is_guest: !!u.is_guest,
     display_name: u.display_name ?? null,
     avatar: u.avatar ?? null,
+    memory_enabled: u.memory_enabled === undefined || u.memory_enabled === null ? true : Number(u.memory_enabled) === 1,
   };
 }

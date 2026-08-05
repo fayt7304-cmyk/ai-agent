@@ -152,3 +152,70 @@ export async function callMistral(opts: MistralCallOptions): Promise<MistralCall
 
   return { reply, mistralConversationId: data.conversation_id, attachments };
 }
+
+// ---------------------------------------------------------------------------
+// Memory extraction
+//
+// After a chat turn, pull out any durable facts worth remembering across chats
+// (who the user is, what they prefer, ongoing projects). Deliberately uses the
+// small chat-completions model rather than the agent: it's cheap, fast and never
+// touches the user's conversation thread.
+// ---------------------------------------------------------------------------
+export interface MemoryItem {
+  title: string;
+  content: string;
+}
+
+export async function extractMemories(
+  apiKey: string,
+  opts: { userMessage: string; reply: string; existing: MemoryItem[] }
+): Promise<MemoryItem[]> {
+  const existing = opts.existing
+    .map((m) => `- ${m.title}: ${m.content}`)
+    .join("\n")
+    .slice(0, 4000);
+
+  const prompt = `You maintain a long-term memory about a user of an assistant app.
+From the exchange below, extract ONLY durable facts worth remembering in future, separate conversations
+(identity, role, location, language, preferences, ongoing projects, recurring interests).
+Ignore one-off questions, small talk and anything time-bound.
+
+Existing memory (update these titles instead of duplicating them):
+${existing || "(empty)"}
+
+User said:
+${opts.userMessage.slice(0, 3000)}
+
+Assistant replied:
+${opts.reply.slice(0, 2000)}
+
+Answer with JSON only: {"memories":[{"title":"Short topic (2-3 words)","content":"One or two sentences."}]}
+Return {"memories":[]} when there is nothing durable to store. Never include more than 3 items.`;
+
+  const resp = await fetch("https://api.mistral.ai/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "mistral-small-latest",
+      response_format: { type: "json_object" },
+      temperature: 0.2,
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+  if (!resp.ok) throw new Error(`memory extraction failed (${resp.status})`);
+
+  const data: any = await resp.json();
+  const raw = data?.choices?.[0]?.message?.content;
+  const text = typeof raw === "string" ? raw : Array.isArray(raw) ? raw.map((c: any) => c?.text || "").join("") : "";
+  let parsed: any = null;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return [];
+  }
+  const items = Array.isArray(parsed?.memories) ? parsed.memories : [];
+  return items
+    .filter((m: any) => typeof m?.title === "string" && typeof m?.content === "string" && m.title.trim() && m.content.trim())
+    .slice(0, 3)
+    .map((m: any) => ({ title: m.title.trim().slice(0, 60), content: m.content.trim().slice(0, 600) }));
+}

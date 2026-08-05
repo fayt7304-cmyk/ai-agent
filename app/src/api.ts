@@ -197,6 +197,16 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return data as T;
 }
 
+/** One durable fact Paul keeps about the user across conversations. */
+export interface MemoryEntry {
+  id: string;
+  title: string;
+  content: string;
+  source: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export const api = {
   signup: (username: string, email: string, password: string) =>
     request<{ user: User; session_token?: string }>("/api/auth/signup", {
@@ -254,6 +264,20 @@ export const api = {
   updateSettings: (
     patch: Partial<Pick<User, "theme" | "username" | "display_name" | "avatar">> & { password?: string }
   ) => request<{ user: User; session_token?: string }>("/api/settings", { method: "PATCH", body: JSON.stringify(patch) }),
+
+  // ---- Paul's cross-chat memory ----
+  listMemory: () => request<{ enabled: boolean; memories: MemoryEntry[] }>("/api/memory", { method: "GET" }),
+
+  setMemoryEnabled: (enabled: boolean) =>
+    request<{ enabled: boolean }>("/api/memory/settings", { method: "PATCH", body: JSON.stringify({ enabled }) }),
+
+  addMemory: (content: string, title?: string) =>
+    request<{ memories: MemoryEntry[] }>("/api/memory", { method: "POST", body: JSON.stringify({ content, title }) }),
+
+  deleteMemory: (id: string) => request<{ memories: MemoryEntry[] }>(`/api/memory/${id}`, { method: "DELETE" }),
+
+  refreshMemory: () =>
+    request<{ added: number; memories: MemoryEntry[] }>("/api/memory/generate", { method: "POST", body: "{}" }),
 
   listConversations: () => request<{ conversations: Conversation[] }>("/api/conversations", { method: "GET" }),
 

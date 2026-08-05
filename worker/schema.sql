@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
   is_guest INTEGER NOT NULL DEFAULT 0,
   display_name TEXT,
   avatar TEXT,
+  memory_enabled INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL;
@@ -72,3 +73,16 @@ CREATE TABLE IF NOT EXISTS leads (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_leads_user ON leads(user_id, created_at DESC);
+
+-- Paul's cross-chat memory: durable facts injected into every new conversation.
+CREATE TABLE IF NOT EXISTS memories (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'manual', -- 'manual' | 'chat'
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, updated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_user_title ON memories(user_id, title);

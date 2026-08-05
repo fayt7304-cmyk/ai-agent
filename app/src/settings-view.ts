@@ -1,4 +1,4 @@
-import { api, ApiError, type User } from "./api";
+import { api, ApiError, type User, type MemoryEntry } from "./api";
 import { API_BASE } from "./api";
 import { setTheme, type Theme } from "./theme";
 import { setLang, getStoredLang, t, type Lang } from "./lib/i18n";
@@ -80,6 +80,64 @@ function showTab(tab: string) {
   });
 }
 
+// ---- Memory tab -----------------------------------------------------------
+// Paul's cross-chat memory: the switch, the list of what he remembers, and a way
+// to add or remove entries by hand.
+const memoryEnabledToggle = document.getElementById("memory-enabled-toggle") as HTMLInputElement;
+const memoryList = document.getElementById("memory-list") as HTMLDivElement;
+const memoryAddForm = document.getElementById("memory-add-form") as HTMLFormElement;
+const memoryInput = document.getElementById("memory-input") as HTMLInputElement;
+
+function renderMemories(memories: MemoryEntry[]) {
+  if (!memories.length) {
+    memoryList.innerHTML = `<div class="memory-empty">${t("settings.memoryEmpty")}</div>`;
+    return;
+  }
+  memoryList.innerHTML = memories
+    .map((m) => {
+      const updated = new Date(m.updated_at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      return `<div class="memory-item">
+        <div class="memory-item-main">
+          <div class="memory-item-title"></div>
+          <div class="memory-item-content"></div>
+        </div>
+        <div class="memory-item-meta">${t("settings.memoryUpdated")} ${updated}</div>
+        <button type="button" class="icon-btn memory-delete" data-memory-id="${m.id}" title="${t("settings.memoryRemove")}" aria-label="${t("settings.memoryRemove")}">✕</button>
+      </div>`;
+    })
+    .join("");
+  // Titles/contents are user + model text, so they go in via textContent.
+  memoryList.querySelectorAll<HTMLElement>(".memory-item").forEach((el, i) => {
+    el.querySelector<HTMLElement>(".memory-item-title")!.textContent = memories[i].title;
+    el.querySelector<HTMLElement>(".memory-item-content")!.textContent = memories[i].content;
+  });
+  memoryList.querySelectorAll<HTMLButtonElement>(".memory-delete").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        const { memories: next } = await api.deleteMemory(btn.dataset.memoryId!);
+        renderMemories(next);
+      } catch (err) {
+        settingsError.textContent = err instanceof ApiError ? err.message : t("settings.memoryNotAvailable");
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+async function loadMemory() {
+  memoryList.innerHTML = `<div class="memory-empty">${t("settings.memoryLoading")}</div>`;
+  try {
+    const { enabled, memories } = await api.listMemory();
+    memoryEnabledToggle.checked = enabled;
+    renderMemories(memories);
+  } catch (err) {
+    // Keep the empty state visible rather than an empty box when the list can't load.
+    renderMemories([]);
+    settingsError.textContent = err instanceof ApiError ? err.message : t("settings.memoryNotAvailable");
+  }
+}
+
 function renderGoogleLinkState(user: User) {
   googleLinkBtn.href = api.googleLinkUrl();
   if (user.google_linked) {
@@ -142,7 +200,7 @@ const TAB_ALIASES: Record<string, string> = {
   security: "account",
   sessions: "account",
   data: "privacy",
-  memory: "privacy",
+  memory: "memory",
   uploads: "privacy",
   general: "general",
   account: "account",
@@ -185,6 +243,7 @@ export function openSettings(tabOrUser: string | User = "general", userOrMessage
   
   overlay.style.display = "flex";
   showTab(tab);
+  if (tab === "memory") void loadMemory();
   // The panels scroll independently; always open at the top of the chosen tab.
   document.querySelector<HTMLElement>(`.settings-panel[data-settings-panel="${tab}"]`)?.scrollTo({ top: 0 });
 }
@@ -249,6 +308,7 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
       const tab = btn.dataset.settingsTab!;
       showTab(tab);
       if (tab === "account") loadActiveSessions();
+      if (tab === "memory") void loadMemory();
     });
   });
 
@@ -377,32 +437,48 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     settingsError.textContent = "";
   });
 
+  memoryEnabledToggle.addEventListener("change", async () => {
+    settingsError.textContent = "";
+    settingsSuccess.textContent = "";
+    try {
+      await api.setMemoryEnabled(memoryEnabledToggle.checked);
+      settingsSuccess.textContent = t("settings.memorySaved");
+    } catch (err) {
+      memoryEnabledToggle.checked = !memoryEnabledToggle.checked;
+      settingsError.textContent = err instanceof ApiError ? err.message : t("settings.memoryNotAvailable");
+    }
+  });
+
+  memoryAddForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const content = memoryInput.value.trim();
+    if (!content) return;
+    settingsError.textContent = "";
+    settingsSuccess.textContent = "";
+    try {
+      const { memories } = await api.addMemory(content);
+      memoryInput.value = "";
+      renderMemories(memories);
+      settingsSuccess.textContent = t("settings.memorySaved");
+    } catch (err) {
+      settingsError.textContent = err instanceof ApiError ? err.message : t("settings.memoryNotAvailable");
+    }
+  });
+
+  // "Generate memory from chats" became "Update from chats": instead of
+  // downloading a .txt nobody could use, it now re-reads recent chats and stores
+  // structured entries Paul actually reuses in every new conversation.
   generateMemoryBtn.addEventListener("click", async () => {
     generateMemoryBtn.disabled = true;
     settingsError.textContent = "";
     settingsSuccess.textContent = "";
     try {
-      // Fetch the memory file as a blob and download it
-      const resp = await fetch(`${API_BASE}/api/memory/generate`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!resp.ok) {
-        const data = await resp.json().catch(() => null);
-        throw new ApiError(data?.error || `Request failed (${resp.status})`, resp.status);
-      }
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `memory-profile-${new Date().toISOString().split("T")[0]}.txt`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const { memories } = await api.refreshMemory();
+      renderMemories(memories);
       settingsSuccess.textContent = t("settings.memoryGenerated");
     } catch (err) {
-      settingsError.textContent = err instanceof ApiError && err.status !== 404
-        ? err.message
-        : t("settings.memoryNotAvailable");
+      settingsError.textContent =
+        err instanceof ApiError && err.status !== 404 ? err.message : t("settings.memoryNotAvailable");
     } finally {
       generateMemoryBtn.disabled = false;
     }
@@ -546,12 +622,22 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
   // "Connect Google" was rendered as <a href="#"> and never wired up, so it did
   // nothing at all. Send the browser to the Worker's OAuth start endpoint (with
   // the session token attached, see api.googleLinkUrl) on click.
-  googleLinkBtn.addEventListener("click", (e) => {
+  googleLinkBtn.addEventListener("click", async (e) => {
     e.preventDefault();
     settingsError.textContent = "";
     settingsSuccess.textContent = "";
     googleLinkBtn.classList.add("is-busy");
-    window.location.href = api.googleLinkUrl();
+    try {
+      // Refresh the session first: the redirect carries the token in the URL, and
+      // on a cookie-only session there was no token to carry — the Worker then
+      // bounced straight back with link_error=not_authenticated, which looked
+      // exactly like "the button does nothing".
+      await api.me();
+      window.location.assign(api.googleLinkUrl());
+    } catch {
+      googleLinkBtn.classList.remove("is-busy");
+      settingsError.textContent = t("settings.googleLinkError");
+    }
   });
 
   googleUnlinkBtn.addEventListener("click", async () => {

@@ -17,11 +17,13 @@ import {
   oauthStateCookieHeader,
   clearOauthStateCookieHeader,
   readOauthState,
+  signOauthState,
+  verifyOauthState,
   randomToken,
 } from "./auth";
 import { buildGoogleAuthUrl, exchangeCodeForAccessToken, fetchGoogleUserInfo } from "./oauth-google";
 import { sendPasswordResetEmail, sendLeadNotificationEmail } from "./email";
-import { callMistral } from "./mistral";
+import { callMistral, extractMemories } from "./mistral";
 
 // ---- Customize your agent defaults here ----------------------------
 const DEFAULT_MODEL = "mistral-medium-latest";
@@ -345,12 +347,12 @@ async function handleGoogleStart(request: Request, env: Env): Promise<Response> 
   }
 
   // The mode travels inside the opaque state value itself, so it round-trips
-  // through Google untouched and can't be tampered with independently of the
-  // state check that already happens on callback.
-  // For link mode the user id rides along inside the state. The callback
-  // verifies state against the state cookie before trusting it, and this means
-  // linking works even when the session cookie is dropped on the callback hop.
-  const state = mode === "link" ? `link:${linkUserId}:${randomToken(16)}` : `${mode}:${randomToken(16)}`;
+  // through Google untouched. The state is HMAC-signed (see signOauthState), so
+  // the callback can verify it even when the browser refuses to send the
+  // oauth_state cookie back on the cross-site callback hop — that dropped cookie
+  // is exactly why "Connect Google" kept failing with "Invalid OAuth state".
+  const payload = mode === "link" ? `link:${linkUserId}:${randomToken(16)}` : `${mode}:${randomToken(16)}`;
+  const state = await signOauthState(env, payload);
   const authUrl = buildGoogleAuthUrl(env, state);
   const resp = new Response(null, { status: 302, headers: { Location: authUrl } });
   resp.headers.append("Set-Cookie", oauthStateCookieHeader(state));
@@ -363,10 +365,13 @@ async function handleGoogleCallback(request: Request, env: Env): Promise<Respons
   const state = url.searchParams.get("state");
   const savedState = readOauthState(request);
 
-  if (!code || !state || !savedState || state !== savedState) {
+  // Accept the state when either the cookie round-tripped OR the signature checks
+  // out. Signature-only is the normal path on phones and in incognito.
+  const stateOk = !!state && (state === savedState || (await verifyOauthState(env, state)));
+  if (!code || !stateOk) {
     return new Response("Invalid OAuth state.", { status: 400 });
   }
-  const mode = state.startsWith("link:") ? "link" : "login";
+  const mode = state!.startsWith("link:") ? "link" : "login";
 
   const accessToken = await exchangeCodeForAccessToken(env, code);
   const info = await fetchGoogleUserInfo(accessToken);
@@ -374,7 +379,7 @@ async function handleGoogleCallback(request: Request, env: Env): Promise<Respons
   // ---- Linking a Google account to the currently logged-in user ----
   if (mode === "link") {
     const clearState = clearOauthStateCookieHeader();
-    const stateUserId = state.split(":")[1] || "";
+    const stateUserId = state!.split(":")[1] || "";
     const currentUser =
       (await getUserFromRequest(env, request)) ||
       (stateUserId
@@ -608,18 +613,104 @@ async function handleDeleteAccount(request: Request, env: Env): Promise<Response
   return resp;
 }
 
-// ---- Memory generation ----------------------------------------------
-// Generates a memory profile from user's conversation history and returns it as a downloadable file.
+// ---- Memory ---------------------------------------------------------
+// Paul's cross-chat memory. Durable facts live in `memories` and get injected
+// into the first turn of every new conversation, so he remembers what was said
+// in other chats. `users.memory_enabled` is the "Generate memory from chats"
+// switch in Settings > Memory.
+interface MemoryRow {
+  id: string;
+  title: string;
+  content: string;
+  source: string;
+  created_at: string;
+  updated_at: string;
+}
+
+async function listMemoryRows(env: Env, userId: string): Promise<MemoryRow[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT id, title, content, source, created_at, updated_at
+       FROM memories WHERE user_id = ? ORDER BY updated_at DESC LIMIT 200`
+  )
+    .bind(userId)
+    .all<MemoryRow>();
+  return results || [];
+}
+
+function memoryEnabled(user: any): boolean {
+  return user.memory_enabled === undefined || user.memory_enabled === null
+    ? true
+    : Number(user.memory_enabled) === 1;
+}
+
+/** The block prepended to the first message of a new conversation. */
+export function buildMemoryPreamble(rows: MemoryRow[]): string {
+  if (!rows.length) return "";
+  const lines = rows.map((r) => `- ${r.title}: ${r.content}`).join("\n");
+  return `[Known about this user from previous conversations — use it naturally, never mention this list]\n${lines}\n\n`;
+}
+
+/** Insert or update one memory entry, keyed on (user, title). */
+async function upsertMemory(
+  env: Env,
+  userId: string,
+  item: { title: string; content: string },
+  source: string
+): Promise<void> {
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    `INSERT INTO memories (id, user_id, title, content, source, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(user_id, title) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at`
+  )
+    .bind(crypto.randomUUID(), userId, item.title.slice(0, 60), item.content.slice(0, 600), source, now, now)
+    .run();
+}
+
+async function handleListMemory(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  return json({ enabled: memoryEnabled(user), memories: await listMemoryRows(env, user.id) });
+}
+
+async function handleMemorySettings(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  const body = (await request.json().catch(() => ({}))) as { enabled?: boolean };
+  const enabled = body.enabled ? 1 : 0;
+  await env.DB.prepare("UPDATE users SET memory_enabled = ? WHERE id = ?").bind(enabled, user.id).run();
+  return json({ enabled: enabled === 1 });
+}
+
+async function handleCreateMemory(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  const body = (await request.json().catch(() => ({}))) as { title?: string; content?: string };
+  const title = (body.title || "").trim();
+  const content = (body.content || "").trim();
+  if (!content) return err("Write what Paul should remember.", 400);
+  await upsertMemory(env, user.id, { title: title || content.slice(0, 40), content }, "manual");
+  return json({ memories: await listMemoryRows(env, user.id) });
+}
+
+async function handleDeleteMemory(request: Request, env: Env, id: string): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  await env.DB.prepare("DELETE FROM memories WHERE id = ? AND user_id = ?").bind(id, user.id).run();
+  return json({ memories: await listMemoryRows(env, user.id) });
+}
+
+// "Manage memory" replaced the old download-a-txt-file behaviour: this now reads
+// the recent history and stores structured entries Paul can actually reuse.
 async function handleGenerateMemory(request: Request, env: Env): Promise<Response> {
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
 
   if (!env.MISTRAL_API_KEY) {
-    return err("Memory generation is not configured on this deployment.", 500);
+    return err("Memory is not configured on this deployment.", 500);
   }
 
   try {
-    // Pull the last 100 user messages across all conversations
     const { results } = await env.DB.prepare(
       `SELECT m.content FROM messages m
        JOIN conversations c ON c.id = m.conversation_id
@@ -630,45 +721,22 @@ async function handleGenerateMemory(request: Request, env: Env): Promise<Respons
       .all<{ content: string }>();
 
     if (!results || results.length === 0) {
-      return err("No conversation history found to generate memory from.", 400);
+      return err("No conversation history found to build memory from.", 400);
     }
 
-    const combined = results.map((r) => r.content).join("\n\n");
-    const summaryPrompt = `Summarise the following user messages into a detailed memory profile. Include:
-- Key interests and topics discussed
-- Preferences and patterns
-- Important details mentioned
-- Conversation themes
-
-Keep it well-organized and under 500 words.
-
-${combined}`;
-
-    const summaryResult = await callMistral({
-      apiKey: env.MISTRAL_API_KEY,
-      agentId: env.MISTRAL_AGENT_ID,
-      mistralConversationId: null,
-      message: summaryPrompt,
-      attachments: [],
+    const existing = (await listMemoryRows(env, user.id)).map((r) => ({ title: r.title, content: r.content }));
+    const items = await extractMemories(env.MISTRAL_API_KEY, {
+      userMessage: results.map((r) => r.content).join("\n\n").slice(0, 12000),
+      reply: "",
+      existing,
     });
-
-    const memoryContent = summaryResult.reply || "No memory generated.";
-    const timestamp = new Date().toISOString().split("T")[0];
-    const filename = `memory-profile-${timestamp}.txt`;
-
-    // Return as downloadable file
-    const resp = new Response(memoryContent, {
-      status: 200,
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${filename}"`,
-      },
-    });
-    return resp;
+    for (const item of items) await upsertMemory(env, user.id, item, "chat");
+    return json({ added: items.length, memories: await listMemoryRows(env, user.id) });
   } catch (e: any) {
-    return err("Memory generation encountered an error: " + (e?.message || "Unknown error."), 500);
+    return err("Memory update encountered an error: " + (e?.message || "Unknown error."), 500);
   }
 }
+
 
 // ---- Uploads management
 async function handleListUploads(request: Request, env: Env): Promise<Response> {
@@ -753,40 +821,84 @@ async function handleTts(request: Request, env: Env): Promise<Response> {
 
   // --- Path 1: ElevenLabs directly (most reliable when a key is present)
   if (elevenKey) {
-    const resp = await fetch(
-      // output_format MUST be a query param, not part of the JSON body.
-      // /stream + turbo model + a low latency hint: the non-streaming
-      // multilingual_v2 call routinely took 10-20s for a long reply, which is
-      // what made "high-quality voice" look broken. Streaming lets playback
-      // start as soon as the first bytes land.
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=mp3_44100_128&optimize_streaming_latency=3`,
-      {
-        method: "POST",
-        headers: {
-          "xi-api-key": elevenKey,
-          "Content-Type": "application/json",
-          Accept: "audio/mpeg",
-        },
-        body: JSON.stringify({
-          text: input,
-          model_id: env.ELEVENLABS_MODEL?.trim() || "eleven_turbo_v2_5",
-          voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.75,
-            use_speaker_boost: true,
-            speed,
-          },
-        }),
-      }
+    const lang2 = (language.split("-")[0] || "en").toLowerCase();
+    // Arabic (and the other non-Latin languages) is NOT covered by the plain
+    // turbo v2 model, and asking it to read Arabic came back as a 4xx from
+    // ElevenLabs which this Worker turned into a 502 — that's the
+    // "POST /api/tts 502" seen in the console. Try a language-appropriate model
+    // first, then fall back through the other multilingual ones.
+    const nonLatin = !["en"].includes(lang2);
+    const preferred = env.ELEVENLABS_MODEL?.trim();
+    const models = Array.from(
+      new Set(
+        [
+          preferred,
+          nonLatin ? "eleven_multilingual_v2" : "eleven_turbo_v2_5",
+          "eleven_turbo_v2_5",
+          "eleven_multilingual_v2",
+        ].filter(Boolean) as string[]
+      )
     );
-    if (resp.ok) return audio(resp.body!);
-    const detail = (await resp.text().catch(() => "")).slice(0, 300);
-    console.log("TTS: ElevenLabs failed", resp.status, detail);
-    // Fall through to Workers AI if it's configured; otherwise report the real reason.
+
+    const callEleven = (model: string, withSpeed: boolean) =>
+      fetch(
+        // output_format MUST be a query param, not part of the JSON body.
+        // /stream + a low latency hint: the non-streaming call routinely took
+        // 10-20s for a long reply, which is what made "high-quality voice" look
+        // broken. Streaming lets playback start as soon as the first bytes land.
+        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=mp3_44100_128&optimize_streaming_latency=3`,
+        {
+          method: "POST",
+          headers: {
+            "xi-api-key": elevenKey,
+            "Content-Type": "application/json",
+            Accept: "audio/mpeg",
+          },
+          body: JSON.stringify({
+            text: input,
+            model_id: model,
+            language_code: nonLatin ? lang2 : undefined,
+            voice_settings: {
+              stability: 0.5,
+              similarity_boost: 0.75,
+              use_speaker_boost: true,
+              // `speed` isn't accepted by every model/plan; a rejected value
+              // used to fail the whole request instead of just losing the speed.
+              ...(withSpeed ? { speed } : {}),
+            },
+          }),
+        }
+      );
+
+    let lastStatus = 0;
+    let lastDetail = "";
+    for (const model of models) {
+      for (const withSpeed of [true, false]) {
+        const resp = await callEleven(model, withSpeed);
+        if (resp.ok) return audio(resp.body!);
+        lastStatus = resp.status;
+        lastDetail = (await resp.text().catch(() => "")).slice(0, 300);
+        console.log("TTS: ElevenLabs failed", model, withSpeed, resp.status, lastDetail);
+        // 401/402/429 are account-level problems — retrying other models is pointless.
+        if ([401, 402, 403, 429].includes(resp.status)) break;
+      }
+      if ([401, 402, 403, 429].includes(lastStatus)) break;
+    }
+
+    // Fall through to Workers AI if it's configured; otherwise tell the app the
+    // voice isn't available (501) so it quietly uses the device voice instead of
+    // showing a red error. Only true outages are reported as 502.
     if (!(cfToken && cfAccount)) {
-      return err(`Voice service error (${resp.status}): ${detail}`, 502);
+      const unavailable = lastStatus >= 400 && lastStatus < 500;
+      return err(
+        unavailable
+          ? "High-quality voice isn't available for this language on this deployment."
+          : `Voice service error (${lastStatus}): ${lastDetail}`,
+        unavailable ? 501 : 502
+      );
     }
   }
+
 
   // --- Path 2: Cloudflare Workers AI
   if (cfToken && cfAccount) {
@@ -800,10 +912,17 @@ async function handleTts(request: Request, env: Env): Promise<Response> {
     // MeloTTS takes { prompt, lang }; other models take { text }. Send a payload
     // that satisfies whichever model is configured.
     const lang = (language.split("-")[0] || "en").toLowerCase();
+    const meloLangs = ["en", "es", "fr", "zh", "jp", "kr"];
+    // MeloTTS has no Arabic voice. Reading Arabic text with the English voice
+    // produced gibberish, so report "not available" and let the app fall back to
+    // the device voice, which does speak Arabic.
+    if (!meloLangs.includes(lang)) {
+      return err("High-quality voice isn't available for this language on this deployment.", 501);
+    }
     const payload: Record<string, unknown> = {
       prompt: input,
       text: input,
-      lang: ["en", "es", "fr", "zh", "jp", "kr"].includes(lang) ? lang : "en",
+      lang,
     };
 
     const resp = await fetch(url, {
@@ -1131,7 +1250,7 @@ interface ChatRequestBody {
   attachments?: AttachmentIn[];
 }
 
-async function handleChat(request: Request, env: Env): Promise<Response> {
+async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
 
@@ -1197,14 +1316,39 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
     .bind(userMsgId, convo.id, body.message || "", attMeta.length ? JSON.stringify(attMeta) : null, nowIso())
     .run();
 
+  // Cross-chat memory: on the first turn of a conversation there is no Mistral
+  // thread yet, so what Paul knows about the user has to be handed to him here.
+  // Later turns already carry it inside the thread context.
+  const useMemory = memoryEnabled(user);
+  const memoryRows = useMemory && !convo.mistral_conversation_id ? await listMemoryRows(env, user.id) : [];
+  const outgoingMessage = buildMemoryPreamble(memoryRows) + (body.message || "");
+
   try {
     const result = await callMistral({
       apiKey: env.MISTRAL_API_KEY,
       agentId: env.MISTRAL_AGENT_ID,
       mistralConversationId: convo.mistral_conversation_id,
-      message: body.message || "",
+      message: outgoingMessage,
       attachments,
     });
+
+    // Learn from this exchange in the background so the reply isn't held up.
+    if (useMemory && (body.message || "").trim().length > 12) {
+      const learn = (async () => {
+        try {
+          const existing = (await listMemoryRows(env, user.id)).map((r) => ({ title: r.title, content: r.content }));
+          const items = await extractMemories(env.MISTRAL_API_KEY, {
+            userMessage: body.message || "",
+            reply: result.reply || "",
+            existing,
+          });
+          for (const item of items) await upsertMemory(env, user.id, item, "chat");
+        } catch (e) {
+          console.log("memory: extraction skipped", e);
+        }
+      })();
+      if (ctx?.waitUntil) ctx.waitUntil(learn);
+    }
 
     const agentMsgId = crypto.randomUUID();
     const agentAttachments = result.attachments.map((a) => ({ name: a.name, mime: a.mime, size: a.size, dataUrl: a.dataUrl }));
@@ -1317,7 +1461,7 @@ async function handleCreateLead(request: Request, env: Env): Promise<Response> {
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     if (request.method === "OPTIONS") {
       return withCors(new Response(null, { status: 204 }), request, env);
     }
@@ -1360,8 +1504,17 @@ export default {
       } else if (path === "/api/user/delete" && request.method === "DELETE") {
         // Permanently delete the current user's account and all data
         resp = await handleDeleteAccount(request, env);
+      } else if (path === "/api/memory" && request.method === "GET") {
+        // Paul's cross-chat memory: list entries + the on/off switch
+        resp = await handleListMemory(request, env);
+      } else if (path === "/api/memory" && request.method === "POST") {
+        resp = await handleCreateMemory(request, env);
+      } else if (path === "/api/memory/settings" && request.method === "PATCH") {
+        resp = await handleMemorySettings(request, env);
+      } else if (path.match(/^\/api\/memory\/[^/]+$/) && request.method === "DELETE") {
+        resp = await handleDeleteMemory(request, env, path.split("/").pop()!);
       } else if (path === "/api/memory/generate" && request.method === "POST") {
-        // Generate a memory summary from the user's conversation history
+        // Re-read recent chats and store structured memory entries
         resp = await handleGenerateMemory(request, env);
       } else if (path === "/api/tts" && request.method === "POST") {
         // Studio text-to-speech, proxied so the key stays server-side
@@ -1390,7 +1543,7 @@ export default {
       } else if (path.match(/^\/api\/conversations\/[^/]+\/messages$/) && request.method === "GET") {
         resp = await handleGetMessages(request, env, path.split("/")[3]);
       } else if (path === "/api/chat" && request.method === "POST") {
-        resp = await handleChat(request, env);
+        resp = await handleChat(request, env, ctx);
       } else if (path === "/api/leads" && request.method === "POST") {
         resp = await handleCreateLead(request, env);
       } else {
