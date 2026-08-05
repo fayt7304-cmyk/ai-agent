@@ -1205,7 +1205,9 @@ async function handleGetMessages(request: Request, env: Env, id: string): Promis
   // rather than a generic not-found.
   if (!convo) return err("Conversation not found.", 404);
   const isOwner = convo.user_id === user.id;
-  const isShared = convo.visibility === "shared";
+  // 'shared' = anyone with the link can read. 'collab' = anyone with the link can
+  // read AND reply, so the frontend keeps the composer enabled for them.
+  const isShared = convo.visibility === "shared" || convo.visibility === "collab";
   if (!isOwner && !isShared) {
     return err("Access forbidden. Ask the owner to share a link with access.", 403);
   }
@@ -1221,7 +1223,16 @@ async function handleGetMessages(request: Request, env: Env, id: string): Promis
     attachments: m.attachments ? JSON.parse(m.attachments) : [],
   }));
 
-  return json({ messages, conversation: { id: convo.id, title: convo.title, owner: isOwner } });
+  return json({
+    messages,
+    conversation: {
+      id: convo.id,
+      title: convo.title,
+      owner: isOwner,
+      visibility: convo.visibility,
+      can_write: isOwner || convo.visibility === "collab",
+    },
+  });
 }
 
 async function handleSetConversationVisibility(request: Request, env: Env, id: string): Promise<Response> {
@@ -1235,7 +1246,8 @@ async function handleSetConversationVisibility(request: Request, env: Env, id: s
   if (!convo) return err("Conversation not found.", 404);
 
   const body = (await request.json().catch(() => null)) as { visibility?: string } | null;
-  const visibility = body?.visibility === "shared" ? "shared" : "private";
+  const requested = body?.visibility;
+  const visibility = requested === "shared" || requested === "collab" ? requested : "private";
 
   await env.DB.prepare("UPDATE conversations SET visibility = ?, updated_at = ? WHERE id = ?")
     .bind(visibility, nowIso(), id)
@@ -1290,10 +1302,14 @@ async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): P
   // Resolve or create the conversation.
   let convo: ConversationRow | null = null;
   if (body.conversation_id) {
-    convo = await env.DB.prepare("SELECT * FROM conversations WHERE id = ? AND user_id = ?")
-      .bind(body.conversation_id, user.id)
+    convo = await env.DB.prepare("SELECT * FROM conversations WHERE id = ?")
+      .bind(body.conversation_id)
       .first<ConversationRow>();
     if (!convo) return err("Conversation not found.", 404);
+    // Non-owners may only post into a conversation shared for collaboration.
+    if (convo.user_id !== user.id && convo.visibility !== "collab") {
+      return err("Access forbidden. Ask the owner to share this chat for collaboration.", 403);
+    }
   } else {
     const id = crypto.randomUUID();
     const ts = nowIso();
@@ -1316,11 +1332,11 @@ async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): P
     .bind(userMsgId, convo.id, body.message || "", attMeta.length ? JSON.stringify(attMeta) : null, nowIso())
     .run();
 
-  // Cross-chat memory: on the first turn of a conversation there is no Mistral
-  // thread yet, so what Paul knows about the user has to be handed to him here.
-  // Later turns already carry it inside the thread context.
+  // Cross-chat memory: hand Paul what he knows about the user on every turn.
+  // Injecting only on the first turn meant a question asked later in the same
+  // chat ("who am I?") had no memory in context at all.
   const useMemory = memoryEnabled(user);
-  const memoryRows = useMemory && !convo.mistral_conversation_id ? await listMemoryRows(env, user.id) : [];
+  const memoryRows = useMemory ? await listMemoryRows(env, user.id) : [];
   const outgoingMessage = buildMemoryPreamble(memoryRows) + (body.message || "");
 
   try {

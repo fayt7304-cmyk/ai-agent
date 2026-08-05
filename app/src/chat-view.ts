@@ -1,4 +1,4 @@
-import { api, ApiError, type Conversation, type Message, type Attachment, type User } from "./api";
+import { api, ApiError, type Conversation, type Message, type Attachment, type User, type Visibility } from "./api";
 import { readFileAsDataUrl, formatBytes, fileIcon, MAX_FILE_BYTES } from "./files";
 import { showConfirm, showPrompt } from "./lib/dialog";
 import { renderFileList, downloadAllFiles } from "./lib/file-downloads";
@@ -9,6 +9,37 @@ import { applyAvatar } from "./lib/avatar";
 import { openSettings } from "./settings-view";
 import { t } from "./lib/i18n";
 import { icons } from "./lib/icons";
+
+/**
+ * Every chat is addressable: the URL always carries `#conv=<id>` for the open
+ * conversation, so a refresh, a bookmark, or a pasted link reopens that exact chat
+ * instead of dropping the user into a blank new one.
+ */
+function conversationUrl(id: string) {
+  return `${window.location.origin}${window.location.pathname}#conv=${id}`;
+}
+
+/**
+ * Writes the open conversation into the address bar. `internalHashUpdate` keeps our
+ * own writes from re-triggering the `hashchange` listener (which would reload the
+ * conversation we just opened).
+ */
+let internalHashUpdate = false;
+function syncUrlToConversation(id: string | null) {
+  const target = id ? `#conv=${id}` : "";
+  const current = window.location.hash;
+  if (current === target || (!id && current === "")) return;
+  internalHashUpdate = true;
+  if (id) {
+    history.replaceState(null, "", conversationUrl(id));
+  } else {
+    history.replaceState(null, "", `${window.location.origin}${window.location.pathname}`);
+  }
+  // Let any queued hashchange event flush before we listen again.
+  setTimeout(() => {
+    internalHashUpdate = false;
+  }, 0);
+}
 
 interface QuickAction {
   labelKey: string;
@@ -155,12 +186,13 @@ function wireHeaderActions() {
   const shareMenu = document.getElementById("share-menu") as HTMLDivElement;
   const shareBtn = document.getElementById("header-share-btn") as HTMLButtonElement;
 
-  // Share menu — real actions. "Only Me" and "Everyone" both set the conversation's
-  // visibility on the server and copy a `#conv=<id>` deep-link; the difference is
-  // purely who's allowed to open that link (enforced server-side in handleGetMessages).
-  // "Collab" shares the same way as "Everyone" for now — it's read access for any
-  // signed-in user of the app, not live co-editing.
-  async function shareCurrentConversation(visibility: "private" | "shared", copyLink: boolean) {
+  // Share menu — real actions. Each option sets the conversation's visibility on the
+  // server and copies a `#conv=<id>` deep-link; the difference is who may open it
+  // (enforced server-side):
+  //   private -> only the owner
+  //   shared  -> anyone signed in with the link can read
+  //   collab  -> anyone signed in with the link can read AND reply
+  async function shareCurrentConversation(visibility: Visibility, copyLink: boolean) {
     if (!currentConversationId) {
       showToast(t("share.needsChat"));
       return;
@@ -174,14 +206,20 @@ function wireHeaderActions() {
       showToast(t("share.failed"));
       return;
     }
+    const done =
+      visibility === "private"
+        ? t("share.private")
+        : visibility === "collab"
+          ? "Collab link copied — anyone with it can read and reply."
+          : t("share.shared");
     if (!copyLink) {
-      showToast(visibility === "private" ? t("share.private") : t("share.shared"));
+      showToast(done);
       return;
     }
-    const url = `${window.location.origin}${window.location.pathname}#conv=${id}`;
+    const url = conversationUrl(id);
     try {
       await navigator.clipboard.writeText(url);
-      showToast(visibility === "private" ? t("share.private") : t("share.shared"));
+      showToast(done);
     } catch {
       showToast("Could not copy link. URL: " + url);
     }
@@ -197,7 +235,7 @@ function wireHeaderActions() {
   });
   document.getElementById("share-collaboration")?.addEventListener("click", () => {
     shareMenu.style.display = "none";
-    shareCurrentConversation("shared", true);
+    shareCurrentConversation("collab", true);
   });
 
   shareBtn.addEventListener("click", (e) => {
@@ -271,7 +309,7 @@ function wireHeaderActions() {
       if (result.archived) {
         // Deselect, but keep it in `conversations` — it now shows under the
         // sidebar's collapsible "Archived" section instead of disappearing.
-        currentConversationId = null;
+        setCurrentConversation(null);
         renderMessages([]);
         chatTitle.textContent = t("chat.newChat");
         showToast(t("convo.archived"));
@@ -302,7 +340,7 @@ function wireHeaderActions() {
     try {
       await api.deleteConversation(convo.id);
       conversations = conversations.filter((c) => c.id !== convo.id);
-      currentConversationId = null;
+      setCurrentConversation(null);
       renderMessages([]);
       chatTitle.textContent = t("chat.newChat");
       renderConvoList();
@@ -455,6 +493,17 @@ function showToast(message: string, duration = 3000) {
 let currentUser: User;
 let conversations: Conversation[] = [];
 let currentConversationId: string | null = null;
+/** True when the open chat belongs to someone else and isn't shared for collab. */
+let currentChatReadOnly = false;
+
+/**
+ * Single place where the open conversation changes, so the address bar always
+ * matches what's on screen (refresh reopens the same chat, never a blank one).
+ */
+function setCurrentConversation(id: string | null) {
+  currentConversationId = id;
+  syncUrlToConversation(id);
+}
 let pendingAttachments: (Attachment & { dataUrl: string })[] = [];
 let lastUserText = "";
 let lastUserAttachments: (Attachment & { dataUrl: string })[] = [];
@@ -530,7 +579,7 @@ function openConvoMenu(anchor: HTMLElement, c: Conversation, startRename: () => 
     }
   });
   addItem("Copy Link", icons.link, async () => {
-    const url = `${window.location.origin}${window.location.pathname}#conv=${c.id}`;
+    const url = conversationUrl(c.id);
     try {
       await navigator.clipboard.writeText(url);
       showToast("Link copied to clipboard!");
@@ -546,7 +595,7 @@ function openConvoMenu(anchor: HTMLElement, c: Conversation, startRename: () => 
         // Deselect, but keep it in `conversations` — it moves to the sidebar's
         // collapsible "Archived" section instead of disappearing.
         if (currentConversationId === c.id) {
-          currentConversationId = null;
+          setCurrentConversation(null);
           renderMessages([]);
           chatTitle.textContent = t("chat.newChat");
         }
@@ -574,7 +623,7 @@ function openConvoMenu(anchor: HTMLElement, c: Conversation, startRename: () => 
         await api.deleteConversation(c.id);
         conversations = conversations.filter((x) => x.id !== c.id);
         if (currentConversationId === c.id) {
-          currentConversationId = null;
+          setCurrentConversation(null);
           renderMessages([]);
           chatTitle.textContent = t("chat.newChat");
         }
@@ -745,14 +794,38 @@ function renderAccessForbidden(message: string) {
 }
 
 /**
- * Opens a conversation from a `#conv=<id>` share link. Unlike selectConversation,
- * the conversation may not belong to the current user and may not be in their own
- * sidebar list (it's someone else's "Everyone"-shared chat) — so this fetches
- * messages directly and shows a clear "access forbidden" state on 403/404 instead
- * of failing silently.
+ * Puts the composer into (or out of) read-only mode. A chat someone shared for
+ * reading only still opens fine — you just get a banner instead of an input box,
+ * rather than a dead composer that errors when you press send.
+ */
+function setComposerReadOnly(readOnly: boolean, reason = "") {
+  currentChatReadOnly = readOnly;
+  const form = document.getElementById("chat-form") as HTMLElement | null;
+  let notice = document.getElementById("readonly-notice") as HTMLDivElement | null;
+  if (form) form.style.display = readOnly ? "none" : "";
+  if (readOnly) {
+    if (!notice) {
+      notice = document.createElement("div");
+      notice.id = "readonly-notice";
+      notice.className = "readonly-notice";
+      form?.parentElement?.appendChild(notice);
+    }
+    notice.innerHTML = `<span class="menu-icon">${icons.lock}</span><span></span>`;
+    notice.querySelector("span:last-child")!.textContent = reason;
+    notice.style.display = "flex";
+  } else if (notice) {
+    notice.style.display = "none";
+  }
+}
+
+/**
+ * Opens a conversation from a `#conv=<id>` link. Unlike selectConversation, the
+ * conversation may not belong to the current user and may not be in their sidebar
+ * list — so this fetches messages directly, honours the server's `can_write` flag
+ * (collab links stay writable) and shows a clear access state on 403/404.
  */
 async function openConversationLink(id: string) {
-  currentConversationId = id;
+  setCurrentConversation(id);
   renderConvoList();
   messagesEl.innerHTML = "";
   chatTitle.textContent = "…";
@@ -760,12 +833,20 @@ async function openConversationLink(id: string) {
     const { messages, conversation } = await api.getMessages(id);
     chatTitle.textContent = conversation?.title || t("chat.newChat");
     renderMessages(messages);
-    if (conversation && !conversation.owner) {
+    const canWrite = conversation ? conversation.can_write !== false : true;
+    if (canWrite) {
+      setComposerReadOnly(false);
+      if (conversation && !conversation.owner) {
+        showToast("You've been invited to collaborate on this chat — you can reply.");
+      }
+    } else {
+      setComposerReadOnly(true, "Read-only: the owner shared this chat for viewing.");
       showToast("Viewing a conversation shared with you — read access only.");
     }
   } catch (e) {
-    currentConversationId = null;
+    setCurrentConversation(null);
     chatTitle.textContent = t("chat.newChat");
+    setComposerReadOnly(false);
     if (e instanceof ApiError && e.status === 403) {
       renderAccessForbidden("This conversation is private. Ask the owner to share a link with access.");
     } else {
@@ -778,8 +859,9 @@ async function openConversationLink(id: string) {
   if (window.innerWidth <= 720) toggleSidebar(true);
 }
 
-/** Checks the URL for a `#conv=<id>` share link and opens it if present. */
+/** Checks the URL for a `#conv=<id>` link and opens it if present. */
 function handleConvoLinkFromHash() {
+  if (internalHashUpdate) return;
   const match = window.location.hash.match(/#conv=([^&]+)/);
   if (match) openConversationLink(decodeURIComponent(match[1]));
 }
@@ -967,7 +1049,8 @@ function renderMessages(messages: Message[]) {
 }
 
 async function selectConversation(id: string) {
-  currentConversationId = id;
+  setCurrentConversation(id);
+  setComposerReadOnly(false);
   const convo = conversations.find((c) => c.id === id);
   chatTitle.textContent = convo?.title || t("chat.newChat");
   renderConvoList();
@@ -981,7 +1064,8 @@ async function selectConversation(id: string) {
 }
 
 function startNewConversation() {
-  currentConversationId = null;
+  setCurrentConversation(null);
+  setComposerReadOnly(false);
   chatTitle.textContent = t("chat.newChat");
   lastUserText = "";
   lastUserAttachments = [];
@@ -1078,7 +1162,7 @@ async function performSend(text: string, attachments: (Attachment & { dataUrl: s
     attachRegenerateButton(agentRow);
 
     const isNewConvo = !currentConversationId;
-    currentConversationId = result.conversation_id;
+    setCurrentConversation(result.conversation_id);
     chatTitle.textContent = result.title;
 
     if (isNewConvo) {
@@ -1331,6 +1415,9 @@ export function initChatView(user: User) {
 
   chatForm.addEventListener("submit", (e) => {
     e.preventDefault();
+    // Read-only shared chats hide the composer, but guard the submit path too so a
+    // stray Enter keypress can't fire a request the server would reject.
+    if (currentChatReadOnly) return;
     sendMessage();
   });
 
@@ -1365,7 +1452,7 @@ export function updateChatUser(user: User) {
 // Lets other views (e.g. Settings → Privacy → "Delete all chats") refresh the
 // sidebar conversation list after they've changed conversations behind our back.
 export async function refreshConversations() {
-  currentConversationId = null;
+  setCurrentConversation(null);
   renderMessages([]);
   chatTitle.textContent = t("chat.newChat");
   await loadConversations();
@@ -1373,7 +1460,7 @@ export async function refreshConversations() {
 
 export function resetChatView() {
   conversations = [];
-  currentConversationId = null;
+  setCurrentConversation(null);
   pendingAttachments = [];
   lastUserText = "";
   lastUserAttachments = [];

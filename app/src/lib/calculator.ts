@@ -267,6 +267,14 @@ export function initCalculator() {
 
   graphPlotBtn.addEventListener("click", plotGraph);
   graphRangeSelect.addEventListener("change", plotGraph);
+  // Pressing Enter in the expression field should plot too — the field is not
+  // inside a form, so nothing happened before.
+  graphExprInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      plotGraph();
+    }
+  });
   cachedPlotGraph = plotGraph;
   cachedGraphView = views.graph;
   if (!graphInitialized) {

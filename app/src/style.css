@@ -142,46 +142,115 @@ button, input, textarea, select {
 }
 
 .auth-card {
+  position: relative;
   width: 100%;
-  max-width: 380px;
+  max-width: 400px;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 1.75rem;
+  padding: 2rem 1.75rem 1.5rem;
   box-shadow: var(--shadow-lg);
 }
 
+/* Centered brand block: mark, product name, one line of reassurance. */
+.auth-header {
+  position: relative;
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.auth-mark {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 12px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.auth-mark svg { width: 24px; height: 24px; }
+
 .auth-header h1 {
-  margin: 0 0 4px;
-  font-size: 24px;
+  margin: 0 0 6px;
+  font-size: 26px;
   font-weight: 600;
   font-family: var(--font-display);
+  letter-spacing: -0.01em;
 }
 
 .auth-header p {
-  margin: 0 0 1.5rem;
+  margin: 0;
   color: var(--text-secondary);
-  font-size: 13px;
-}
-
-.auth-header {
-  position: relative;
+  font-size: 13.5px;
 }
 
 .auth-close-btn {
   position: absolute;
-  top: -6px;
-  inset-inline-end: -6px;
+  top: 12px;
+  inset-inline-end: 12px;
+  z-index: 1;
+}
+
+/* "or" rule between the Google button and the credential forms. */
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* Segmented control rather than two pills — makes the active tab unambiguous
+   in both themes without relying on the accent tint alone. */
+.auth-tabs {
+  gap: 0;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.auth-tabs .tab {
+  border: none;
+  background: transparent;
+  border-radius: 9px;
+  padding: 8px 12px;
+  font-weight: 500;
+}
+
+.auth-tabs .tab.active {
+  background: var(--card);
+  color: var(--text);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgb(0 0 0 / 0.08));
 }
 
 .guest-continue-btn {
   display: block;
   width: 100%;
   text-align: center;
-  margin-top: 14px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
   text-decoration: none;
   font-size: 13.5px;
 }
+
+.guest-continue-btn:hover { color: var(--accent); }
+
 
 .guest-badge {
   display: inline-flex;
@@ -725,21 +794,25 @@ select:focus-visible,
   color: var(--danger);
 }
 
+/* Fixed 20px icon slot so every row's label starts on the same x-position,
+   whatever the glyph inside is. Icons are optically centered in the slot. */
 .menu-icon { 
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px; 
-  height: 18px;
+  width: 20px; 
+  height: 20px;
   text-align: center; 
   flex-shrink: 0; 
   font-size: 14px;
+  line-height: 0;
   color: var(--text-secondary);
   transition: color 0.15s ease;
 }
 .menu-icon svg {
   width: 18px;
   height: 18px;
+  display: block;
 }
 .user-menu-items button:hover .menu-icon { color: var(--accent); }
 .user-menu-items button.danger-item:hover .menu-icon { color: var(--danger); }
@@ -1426,20 +1499,41 @@ select, .modal-body input, .modal-body textarea {
 }
 
 /* ---------------- Google / link buttons ---------------- */
+/* Full-width Google button. Surface/text follow the theme tokens so it reads
+   correctly in light and dark; only the logo keeps Google's brand colours. */
 .google-btn {
-  display: block;
-  text-align: center;
-  padding: 9px 12px;
-  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--card);
   color: var(--text);
   text-decoration: none;
-  font-size: 13.5px;
-  margin-bottom: 14px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.google-btn:hover { border-color: var(--accent); color: var(--accent); }
+.google-btn .google-logo {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.google-btn:hover {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.google-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 
 .link-btn {
   background: none;
@@ -2173,6 +2267,10 @@ select, .modal-body input, .modal-body textarea {
 /* Graph */
 .graph-controls { display: flex; gap: 8px; margin-bottom: 0.85rem; flex-wrap: wrap; align-items: flex-end; }
 .graph-controls .field { flex: 1; min-width: 150px; }
+/* The Plot button sits in a row with labelled fields, so it has to line up with
+   the inputs, not with their labels. */
+.graph-plot-btn { height: 42px; align-self: flex-end; padding: 0 22px; white-space: nowrap; }
+@media (max-width: 560px) { .graph-plot-btn { width: 100%; } }
 canvas#graph-canvas {
   width: 100%;
   height: 260px;
@@ -2745,6 +2843,42 @@ html[dir="rtl"] #weather-content .uc-section-title {
   background: var(--accent-text);
 }
 
+/* Checkbox-backed variant: <label class="switch"><input type="checkbox">
+   <span class="switch-track"><span class="switch-thumb"></span></span></label>.
+   Without these rules the raw checkbox rendered on top of the track and the
+   knob never moved, which is what made the memory toggle look broken. */
+.switch input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  inset: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+.switch .switch-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  pointer-events: none;
+}
+.switch:has(input[type="checkbox"]:checked) {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.switch:has(input[type="checkbox"]:checked) .switch-thumb {
+  transform: translateX(18px);
+  background: var(--accent-text);
+}
+.switch:has(input[type="checkbox"]:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+html[dir="rtl"] .switch:has(input[type="checkbox"]:checked) .switch-thumb {
+  transform: translateX(-18px);
+}
+
 /* ================================================================
    Settings structure: subheadings, muted text, ranges, lists
    ================================================================ */
@@ -3137,22 +3271,83 @@ html[dir="rtl"] .switch.on .switch-thumb { transform: translateX(-18px); }
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9.5 3A3.5 3.5 0 0 0 6 6.5c-1.4.6-2.5 2-2.5 3.8 0 1.1.4 2 1.1 2.7-.4.6-.6 1.3-.6 2A3.5 3.5 0 0 0 7.5 18.5c.5 1.2 1.7 2 3 2 .6 0 1.1-.2 1.5-.5V3.6A3.4 3.4 0 0 0 9.5 3z'/%3E%3Cpath d='M14.5 3A3.5 3.5 0 0 1 18 6.5c1.4.6 2.5 2 2.5 3.8 0 1.1-.4 2-1.1 2.7.4.6.6 1.3.6 2a3.5 3.5 0 0 1-3.5 3.5c-.5 1.2-1.7 2-3 2-.6 0-1.1-.2-1.5-.5'/%3E%3C/svg%3E");
 }
 
+/* Memory browser — Claude-style: a list of topics you tap into, and a detail
+   view for the one you opened. */
 .memory-list { display: flex; flex-direction: column; margin-top: 12px; }
 .memory-empty { padding: 10px 0; font-size: 13px; color: var(--text-secondary); }
+.memory-group-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding: 14px 0 6px;
+}
 .memory-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   column-gap: 12px;
-  padding: 10px 0;
-  border-top: 1px solid var(--border);
+  width: 100%;
+  text-align: start;
+  padding: 11px 10px;
+  margin-inline: -10px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.12s ease;
 }
+.memory-item + .memory-item { box-shadow: inset 0 1px 0 var(--border); }
+.memory-item:hover { background: var(--bg-hover, rgba(127, 127, 127, 0.09)); }
 .memory-item-main { min-width: 0; }
 .memory-item-title { font-size: 13.5px; font-weight: 600; color: var(--text); }
-.memory-item-content { font-size: 12.5px; color: var(--text-secondary); margin-top: 2px; }
+.memory-item-content {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .memory-item-meta { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
-.memory-delete { opacity: 0.6; }
-.memory-delete:hover { opacity: 1; }
+.memory-item-caret { opacity: 0.45; font-size: 15px; line-height: 1; }
+.memory-item:hover .memory-item-caret { opacity: 0.8; }
+
+.memory-detail-head { display: flex; align-items: flex-start; gap: 10px; }
+.memory-back-btn { width: 30px; height: 30px; flex: none; }
+.memory-back-btn svg { width: 18px; height: 18px; }
+.memory-detail-titles { min-width: 0; }
+.memory-detail-title { font-size: 15px; font-weight: 600; color: var(--text); }
+.memory-detail-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.memory-detail-body {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.memory-detail-body li {
+  position: relative;
+  padding-inline-start: 16px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text);
+}
+.memory-detail-body li::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 2px;
+  top: 9px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+}
+.memory-detail-actions { margin-top: 18px; display: flex; }
 
 .memory-add-row { display: flex; gap: 8px; margin-top: 14px; }
 .memory-add-row input {
@@ -3169,4 +3364,24 @@ html[dir="rtl"] .switch.on .switch-thumb { transform: translateX(-18px); }
 @media (max-width: 720px) {
   .memory-item { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
   .memory-item-meta { grid-column: 1; font-size: 11.5px; }
+}
+
+
+/* ================================================================
+   Shared / collab chats: read-only banner in place of the composer
+   ================================================================ */
+.readonly-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 auto 18px;
+  max-width: 760px;
+  padding: 12px 16px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: center;
 }

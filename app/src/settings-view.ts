@@ -87,45 +87,97 @@ const memoryEnabledToggle = document.getElementById("memory-enabled-toggle") as 
 const memoryList = document.getElementById("memory-list") as HTMLDivElement;
 const memoryAddForm = document.getElementById("memory-add-form") as HTMLFormElement;
 const memoryInput = document.getElementById("memory-input") as HTMLInputElement;
+const memoryBrowser = document.getElementById("memory-browser") as HTMLDivElement;
+const memoryDetail = document.getElementById("memory-detail") as HTMLDivElement;
+const memoryDetailBack = document.getElementById("memory-detail-back") as HTMLButtonElement;
+const memoryDetailTitle = document.getElementById("memory-detail-title") as HTMLDivElement;
+const memoryDetailMeta = document.getElementById("memory-detail-meta") as HTMLDivElement;
+const memoryDetailBody = document.getElementById("memory-detail-body") as HTMLUListElement;
+const memoryDetailDelete = document.getElementById("memory-detail-delete") as HTMLButtonElement;
+
+let openMemoryId: string | null = null;
+
+function formatMemoryDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/** Split a stored entry into readable bullets, the way the detail view shows them. */
+function memoryBullets(content: string): string[] {
+  const lines = content
+    .split(/\n+|(?<=[.;])\s+(?=[A-Z0-9])/)
+    .map((l) => l.replace(/^[-•*]\s*/, "").trim())
+    .filter(Boolean);
+  return lines.length ? lines : [content];
+}
+
+function showMemoryList() {
+  openMemoryId = null;
+  memoryDetail.style.display = "none";
+  memoryBrowser.style.display = "";
+}
+
+function showMemoryDetail(entry: MemoryEntry) {
+  openMemoryId = entry.id;
+  memoryDetailTitle.textContent = entry.title;
+  memoryDetailMeta.textContent = `${t("settings.memoryUpdated")} ${formatMemoryDate(entry.updated_at)}`;
+  memoryDetailBody.innerHTML = "";
+  for (const line of memoryBullets(entry.content)) {
+    const li = document.createElement("li");
+    li.textContent = line;
+    memoryDetailBody.appendChild(li);
+  }
+  memoryBrowser.style.display = "none";
+  memoryDetail.style.display = "";
+}
 
 function renderMemories(memories: MemoryEntry[]) {
+  if (openMemoryId) {
+    const still = memories.find((m) => m.id === openMemoryId);
+    if (still) showMemoryDetail(still);
+    else showMemoryList();
+  }
   if (!memories.length) {
     memoryList.innerHTML = `<div class="memory-empty">${t("settings.memoryEmpty")}</div>`;
     return;
   }
   memoryList.innerHTML = memories
-    .map((m) => {
-      const updated = new Date(m.updated_at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-      return `<div class="memory-item">
-        <div class="memory-item-main">
-          <div class="memory-item-title"></div>
-          <div class="memory-item-content"></div>
-        </div>
-        <div class="memory-item-meta">${t("settings.memoryUpdated")} ${updated}</div>
-        <button type="button" class="icon-btn memory-delete" data-memory-id="${m.id}" title="${t("settings.memoryRemove")}" aria-label="${t("settings.memoryRemove")}">✕</button>
-      </div>`;
-    })
+    .map(
+      (m) => `<button type="button" class="memory-item" data-memory-id="${m.id}">
+        <span class="memory-item-main">
+          <span class="memory-item-title"></span>
+          <span class="memory-item-content"></span>
+        </span>
+        <span class="memory-item-meta">${t("settings.memoryUpdated")} ${formatMemoryDate(m.updated_at)}</span>
+        <span class="memory-item-caret" aria-hidden="true">›</span>
+      </button>`
+    )
     .join("");
   // Titles/contents are user + model text, so they go in via textContent.
   memoryList.querySelectorAll<HTMLElement>(".memory-item").forEach((el, i) => {
     el.querySelector<HTMLElement>(".memory-item-title")!.textContent = memories[i].title;
     el.querySelector<HTMLElement>(".memory-item-content")!.textContent = memories[i].content;
-  });
-  memoryList.querySelectorAll<HTMLButtonElement>(".memory-delete").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      btn.disabled = true;
-      try {
-        const { memories: next } = await api.deleteMemory(btn.dataset.memoryId!);
-        renderMemories(next);
-      } catch (err) {
-        settingsError.textContent = err instanceof ApiError ? err.message : t("settings.memoryNotAvailable");
-        btn.disabled = false;
-      }
-    });
+    el.addEventListener("click", () => showMemoryDetail(memories[i]));
   });
 }
 
+memoryDetailBack.addEventListener("click", showMemoryList);
+
+memoryDetailDelete.addEventListener("click", async () => {
+  if (!openMemoryId) return;
+  memoryDetailDelete.disabled = true;
+  try {
+    const { memories: next } = await api.deleteMemory(openMemoryId);
+    showMemoryList();
+    renderMemories(next);
+  } catch (err) {
+    settingsError.textContent = err instanceof ApiError ? err.message : t("settings.memoryNotAvailable");
+  } finally {
+    memoryDetailDelete.disabled = false;
+  }
+});
+
 async function loadMemory() {
+  showMemoryList();
   memoryList.innerHTML = `<div class="memory-empty">${t("settings.memoryLoading")}</div>`;
   try {
     const { enabled, memories } = await api.listMemory();
@@ -137,6 +189,7 @@ async function loadMemory() {
     settingsError.textContent = err instanceof ApiError ? err.message : t("settings.memoryNotAvailable");
   }
 }
+
 
 function renderGoogleLinkState(user: User) {
   googleLinkBtn.href = api.googleLinkUrl();
