@@ -101,6 +101,19 @@ export async function destroySession(env: Env, token: string): Promise<void> {
   await env.DB.prepare("DELETE FROM sessions WHERE token = ?").bind(token).run();
 }
 
+/** Resolve a user from a bare session token (used by the OAuth link redirect,
+ *  which can't send an Authorization header). */
+export async function getUserFromToken(env: Env, token: string | null): Promise<UserRow | null> {
+  if (!token) return null;
+  const row = await env.DB.prepare(
+    `SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
+     WHERE s.token = ? AND s.expires_at > ?`
+  )
+    .bind(token, new Date().toISOString())
+    .first<UserRow>();
+  return row || null;
+}
+
 export async function getUserFromRequest(env: Env, request: Request): Promise<UserRow | null> {
   const token = readSessionToken(request);
   if (!token) return null;

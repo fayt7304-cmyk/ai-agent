@@ -222,7 +222,14 @@ export const api = {
   googleLoginUrl: (mode?: "login" | "link") => 
     `${API_BASE}/api/auth/google${mode ? "?mode=" + mode : ""}`,
 
-  googleLinkUrl: () => `${API_BASE}/api/auth/google?mode=link`,
+  // Linking happens through a full-page redirect, so no Authorization header can
+  // be attached. The session token travels as a query param instead — without it
+  // the Worker can't see who is linking (third-party cookies are often dropped)
+  // and bounced straight back with link_error=not_authenticated.
+  googleLinkUrl: () => {
+    const token = getSessionToken();
+    return `${API_BASE}/api/auth/google?mode=link${token ? `&token=${encodeURIComponent(token)}` : ""}`;
+  },
 
   unlinkGoogle: () => request<{ user: User; session_token?: string }>("/api/auth/google/link", { method: "DELETE" }),
 

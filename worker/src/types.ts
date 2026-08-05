@@ -28,6 +28,8 @@ export interface Env {
    *  Set with: npx wrangler secret put ELEVENLABS_API_KEY
    *  Never put this in code or in wrangler.toml [vars]. */
   ELEVENLABS_API_KEY?: string;
+  /** Optional override for the ElevenLabs model id (default: eleven_turbo_v2_5). */
+  ELEVENLABS_MODEL?: string;
   /** Optional: use Cloudflare Workers AI (eleven-multilingual) instead of calling
    *  ElevenLabs directly. Needs BOTH of these:
    *    npx wrangler secret put CLOUDFLARE_AI_TOKEN

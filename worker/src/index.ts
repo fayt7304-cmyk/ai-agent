@@ -8,6 +8,7 @@ import {
   destroySession,
   destroyAllSessionsForUser,
   getUserFromRequest,
+  getUserFromToken,
   readSessionToken,
   sessionCookieHeader,
   clearSessionCookieHeader,
@@ -327,10 +328,14 @@ async function handleGoogleStart(request: Request, env: Env): Promise<Response> 
   const url = new URL(request.url);
   const mode = url.searchParams.get("mode") === "link" ? "link" : "login";
 
+  let linkUserId = "";
   if (mode === "link") {
     // Linking requires an existing session — bail out early with a clear error
     // rather than sending someone to Google only to fail at the callback.
-    const user = await getUserFromRequest(env, request);
+    // A full-page redirect can't carry an Authorization header, so the frontend
+    // may pass ?token=<session token> instead of relying on the cookie.
+    const user = (await getUserFromRequest(env, request)) || (await getUserFromToken(env, url.searchParams.get("token")));
+    if (user) linkUserId = user.id;
     if (!user) {
       return new Response(null, {
         status: 302,
@@ -342,7 +347,10 @@ async function handleGoogleStart(request: Request, env: Env): Promise<Response> 
   // The mode travels inside the opaque state value itself, so it round-trips
   // through Google untouched and can't be tampered with independently of the
   // state check that already happens on callback.
-  const state = `${mode}:${randomToken(16)}`;
+  // For link mode the user id rides along inside the state. The callback
+  // verifies state against the state cookie before trusting it, and this means
+  // linking works even when the session cookie is dropped on the callback hop.
+  const state = mode === "link" ? `link:${linkUserId}:${randomToken(16)}` : `${mode}:${randomToken(16)}`;
   const authUrl = buildGoogleAuthUrl(env, state);
   const resp = new Response(null, { status: 302, headers: { Location: authUrl } });
   resp.headers.append("Set-Cookie", oauthStateCookieHeader(state));
@@ -366,7 +374,12 @@ async function handleGoogleCallback(request: Request, env: Env): Promise<Respons
   // ---- Linking a Google account to the currently logged-in user ----
   if (mode === "link") {
     const clearState = clearOauthStateCookieHeader();
-    const currentUser = await getUserFromRequest(env, request);
+    const stateUserId = state.split(":")[1] || "";
+    const currentUser =
+      (await getUserFromRequest(env, request)) ||
+      (stateUserId
+        ? await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(stateUserId).first<any>()
+        : null);
     if (!currentUser) {
       const resp = new Response(null, {
         status: 302,
@@ -742,7 +755,11 @@ async function handleTts(request: Request, env: Env): Promise<Response> {
   if (elevenKey) {
     const resp = await fetch(
       // output_format MUST be a query param, not part of the JSON body.
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
+      // /stream + turbo model + a low latency hint: the non-streaming
+      // multilingual_v2 call routinely took 10-20s for a long reply, which is
+      // what made "high-quality voice" look broken. Streaming lets playback
+      // start as soon as the first bytes land.
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=mp3_44100_128&optimize_streaming_latency=3`,
       {
         method: "POST",
         headers: {
@@ -752,7 +769,7 @@ async function handleTts(request: Request, env: Env): Promise<Response> {
         },
         body: JSON.stringify({
           text: input,
-          model_id: "eleven_multilingual_v2",
+          model_id: env.ELEVENLABS_MODEL?.trim() || "eleven_turbo_v2_5",
           voice_settings: {
             stability: 0.5,
             similarity_boost: 0.75,

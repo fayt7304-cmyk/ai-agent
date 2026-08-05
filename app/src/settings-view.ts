@@ -81,13 +81,14 @@ function showTab(tab: string) {
 }
 
 function renderGoogleLinkState(user: User) {
+  googleLinkBtn.href = api.googleLinkUrl();
   if (user.google_linked) {
     googleLinkStatus.textContent = t("settings.connected");
     googleLinkBtn.style.display = "none";
-    googleUnlinkBtn.style.display = "inline";
+    googleUnlinkBtn.style.display = "inline-flex";
   } else {
     googleLinkStatus.textContent = t("settings.notConnected");
-    googleLinkBtn.style.display = "inline";
+    googleLinkBtn.style.display = "inline-flex";
     googleUnlinkBtn.style.display = "none";
   }
 }
@@ -540,6 +541,17 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     } finally {
       setPasswordBtn.disabled = false;
     }
+  });
+
+  // "Connect Google" was rendered as <a href="#"> and never wired up, so it did
+  // nothing at all. Send the browser to the Worker's OAuth start endpoint (with
+  // the session token attached, see api.googleLinkUrl) on click.
+  googleLinkBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    settingsError.textContent = "";
+    settingsSuccess.textContent = "";
+    googleLinkBtn.classList.add("is-busy");
+    window.location.href = api.googleLinkUrl();
   });
 
   googleUnlinkBtn.addEventListener("click", async () => {

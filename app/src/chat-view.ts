@@ -1260,8 +1260,11 @@ export function initChatView(user: User) {
 
   // If the studio voice isn't available, tell the user why the device voice spoke.
   document.addEventListener("tts-fallback", (e) => {
-    const status = (e as CustomEvent).detail?.status;
-    setHint(status === 501 ? t("settings.hqVoiceNotConfigured") : t("settings.hqVoiceError"), true);
+    const detail = (e as CustomEvent).detail || {};
+    const status = detail.status;
+    if (status === 501) setHint(t("settings.hqVoiceNotConfigured"), true);
+    else if (detail.timeout) setHint(t("settings.hqVoiceSlow"), true);
+    else setHint(t("settings.hqVoiceError"), true);
   });
 
   newChatBtn.addEventListener("click", startNewConversation);
