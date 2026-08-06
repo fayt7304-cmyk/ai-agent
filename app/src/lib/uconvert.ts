@@ -163,7 +163,7 @@ export function initUnitConverter() {
   }
 
   async function loadCurrencyRates(base: string) {
-    convStatus.textContent = "Fetching live exchange rates…";
+    convStatus.textContent = t("uconvert.currencyFetching");
     convStatus.classList.add("working");
     try {
       const resp = await fetch("https://open.er-api.com/v6/latest/" + base);
@@ -171,10 +171,10 @@ export function initUnitConverter() {
       if (data.result !== "success") throw new Error("Rate fetch failed");
       currencyRates = data.rates;
       currencyBase = base;
-      convStatus.textContent = "Rates updated: " + new Date(data.time_last_update_utc).toLocaleString();
+      convStatus.textContent = t("uconvert.currencyUpdated").replace("{date}", new Date(data.time_last_update_utc).toLocaleString());
       convStatus.classList.remove("working");
     } catch {
-      convStatus.textContent = "Could not fetch exchange rates. Check your connection and try again.";
+      convStatus.textContent = t("uconvert.currencyError");
       convStatus.classList.remove("working");
     }
   }

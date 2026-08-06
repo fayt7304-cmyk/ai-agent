@@ -204,7 +204,7 @@ memoryEditForm.addEventListener("submit", async (e) => {
   const newTitle = memoryEditTitle.value.trim();
   const newContent = memoryEditContent.value.trim();
   if (!newTitle || !newContent) {
-    settingsError.textContent = "Title and content cannot be empty";
+    settingsError.textContent = t("settings.memoryEmptyTitle");
     return;
   }
   const submitBtn = memoryEditForm.querySelector("button[type='submit']") as HTMLButtonElement;
@@ -279,7 +279,7 @@ memoryImportFile.addEventListener("change", async (e) => {
     }
   }
   renderMemories(allMemories);
-  settingsSuccess.textContent = `${added} memory entries imported`;
+  settingsSuccess.textContent = t("settings.memoryImported").replace("{n}", String(added));
   setTimeout(() => { settingsSuccess.textContent = ""; }, 3000);
   memoryImportBtn.disabled = false;
   memoryImportFile.value = "";
@@ -552,20 +552,37 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
   syncHqVoice(prefs.highQualityVoice);
   hqVoiceToggle.addEventListener("click", async () => {
     const on = !hqVoiceToggle.classList.contains("on");
-    syncHqVoice(on);
-    updateHighQualityVoice(on);
     settingsError.textContent = "";
-    settingsSuccess.textContent = t("settings.hqVoice") + " " + t("settings.updated");
-    if (!on) return;
-    // Turning it on used to fail silently: if the server has no voice key the
-    // app just kept using the device voice with no explanation. Probe the proxy
-    // once and say exactly what happened.
+    settingsSuccess.textContent = "";
+
+    if (!on) {
+      // Turning off: update immediately, no probe needed.
+      syncHqVoice(false);
+      updateHighQualityVoice(false);
+      settingsSuccess.textContent = t("settings.hqVoice") + " " + t("settings.updated");
+      return;
+    }
+
+    // Turning on: probe the server FIRST — only enable if it actually responds.
+    // Show a busy state while waiting so the user knows something is happening.
     hqVoiceToggle.setAttribute("aria-busy", "true");
+    hqVoiceToggle.disabled = true;
+    settingsSuccess.textContent = t("settings.hqVoice") + "…";
+
     const status = await checkHighQualityVoice();
+
     hqVoiceToggle.removeAttribute("aria-busy");
+    hqVoiceToggle.disabled = false;
+
     if (status.ok) {
+      // Probe succeeded — now enable and persist.
+      syncHqVoice(true);
+      updateHighQualityVoice(true);
       settingsSuccess.textContent = t("settings.hqVoiceReady");
     } else {
+      // Probe failed — keep toggle off, explain why.
+      syncHqVoice(false);
+      updateHighQualityVoice(false);
       settingsSuccess.textContent = "";
       settingsError.textContent = status.message;
     }

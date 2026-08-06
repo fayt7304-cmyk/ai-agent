@@ -464,6 +464,22 @@ const translations: Record<Lang, Record<string, string>> = {
     "uconvert.unit.CHF": "Swiss Franc (CHF)",
     "uconvert.unit.AED": "UAE Dirham (AED)",
     "crop.confirm": "Crop & Save",
+
+    // Converter / material / memory — new keys for v7.1
+    "uconvert.currencyFetching": "Fetching live exchange rates\u2026",
+    "uconvert.currencyUpdated": "Rates updated: {date}",
+    "uconvert.currencyError": "Could not fetch exchange rates. Check your connection and try again.",
+    "material.areaResult": "{area}\u00a0m\u00b2 ({withWaste}\u00a0m\u00b2 with waste)",
+    "settings.memoryExport": "Export as .txt",
+    "settings.memoryImport": "Import from .txt",
+    "settings.editMemory": "Edit Memory",
+    "settings.memoryTitle": "Title",
+    "settings.memoryContent": "Content",
+    "settings.memoryEdit": "Edit",
+    "settings.cancel": "Cancel",
+    "settings.save": "Save",
+    "settings.memoryEmptyTitle": "Title and content cannot be empty.",
+    "settings.memoryImported": "{n} memory entries imported.",
   },
 
   fr: {
@@ -908,7 +924,23 @@ const translations: Record<Lang, Record<string, string>> = {
     "files.loadError": "Impossible de charger les fichiers.",
     "files.fromYou": "Envoyé par vous",
     "files.fromPaul": "De Paul",
-    "crop.hint": "Faites glisser pour déplacer • pincez ou utilisez les boutons pour zoomer",
+    "crop.hint": "Faites glisser pour déplacer \u2022 pincez ou utilisez les boutons pour zoomer",
+
+    // Converter / material / memory — new keys for v7.1
+    "uconvert.currencyFetching": "R\u00e9cup\u00e9ration des taux de change en direct\u2026",
+    "uconvert.currencyUpdated": "Taux mis \u00e0 jour : {date}",
+    "uconvert.currencyError": "Impossible de r\u00e9cup\u00e9rer les taux de change. V\u00e9rifiez votre connexion et r\u00e9essayez.",
+    "material.areaResult": "{area}\u00a0m\u00b2 ({withWaste}\u00a0m\u00b2 avec d\u00e9chets)",
+    "settings.memoryExport": "Exporter en .txt",
+    "settings.memoryImport": "Importer depuis .txt",
+    "settings.editMemory": "Modifier la m\u00e9moire",
+    "settings.memoryTitle": "Titre",
+    "settings.memoryContent": "Contenu",
+    "settings.memoryEdit": "Modifier",
+    "settings.cancel": "Annuler",
+    "settings.save": "Enregistrer",
+    "settings.memoryEmptyTitle": "Le titre et le contenu ne peuvent pas \u00eatre vides.",
+    "settings.memoryImported": "{n} entr\u00e9es de m\u00e9moire import\u00e9es.",
   },
 
   es: {
@@ -1354,6 +1386,21 @@ const translations: Record<Lang, Record<string, string>> = {
     "files.fromYou": "Subido por ti",
     "files.fromPaul": "De Paul",
     "crop.hint": "Arrastra para mover • pellizca o usa los botones para hacer zoom",
+    // Converter / material / memory — new keys for v7.1
+    "uconvert.currencyFetching": "Obteniendo tipos de cambio en vivo\u2026",
+    "uconvert.currencyUpdated": "Tasas actualizadas: {date}",
+    "uconvert.currencyError": "No se pudieron obtener los tipos de cambio. Comprueba tu conexi\u00f3n e int\u00e9ntalo de nuevo.",
+    "material.areaResult": "{area}\u00a0m\u00b2 ({withWaste}\u00a0m\u00b2 con desperdicio)",
+    "settings.memoryExport": "Exportar como .txt",
+    "settings.memoryImport": "Importar desde .txt",
+    "settings.editMemory": "Editar memoria",
+    "settings.memoryTitle": "T\u00edtulo",
+    "settings.memoryContent": "Contenido",
+    "settings.memoryEdit": "Editar",
+    "settings.cancel": "Cancelar",
+    "settings.save": "Guardar",
+    "settings.memoryEmptyTitle": "El t\u00edtulo y el contenido no pueden estar vac\u00edos.",
+    "settings.memoryImported": "{n} entradas de memoria importadas.",
   },
 
   zh: {
@@ -1799,6 +1846,21 @@ const translations: Record<Lang, Record<string, string>> = {
     "files.fromYou": "由你上传",
     "files.fromPaul": "来自 Paul",
     "crop.hint": "拖动可移动 • 双指捏合或使用按钮缩放",
+    // Converter / material / memory — new keys for v7.1
+    "uconvert.currencyFetching": "正在获取实时汇率\u2026",
+    "uconvert.currencyUpdated": "汇率已更新：{date}",
+    "uconvert.currencyError": "无法获取汇率，请检查您的网络连接后重试。",
+    "material.areaResult": "{area}\u00a0m\u00b2（含损耗 {withWaste}\u00a0m\u00b2）",
+    "settings.memoryExport": "导出为 .txt",
+    "settings.memoryImport": "从 .txt 导入",
+    "settings.editMemory": "编辑记忆",
+    "settings.memoryTitle": "标题",
+    "settings.memoryContent": "内容",
+    "settings.memoryEdit": "编辑",
+    "settings.cancel": "取消",
+    "settings.save": "保存",
+    "settings.memoryEmptyTitle": "标题和内容不能为空。",
+    "settings.memoryImported": "已导入 {n} 条记忆。",
   },
 
   ar: {
@@ -2244,6 +2306,21 @@ const translations: Record<Lang, Record<string, string>> = {
     "files.fromYou": "حمّلته أنت",
     "files.fromPaul": "من Paul",
     "crop.hint": "اسحب للتحريك • اضغط بإصبعين أو استخدم الأزرار للتكبير",
+    // Converter / material / memory — new keys for v7.1
+    "uconvert.currencyFetching": "جارٍ جلب أسعار الصرف الحية\u2026",
+    "uconvert.currencyUpdated": "تم تحديث الأسعار: {date}",
+    "uconvert.currencyError": "تعذّر جلب أسعار الصرف. تحقق من اتصالك وحاول مرة أخرى.",
+    "material.areaResult": "{area}\u00a0م\u00b2 ({withWaste}\u00a0م\u00b2 مع الهدر)",
+    "settings.memoryExport": "تصدير كـ .txt",
+    "settings.memoryImport": "استيراد من .txt",
+    "settings.editMemory": "تعديل الذاكرة",
+    "settings.memoryTitle": "العنوان",
+    "settings.memoryContent": "المحتوى",
+    "settings.memoryEdit": "تعديل",
+    "settings.cancel": "إلغاء",
+    "settings.save": "حفظ",
+    "settings.memoryEmptyTitle": "لا يمكن أن يكون العنوان والمحتوى فارغَين.",
+    "settings.memoryImported": "تم استيراد {n} إدخال(ات) من الذاكرة.",
   },
 };
 

@@ -34,6 +34,11 @@ const VOICE_IDS: Record<VoiceStyle, string> = {
  *  warning on perfectly good (just slow) requests. */
 const TTS_TIMEOUT_MS = 45000;
 
+/** Minimum wait (ms) before the system voice reader is allowed to start as a
+ *  fallback. This prevents the device voice from firing immediately while the
+ *  studio request is still in-flight on a slow connection. */
+const SYSTEM_VOICE_FALLBACK_DELAY_MS = 800;
+
 let currentAudio: HTMLAudioElement | null = null;
 let currentAbort: AbortController | null = null;
 /** Incremented on every speak()/stopSpeaking(); anything from an older
@@ -231,6 +236,11 @@ export async function speak(markdown: string, opts: { onEnd?: () => void } = {})
     }
 
     killStudioAudio();
+    // Wait a short moment before starting the system voice reader. This ensures
+    // we don't accidentally double-up if the studio audio is still cleaning up,
+    // and gives the user a brief pause that feels intentional rather than abrupt.
+    await new Promise<void>((resolve) => setTimeout(resolve, SYSTEM_VOICE_FALLBACK_DELAY_MS));
+    if (myGen !== generation) return; // superseded during the wait
     await speakWithBrowser(text, myGen, opts.onEnd);
   }
 }

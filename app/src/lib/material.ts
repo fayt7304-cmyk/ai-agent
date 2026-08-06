@@ -1,4 +1,5 @@
 import { fmt } from "./uconvert";
+import { t } from "./i18n";
 
 export function initMaterialEstimate() {
   const widthInput = document.getElementById("mat-width") as HTMLInputElement;
@@ -18,7 +19,9 @@ export function initMaterialEstimate() {
     const areaM2 = wM * lM;
     const withWaste = areaM2 * (1 + waste / 100);
 
-    result.textContent = fmt(areaM2, 2) + " m² (" + fmt(withWaste, 2) + " m² with waste)";
+    result.textContent = t("material.areaResult")
+      .replace("{area}", fmt(areaM2, 2))
+      .replace("{withWaste}", fmt(withWaste, 2));
   }
 
   [widthInput, widthUnit, lengthInput, lengthUnit, wasteInput].forEach((el) => {
