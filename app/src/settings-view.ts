@@ -94,8 +94,13 @@ const memoryDetailTitle = document.getElementById("memory-detail-title") as HTML
 const memoryDetailMeta = document.getElementById("memory-detail-meta") as HTMLDivElement;
 const memoryDetailBody = document.getElementById("memory-detail-body") as HTMLUListElement;
 const memoryDetailDelete = document.getElementById("memory-detail-delete") as HTMLButtonElement;
+const memoryDetailEdit = document.getElementById("memory-detail-edit") as HTMLButtonElement;
+const memoryExportBtn = document.getElementById("memory-export-btn") as HTMLButtonElement;
+const memoryImportBtn = document.getElementById("memory-import-btn") as HTMLButtonElement;
+const memoryImportFile = document.getElementById("memory-import-file") as HTMLInputElement;
 
 let openMemoryId: string | null = null;
+let allMemories: MemoryEntry[] = [];
 
 function formatMemoryDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -162,11 +167,34 @@ function renderMemories(memories: MemoryEntry[]) {
 
 memoryDetailBack.addEventListener("click", showMemoryList);
 
+memoryDetailEdit.addEventListener("click", async () => {
+  if (!openMemoryId) return;
+  const entry = allMemories.find((m) => m.id === openMemoryId);
+  if (!entry) return;
+  const newTitle = prompt("Edit title:", entry.title);
+  if (newTitle === null) return;
+  const newContent = prompt("Edit content:", entry.content);
+  if (newContent === null) return;
+  memoryDetailEdit.disabled = true;
+  try {
+    const { memories: next } = await api.addMemory(newContent, newTitle);
+    allMemories = next;
+    renderMemories(next);
+    settingsSuccess.textContent = t("settings.memorySaved");
+    setTimeout(() => { settingsSuccess.textContent = ""; }, 3000);
+  } catch (err) {
+    settingsError.textContent = err instanceof ApiError ? err.message : t("settings.memoryNotAvailable");
+  } finally {
+    memoryDetailEdit.disabled = false;
+  }
+});
+
 memoryDetailDelete.addEventListener("click", async () => {
   if (!openMemoryId) return;
   memoryDetailDelete.disabled = true;
   try {
     const { memories: next } = await api.deleteMemory(openMemoryId);
+    allMemories = next;
     showMemoryList();
     renderMemories(next);
   } catch (err) {
@@ -176,11 +204,58 @@ memoryDetailDelete.addEventListener("click", async () => {
   }
 });
 
+memoryExportBtn.addEventListener("click", () => {
+  const content = allMemories
+    .map((m) => `[${m.title}]\n${m.content}\n`)
+    .join("\n---\n\n");
+  const blob = new Blob([content], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `paul-memory-${new Date().toISOString().split("T")[0]}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+memoryImportBtn.addEventListener("click", () => {
+  memoryImportFile.click();
+});
+
+memoryImportFile.addEventListener("change", async (e) => {
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  const text = await file.text();
+  const entries = text.split(/\n---\n\n/).filter(Boolean);
+  memoryImportBtn.disabled = true;
+  let added = 0;
+  for (const entry of entries) {
+    const lines = entry.trim().split("\n");
+    const titleMatch = lines[0].match(/\[(.*?)\]/);
+    const title = titleMatch ? titleMatch[1] : "Imported";
+    const content = lines.slice(titleMatch ? 1 : 0).join("\n").trim();
+    if (content) {
+      try {
+        const { memories: next } = await api.addMemory(content, title);
+        allMemories = next;
+        added++;
+      } catch (err) {
+        console.error("Failed to import entry:", err);
+      }
+    }
+  }
+  renderMemories(allMemories);
+  settingsSuccess.textContent = `${added} memory entries imported`;
+  setTimeout(() => { settingsSuccess.textContent = ""; }, 3000);
+  memoryImportBtn.disabled = false;
+  memoryImportFile.value = "";
+});
+
 async function loadMemory() {
   showMemoryList();
   memoryList.innerHTML = `<div class="memory-empty">${t("settings.memoryLoading")}</div>`;
   try {
     const { enabled, memories } = await api.listMemory();
+    allMemories = memories;
     memoryEnabledToggle.checked = enabled;
     renderMemories(memories);
   } catch (err) {

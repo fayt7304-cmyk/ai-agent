@@ -6,13 +6,14 @@ A comprehensive chat web application powered by a Mistral AI agent, designed to 
 
 ## 🚀 What's New in v7
 
-This version (v7) introduces critical layout fixes and structural improvements:
+This version (v7) introduces critical layout fixes, UI alignments, and advanced memory management capabilities:
 
-| Feature | Fix Description |
+| Feature | Description & Fix |
 | :--- | :--- |
 | **Mobile Sidebar** | Updated the responsive breakpoint to **768px** and added `z-index` layering to ensure the sidebar correctly overlays the chat content on all mobile devices. |
-| **Calculator Modal** | Standardized the height of input fields and dropdowns to **42px** to perfectly align with the **Plot** button in the graph view. |
-| **User Menu** | Adjusted the icon container's `line-height` and alignment properties to ensure icons are vertically centered with their labels on both mobile and desktop. |
+| **Calculator Modal** | Standardized the height of input fields and dropdowns to **42px** and wrapped the **Plot** button in a dedicated field container with a spacer label for flawless vertical alignment. |
+| **User Menu** | Refined flexbox centering and icon container properties to ensure icons are vertically centered with their text labels on both mobile and desktop. |
+| **Memory Management** | Added full support for **editing**, **exporting**, and **importing** memory entries using standard `.txt` file formats. |
 
 ---
 
@@ -123,6 +124,15 @@ To point your own domain (e.g., `chat.yourdomain.com`) to the app:
 
 ---
 
+## 🧠 Memory Management (v7 New Feature)
+
+Paul maintains cross-chat memory to remember durable facts about you across all conversations. In v7, you have complete control over your memory:
+- **Edit**: Click on any memory entry in **Settings → Memory** to view its details and click **Edit** to update its title or content.
+- **Export**: Click **Export as .txt** to download all your memory entries as a formatted text file.
+- **Import**: Click **Import from .txt** to upload and restore memory entries from a previously exported text file.
+
+---
+
 ## 📂 Project Structure
 
 ```text
@@ -138,15 +148,6 @@ app/
     api.ts            Frontend API client (Set API_BASE here)
     main.ts           App bootstrap & Global coordination
     chat-view.ts      Chat UI, Sidebar & Message handling
+    settings-view.ts  Settings, Memory Edit/Import/Export UI
     style.css         Core styling & Responsive layouts (v7 fixes here)
 ```
-
----
-
-## 🧠 Core Features
-
-- **Privacy-First**: Your data stays in your Cloudflare account.
-- **Intelligent Memory**: Paul learns from your chats and maintains context across conversations.
-- **Advanced Tools**: Integrated OCR, Image Background Removal, and Unit Conversion.
-- **Full Customization**: Themes (Dark/Light/System), Typography, and Voice settings.
-- **PWA Ready**: Installable on iOS, Android, and Desktop for a native app experience.

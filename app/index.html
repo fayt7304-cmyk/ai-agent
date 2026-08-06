@@ -609,6 +609,11 @@
               <input type="text" id="memory-input" placeholder="Tell Paul what to remember" data-i18n-placeholder="settings.memoryAddPh" maxlength="600">
               <button type="submit" class="secondary-btn" data-i18n="settings.memoryAdd">Add</button>
             </form>
+            <div class="memory-actions-row">
+              <button type="button" id="memory-export-btn" class="secondary-btn" data-i18n="settings.memoryExport">Export as .txt</button>
+              <button type="button" id="memory-import-btn" class="secondary-btn" data-i18n="settings.memoryImport">Import from .txt</button>
+              <input type="file" id="memory-import-file" accept=".txt" style="display:none;">
+            </div>
             <div id="memory-list" class="memory-list"></div>
           </div>
 
@@ -625,6 +630,7 @@
             </div>
             <ul class="memory-detail-body" id="memory-detail-body"></ul>
             <div class="memory-detail-actions">
+              <button type="button" id="memory-detail-edit" class="secondary-btn" data-i18n="settings.memoryEdit">Edit</button>
               <button type="button" id="memory-detail-delete" class="danger-btn" data-i18n="settings.memoryRemove">Delete</button>
             </div>
           </div>
