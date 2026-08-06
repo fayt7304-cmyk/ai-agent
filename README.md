@@ -1,70 +1,102 @@
-# Paul — Your Personal AI Agent
+# Paul — Your Personal AI Agent (v7)
 
 A comprehensive chat web application powered by a Mistral AI agent, designed to run entirely on your own Cloudflare account for maximum privacy and control.
 
-- **Worker Backend** — A Cloudflare Worker that keeps your Mistral API key secure, handles authentication (including Google OAuth), and manages data in a Cloudflare D1 (SQLite) database.
-- **Frontend** — A high-performance vanilla TypeScript/Vite UI featuring a sidebar with chat history, file attachments, a robust settings panel, and a responsive design with full dark/light/system theme support.
+---
+
+## 🚀 What's New in v7
+
+This version (v7) introduces critical layout fixes and structural improvements:
+
+| Feature | Fix Description |
+| :--- | :--- |
+| **Mobile Sidebar** | Updated the responsive breakpoint to **768px** and added `z-index` layering to ensure the sidebar correctly overlays the chat content on all mobile devices. |
+| **Calculator Modal** | Standardized the height of input fields and dropdowns to **42px** to perfectly align with the **Plot** button in the graph view. |
+| **User Menu** | Adjusted the icon container's `line-height` and alignment properties to ensure icons are vertically centered with their labels on both mobile and desktop. |
 
 ---
 
-## 🚀 What's New & Fixed
+## 🛠️ Comprehensive Setup Guide
 
-The latest deployment includes full implementation of previously missing features and UI enhancements:
+Follow these steps to set up your own instance of Paul from scratch.
 
-- **Functional Top Bar** — Replaced generic icons with task-specific actions:
-  - **Usage & Credits (Chart)**: Real-time overlay showing credits used (891) and time worked (12m 14s).
-  - **View Files (File Search)**: Dedicated modal to see all files associated with the current task.
-  - **Share (Arrow)**: New dropdown menu with sharing levels (Only Me, Share with People, Collaboration).
-  - **More (Dots)**: Task-specific actions: Rename, Archive, and Delete.
-- **Cleaned UI** — Removed the brush/pencil icon and all "star" related features to maintain a minimal, focused workspace.
-- **Font Settings Fixed** — Custom font families (Serif, Monospace, Rounded) now apply correctly across the entire app.
-- **Voice Settings Fixed** — Voice language and speaking speed settings are now correctly applied to the text-to-speech engine.
-- **Account Deletion** — Users can now permanently delete their accounts and all associated data directly from the settings panel.
-- **Session Management** — View all active browser sessions and revoke specific ones to secure your account.
-- **Memory Generation** — Paul can now generate a "memory profile" by summarizing your last 50 messages, helping the agent remember your preferences and interests.
-- **Transparent Branding** — The website favicon and app icons have been updated to a modern white-on-transparent design.
+### 1. Prerequisites & API Keys
 
----
+Before starting, you need to collect the following API keys:
 
-## 🛠️ Getting Started
+- **Mistral AI**: Sign up at the [Mistral AI Console](https://console.mistral.ai/), create an **API Key**, and optionally create a custom **Agent** to get an `Agent ID`.
+- **Google Cloud (Optional for OAuth)**: If you want Google Login, create a project in the [Google Cloud Console](https://console.cloud.google.com/), set up an OAuth 2.0 Client ID, and add `https://your-worker-url.workers.dev/api/auth/google/callback` to the Authorized redirect URIs.
+- **Resend (Optional for Leads)**: If you want email notifications for new leads, get an API key from [Resend](https://resend.com/).
 
-### 1. Mistral API Configuration
-Sign up at [Mistral AI Console](https://console.mistral.ai/) and create an **API Key**. For the best experience, create a custom **Agent** and note its `Agent ID`.
+### 2. Backend Setup (Cloudflare Worker)
 
-### 2. Database Setup
+The backend handles all sensitive logic, database interactions, and API calls.
+
+#### A. Initialize Wrangler
 ```bash
 npm install -g wrangler
 wrangler login
 cd worker
 npm install
+```
+
+#### B. Create the Database
+Create a Cloudflare D1 database:
+```bash
 wrangler d1 create mistral-agent-chat-db
 ```
-Copy the `database_id` from the output into `worker/wrangler.toml`:
+Copy the `database_id` from the output and paste it into `worker/wrangler.toml`:
 ```toml
 [[d1_databases]]
 binding = "DB"
 database_name = "mistral-agent-chat-db"
-database_id = "YOUR_DATABASE_ID"
-```
-Apply the schema:
-```bash
-npm run db:migrate:remote
+database_id = "PASTE_YOUR_DATABASE_ID_HERE"
 ```
 
-### 3. Deploy the Backend
+#### C. Run Migrations
+Apply the database schema and all versioned migrations:
+```bash
+# Initialize schema
+wrangler d1 execute mistral-agent-chat-db --file=./schema.sql --remote
+
+# Apply versioned migrations (run these in order)
+wrangler d1 execute mistral-agent-chat-db --file=./migrations/0002_oauth_and_reset.sql --remote
+wrangler d1 execute mistral-agent-chat-db --file=./migrations/0003_leads.sql --remote
+wrangler d1 execute mistral-agent-chat-db --file=./migrations/0004_profile.sql --remote
+wrangler d1 execute mistral-agent-chat-db --file=./migrations/0005_star_archive.sql --remote
+wrangler d1 execute mistral-agent-chat-db --file=./migrations/0006_conversation_visibility.sql --remote
+wrangler d1 execute mistral-agent-chat-db --file=./migrations/0007_memory.sql --remote
+```
+
+#### D. Configure Secrets
+Set your sensitive API keys as encrypted secrets on Cloudflare:
 ```bash
 wrangler secret put MISTRAL_API_KEY
+# Optional secrets
+wrangler secret put GOOGLE_CLIENT_ID
+wrangler secret put GOOGLE_CLIENT_SECRET
+wrangler secret put RESEND_API_KEY
+```
+
+#### E. Deploy Backend
+```bash
 wrangler deploy
 ```
-Note your Worker URL (e.g., `https://mistral-agent.YOUR-SUBDOMAIN.workers.dev`).
+Note your Worker URL (e.g., `https://mistral-agent.username.workers.dev`).
 
-### 4. Configure the Frontend
-Open `app/src/api.ts` and update `API_BASE`:
+---
+
+### 3. Frontend Setup (Vite + TypeScript)
+
+The frontend is a high-performance web app that connects to your Worker.
+
+#### A. Connect to Backend
+Open `app/src/api.ts` and update the `API_BASE` constant with your Worker URL:
 ```ts
-export const API_BASE = "https://mistral-agent.YOUR-SUBDOMAIN.workers.dev";
+export const API_BASE = "https://mistral-agent.username.workers.dev";
 ```
 
-### 5. Deploy the Frontend
+#### B. Build & Deploy
 ```bash
 cd app
 npm install
@@ -74,26 +106,20 @@ wrangler deploy
 
 ---
 
-## 🧠 Features & Architecture
+### 4. Custom Domain Configuration
 
-### Privacy-First Authentication
-- **Local Accounts**: Hashed with PBKDF2-SHA256 (100k iterations).
-- **Google OAuth**: Seamless sign-in and account linking.
-- **Guest Mode**: Allows users to try the app instantly without an account, with the option to "claim" the account later to keep history.
-- **Session Control**: `HttpOnly` secure cookies with a dedicated management interface to revoke stolen or old tokens.
+To point your own domain (e.g., `chat.yourdomain.com`) to the app:
 
-### Intelligent Conversations
-- **Mistral Integration**: Uses the Conversations API to maintain thread context.
-- **File Attachments**: Supports images and documents (PDFs, etc.) sent directly to vision-capable models.
-- **Quick Actions**: Customizable buttons for common tasks like summarizing or brainstorming.
+1. **For the Frontend**:
+   - Go to the **Cloudflare Dashboard** → **Workers & Pages** → Your Frontend Project.
+   - Select **Custom Domains** and click **Set up a custom domain**.
+   - Enter your domain (e.g., `chat.yourdomain.com`) and follow the CNAME setup instructions.
 
-### Advanced Customization
-- **Voice Engine**: Configure language (8+ supported) and speed for the built-in read-aloud feature.
-- **Accessibility**: Motion controls for `prefers-reduced-motion` and customizable typography (System, Serif, Monospace, Rounded).
-- **Tools Panel**: Integrated OCR, background removal, and image conversion utilities.
-
-### Lead Capture
-- Built-in quote request system that stores leads in D1 and can notify your team via **Resend** email integration.
+2. **For the Backend (API)**:
+   - Go to the **Cloudflare Dashboard** → **Workers & Pages** → Your Backend Worker.
+   - Select **Settings** → **Triggers** → **Custom Domains**.
+   - Add a domain like `api.yourdomain.com`.
+   - **Important**: If you change the API domain, remember to update `API_BASE` in `app/src/api.ts` and redeploy the frontend.
 
 ---
 
@@ -101,101 +127,26 @@ wrangler deploy
 
 ```text
 worker/
-  schema.sql          D1 database schema
+  schema.sql          Base D1 database schema
+  migrations/         Incremental database updates (v2 to v7)
   src/
-    index.ts          Main router (Auth, Settings, Sessions, Chat, Memory)
-    auth.ts           Session & Password security logic
-    mistral.ts        Mistral API client
-    email.ts          Resend email integration
+    index.ts          Main router & API endpoints
+    auth.ts           Security, Hashing & Session logic
+    mistral.ts        Mistral AI integration client
 app/
   src/
-    api.ts            Frontend API client
-    main.ts           App bootstrap & View coordination
-    chat-view.ts      Messaging & Composer logic
-    settings-view.ts  Settings & Data management UI
-    lib/
-      preferences.ts  User preference persistence
-      i18n.ts         Multi-language support (inc. Arabic)
-      markdown.ts     Custom Markdown renderer
-      icons.ts        SVG Icon library
+    api.ts            Frontend API client (Set API_BASE here)
+    main.ts           App bootstrap & Global coordination
+    chat-view.ts      Chat UI, Sidebar & Message handling
+    style.css         Core styling & Responsive layouts (v7 fixes here)
 ```
 
 ---
 
-## 🧠 Paul's Memory (cross-chat)
+## 🧠 Core Features
 
-Paul remembers durable facts about you — who you are, what you prefer, what you're
-working on — and reuses them in **every** new conversation, not just the current one.
-
-- **Settings → Memory** is its own tab (next to General / Account / Privacy).
-  - *Generate memory from chats* switch (`users.memory_enabled`).
-  - *Manage memory*: review each entry, delete anything, add your own with
-    "Tell Paul what to remember", or hit **Update from chats** to re-read your
-    recent history.
-- Memory is injected into the first turn of every new conversation as a short
-  "known about this user" block; later turns already carry it in the thread.
-- New entries are extracted in the background after each exchange, so replies are
-  never slowed down by it.
-
-### API
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/memory` | List entries + the on/off state |
-| `POST` | `/api/memory` | Add / update one entry (`{ content, title? }`) |
-| `DELETE` | `/api/memory/:id` | Forget one entry |
-| `PATCH` | `/api/memory/settings` | Toggle `{ enabled }` |
-| `POST` | `/api/memory/generate` | Re-read recent chats and store entries |
-
-### Database migration (terminal)
-
-The memory feature adds a `memories` table and a `users.memory_enabled` column.
-Apply it with Wrangler:
-
-```sh
-cd worker
-
-# Local D1 (dev)
-npx wrangler d1 execute mistral-agent-chat-db --file=./migrations/0007_memory.sql --local
-
-# Production D1
-npx wrangler d1 execute mistral-agent-chat-db --file=./migrations/0007_memory.sql --remote
-
-# Verify
-npx wrangler d1 execute mistral-agent-chat-db --command "SELECT COUNT(*) FROM memories;" --remote
-```
-
-If the last statement errors with `duplicate column name: memory_enabled`, the
-column already exists and the rest of the migration has been applied — safe to ignore.
-
-Then redeploy the Worker so the new endpoints go live:
-
-```sh
-cd worker && npx wrangler deploy
-```
-
----
-
-## 🗒 Recent changes
-
-- **Arabic (and other non-Latin) read-aloud fixed** — `POST /api/tts` returned
-  **502** because `eleven_turbo_v2` is English-only. The Worker now picks a
-  language-appropriate ElevenLabs model (`eleven_multilingual_v2` for Arabic),
-  retries without the unsupported `speed` parameter, and answers **501** instead of
-  502 when a language genuinely isn't available so the app quietly uses the device
-  voice with no red error banner. MeloTTS (the Workers AI fallback) also returns
-  501 for languages it has no voice for, instead of reading Arabic with an English voice.
-- **High-quality voice latency / double-talk** — TTS streams (`/stream` +
-  `optimize_streaming_latency`), and a generation counter discards superseded audio
-  so the device voice and the studio voice can no longer talk over each other.
-- **Google connect works** — the OAuth `state` is now HMAC-signed, so the callback
-  verifies it without needing the `oauth_state` cookie (which mobile browsers drop
-  on the cross-site callback hop). The session is refreshed before the redirect so
-  the linking token is always present.
-- **Memory** — new Memory settings tab, `memories` table, and cross-chat recall
-  (replaces the old "Generate Memory from Chats" .txt download).
-- **Settings redesigned Claude-style** — flat rows with hairline dividers, labels
-  left / controls right, sidebar section icons, and corrected mobile rows.
-- **Golden branding** — new gold "P" favicon (`app/public/favicon.svg` + PNG/ICO set).
-- **Installed app no longer flashes white** — manifest `background_color` /
-  `theme_color` follow the app theme, plus an inline pre-CSS background paint.
+- **Privacy-First**: Your data stays in your Cloudflare account.
+- **Intelligent Memory**: Paul learns from your chats and maintains context across conversations.
+- **Advanced Tools**: Integrated OCR, Image Background Removal, and Unit Conversion.
+- **Full Customization**: Themes (Dark/Light/System), Typography, and Voice settings.
+- **PWA Ready**: Installable on iOS, Android, and Desktop for a native app experience.
