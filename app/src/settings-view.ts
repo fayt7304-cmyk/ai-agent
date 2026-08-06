@@ -98,6 +98,12 @@ const memoryDetailEdit = document.getElementById("memory-detail-edit") as HTMLBu
 const memoryExportBtn = document.getElementById("memory-export-btn") as HTMLButtonElement;
 const memoryImportBtn = document.getElementById("memory-import-btn") as HTMLButtonElement;
 const memoryImportFile = document.getElementById("memory-import-file") as HTMLInputElement;
+const memoryEditMode = document.getElementById("memory-edit-mode") as HTMLDivElement;
+const memoryEditForm = document.getElementById("memory-edit-form") as HTMLFormElement;
+const memoryEditTitle = document.getElementById("memory-edit-title") as HTMLInputElement;
+const memoryEditContent = document.getElementById("memory-edit-content") as HTMLTextAreaElement;
+const memoryEditBack = document.getElementById("memory-edit-back") as HTMLButtonElement;
+const memoryEditCancel = document.getElementById("memory-edit-cancel") as HTMLButtonElement;
 
 let openMemoryId: string | null = null;
 let allMemories: MemoryEntry[] = [];
@@ -167,25 +173,54 @@ function renderMemories(memories: MemoryEntry[]) {
 
 memoryDetailBack.addEventListener("click", showMemoryList);
 
-memoryDetailEdit.addEventListener("click", async () => {
+memoryDetailEdit.addEventListener("click", () => {
   if (!openMemoryId) return;
   const entry = allMemories.find((m) => m.id === openMemoryId);
   if (!entry) return;
-  const newTitle = prompt("Edit title:", entry.title);
-  if (newTitle === null) return;
-  const newContent = prompt("Edit content:", entry.content);
-  if (newContent === null) return;
-  memoryDetailEdit.disabled = true;
+  memoryEditTitle.value = entry.title;
+  memoryEditContent.value = entry.content;
+  memoryBrowser.style.display = "none";
+  memoryDetail.style.display = "none";
+  memoryEditMode.style.display = "";
+});
+
+memoryEditBack.addEventListener("click", () => {
+  if (openMemoryId) {
+    const entry = allMemories.find((m) => m.id === openMemoryId);
+    if (entry) showMemoryDetail(entry);
+  }
+});
+
+memoryEditCancel.addEventListener("click", () => {
+  if (openMemoryId) {
+    const entry = allMemories.find((m) => m.id === openMemoryId);
+    if (entry) showMemoryDetail(entry);
+  }
+});
+
+memoryEditForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!openMemoryId) return;
+  const newTitle = memoryEditTitle.value.trim();
+  const newContent = memoryEditContent.value.trim();
+  if (!newTitle || !newContent) {
+    settingsError.textContent = "Title and content cannot be empty";
+    return;
+  }
+  const submitBtn = memoryEditForm.querySelector("button[type='submit']") as HTMLButtonElement;
+  submitBtn.disabled = true;
   try {
     const { memories: next } = await api.addMemory(newContent, newTitle);
     allMemories = next;
     renderMemories(next);
     settingsSuccess.textContent = t("settings.memorySaved");
     setTimeout(() => { settingsSuccess.textContent = ""; }, 3000);
+    const entry = next.find((m) => m.id === openMemoryId);
+    if (entry) showMemoryDetail(entry);
   } catch (err) {
     settingsError.textContent = err instanceof ApiError ? err.message : t("settings.memoryNotAvailable");
   } finally {
-    memoryDetailEdit.disabled = false;
+    submitBtn.disabled = false;
   }
 });
 

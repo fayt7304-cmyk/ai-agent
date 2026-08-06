@@ -127,7 +127,7 @@ To point your own domain (e.g., `chat.yourdomain.com`) to the app:
 ## 🧠 Memory Management (v7 New Feature)
 
 Paul maintains cross-chat memory to remember durable facts about you across all conversations. In v7, you have complete control over your memory:
-- **Edit**: Click on any memory entry in **Settings → Memory** to view its details and click **Edit** to update its title or content.
+- **Edit**: Click on any memory entry in **Settings → Memory** to view its details and click **Edit** to open the built-in inline editor. You can now modify the title and content directly within the app UI without browser prompts.
 - **Export**: Click **Export as .txt** to download all your memory entries as a formatted text file.
 - **Import**: Click **Import from .txt** to upload and restore memory entries from a previously exported text file.
 

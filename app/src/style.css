@@ -3362,6 +3362,25 @@ html[dir="rtl"] .switch.on .switch-thumb { transform: translateX(-18px); }
 
 .memory-actions-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 
+.memory-edit-head { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.memory-edit-head h3 { margin: 0; font-size: 18px; font-weight: 600; color: var(--text); }
+.memory-edit-form { display: flex; flex-direction: column; gap: 20px; }
+.memory-edit-field { display: flex; flex-direction: column; gap: 8px; }
+.memory-edit-field label { font-size: 13px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+.memory-edit-field input,
+.memory-edit-field textarea {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13.5px;
+}
+.memory-edit-field textarea { resize: vertical; min-height: 120px; font-family: monospace; }
+.memory-edit-actions { display: flex; gap: 8px; margin-top: 12px; }
+.memory-edit-actions button { flex: 1; }
+
 @media (max-width: 768px) {
   .memory-item { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
   .memory-item-meta { grid-column: 1; font-size: 11.5px; }

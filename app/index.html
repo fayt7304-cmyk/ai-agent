@@ -635,6 +635,30 @@
             </div>
           </div>
 
+          <!-- Memory edit mode: inline editing UI -->
+          <div class="settings-card memory-edit-mode" id="memory-edit-mode" style="display:none;">
+            <div class="memory-edit-head">
+              <button type="button" id="memory-edit-back" class="icon-btn memory-back-btn" aria-label="Back">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="12 4 6 10 12 16"/></svg>
+              </button>
+              <h3 style="margin: 0; font-size: 18px; font-weight: 600;" data-i18n="settings.editMemory">Edit Memory</h3>
+            </div>
+            <form id="memory-edit-form" class="memory-edit-form">
+              <div class="memory-edit-field">
+                <label for="memory-edit-title" data-i18n="settings.memoryTitle">Title</label>
+                <input type="text" id="memory-edit-title" maxlength="100" required>
+              </div>
+              <div class="memory-edit-field">
+                <label for="memory-edit-content" data-i18n="settings.memoryContent">Content</label>
+                <textarea id="memory-edit-content" rows="8" required></textarea>
+              </div>
+              <div class="memory-edit-actions">
+                <button type="button" id="memory-edit-cancel" class="secondary-btn" data-i18n="settings.cancel">Cancel</button>
+                <button type="submit" class="primary" data-i18n="settings.save">Save</button>
+              </div>
+            </form>
+          </div>
+
         </section>
 
         <div class="settings-messages">
