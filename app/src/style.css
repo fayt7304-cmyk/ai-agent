@@ -3694,3 +3694,39 @@ html[dir="rtl"] .switch.on .switch-thumb { transform: translateX(-18px); }
   .settings-nav-btn { padding: 8px 10px; font-size: 12.5px; border-radius: 10px; }
   .memory-add-row { flex-wrap: nowrap; }
 }
+
+/* ---------- Memory panel layout fix (v6.1) ----------
+   .settings-card is a 3-column grid, so the memory card's children were being
+   dropped into separate columns (list squeezed to ~135px, add-row floating).
+   Force the memory cards back to a single full-width column. */
+#memory-browser,
+#memory-detail {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 16px 4px 18px;
+}
+#memory-browser > *,
+#memory-detail > * { grid-column: 1 / -1; width: 100%; min-width: 0; }
+#memory-browser .settings-card-row { display: flex; align-items: flex-start; }
+#memory-browser .settings-card-actions { flex: 0 0 auto; }
+
+.memory-add-row { margin-top: 14px; margin-bottom: 2px; align-items: center; }
+.memory-list { margin-top: 12px; }
+.memory-item { width: 100%; }
+.memory-item-main { display: flex; flex-direction: column; }
+
+@media (max-width: 640px) {
+  #memory-browser,
+  #memory-detail { padding: 14px 0 16px; }
+  #memory-browser .settings-card-row { flex-direction: column; gap: 10px; }
+  #memory-browser .settings-card-actions { width: 100%; }
+  #memory-browser .settings-card-actions .secondary-btn { width: 100%; }
+  .memory-add-row { padding: 5px; }
+  .memory-add-row input { font-size: 16px; padding: 8px 6px; }
+  .memory-add-row .secondary-btn { height: 34px; padding: 0 14px; }
+  .memory-item { padding: 11px; column-gap: 8px; }
+  .memory-item-title { font-size: 13px; }
+  .memory-item-content { font-size: 12px; }
+}
