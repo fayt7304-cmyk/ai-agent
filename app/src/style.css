@@ -797,15 +797,12 @@ select:focus-visible,
 /* Fixed 20px icon slot so every row's label starts on the same x-position,
    whatever the glyph inside is. Icons are optically centered in the slot. */
 .menu-icon { 
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
   width: 20px; 
   height: 20px;
-  text-align: center; 
   flex-shrink: 0; 
-  font-size: 14px;
-  line-height: 1;
   color: var(--text-secondary);
   transition: color 0.15s ease;
 }
@@ -2267,11 +2264,12 @@ select, .modal-body input, .modal-body textarea {
 /* Graph */
 .graph-controls { display: flex; gap: 8px; margin-bottom: 0.85rem; flex-wrap: wrap; align-items: flex-end; }
 .graph-controls .field { flex: 1; min-width: 150px; }
-.graph-controls input, .graph-controls select { height: 42px; }
-/* The Plot button sits in a row with labelled fields, so it has to line up with
-   the inputs, not with their labels. */
-.graph-plot-btn { height: 42px; align-self: flex-end; padding: 0 22px; white-space: nowrap; display: flex; align-items: center; justify-content: center; }
-@media (max-width: 560px) { .graph-plot-btn { width: 100%; } }
+.graph-controls input, .graph-controls select, .graph-plot-btn { height: 42px; }
+.graph-plot-btn { width: 100%; padding: 0 22px; white-space: nowrap; display: flex; align-items: center; justify-content: center; }
+@media (max-width: 560px) { 
+  .graph-controls .field { flex: 1 1 100%; }
+  .graph-plot-field { order: 10; }
+}
 canvas#graph-canvas {
   width: 100%;
   height: 260px;
@@ -3574,10 +3572,9 @@ html[dir="rtl"] .switch.on .switch-thumb { transform: translateX(-18px); }
 }
 .graph-controls .field { min-width: 0; flex: initial; }
 .graph-controls .field + .field { flex: initial; }
-.graph-controls input, .graph-controls select { height: var(--uc-control-h); }
+.graph-controls input, .graph-controls select, .graph-plot-btn { height: var(--uc-control-h); }
 .graph-plot-btn {
-  height: var(--uc-control-h);
-  align-self: end;
+  width: 100%;
   margin: 0;
   padding: 0 20px;
   border-radius: 10px;
@@ -3589,8 +3586,8 @@ html[dir="rtl"] .switch.on .switch-thumb { transform: translateX(-18px); }
   justify-content: center;
 }
 @media (max-width: 560px) {
-  .graph-controls { grid-template-columns: minmax(0, 1fr) 120px; }
-  .graph-plot-btn { grid-column: 1 / -1; width: 100%; }
+  .graph-controls { grid-template-columns: 1fr 1fr; }
+  .graph-plot-field { grid-column: 1 / -1; }
 }
 
 /* ---------- Settings: Memory ---------- */

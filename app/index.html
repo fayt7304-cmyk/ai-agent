@@ -166,11 +166,11 @@
         <div class="user-menu-items">
           <button id="save-account-btn" style="display:none;">
             <span class="menu-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 13v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2"/><polyline points="7 9 10 12 13 9"/><line x1="10" y1="3" x2="10" y2="12"/></svg></span>
-            <span data-i18n="menu.saveAccount">&nbsp; &nbsp;Save my account</span>
+            <span data-i18n="menu.saveAccount">Save my account</span>
           </button>
           <button id="login-menu-btn" style="display:none;">
             <span class="menu-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-2"/><polyline points="10 15 15 10 10 5"/><line x1="15" y1="10" x2="3" y2="10"/></svg></span>
-            <span data-i18n="menu.login">&nbsp; &nbsp;Log in</span>
+            <span data-i18n="menu.login">Log in</span>
           </button>
           <button id="open-settings-btn">
             <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.1"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.32a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6h.05A1.7 1.7 0 0 0 10.1 3V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.13 4.6a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9v.05c.28.63.9 1.04 1.6 1.05H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"/></svg></span>
@@ -1000,7 +1000,10 @@
                   <option value="50">-50 to 50</option>
                 </select>
               </div>
-              <button class="primary graph-plot-btn" id="graph-plot" type="button" data-i18n="calc.plot">Plot</button>
+              <div class="field graph-plot-field">
+                <label>&nbsp;</label>
+                <button class="primary graph-plot-btn" id="graph-plot" type="button" data-i18n="calc.plot">Plot</button>
+              </div>
             </div>
             <canvas id="graph-canvas"></canvas>
             <div class="status" id="graph-status"></div>
