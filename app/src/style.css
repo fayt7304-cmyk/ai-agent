@@ -805,7 +805,7 @@ select:focus-visible,
   text-align: center; 
   flex-shrink: 0; 
   font-size: 14px;
-  line-height: 0;
+  line-height: 1;
   color: var(--text-secondary);
   transition: color 0.15s ease;
 }
@@ -2058,7 +2058,7 @@ select, .modal-body input, .modal-body textarea {
 .sidebar-backdrop.visible { display: block; }
 
 /* ---------------- Responsive ---------------- */
-@media (max-width: 720px) {
+@media (max-width: 768px) {
   body { overflow: hidden; }
 
   .app-shell { height: 100dvh; }
@@ -2074,7 +2074,7 @@ select, .modal-body input, .modal-body textarea {
   .sidebar.collapsed { transform: translateX(-100%); }
   .sidebar:not(.collapsed) { transform: translateX(0); }
 
-  .chat-main { width: 100%; }
+  .chat-main { width: 100%; position: relative; z-index: 1; }
 
   .messages { padding: 14px 12px; gap: 10px; }
   .msg-row { max-width: 92%; }
@@ -2267,9 +2267,10 @@ select, .modal-body input, .modal-body textarea {
 /* Graph */
 .graph-controls { display: flex; gap: 8px; margin-bottom: 0.85rem; flex-wrap: wrap; align-items: flex-end; }
 .graph-controls .field { flex: 1; min-width: 150px; }
+.graph-controls input, .graph-controls select { height: 42px; }
 /* The Plot button sits in a row with labelled fields, so it has to line up with
    the inputs, not with their labels. */
-.graph-plot-btn { height: 42px; align-self: flex-end; padding: 0 22px; white-space: nowrap; }
+.graph-plot-btn { height: 42px; align-self: flex-end; padding: 0 22px; white-space: nowrap; display: flex; align-items: center; justify-content: center; }
 @media (max-width: 560px) { .graph-plot-btn { width: 100%; } }
 canvas#graph-canvas {
   width: 100%;
@@ -2371,7 +2372,7 @@ html[dir="rtl"] #weather-content .uc-section-title {
   text-align: left;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 768px) {
   html[dir="rtl"] .sidebar { inset: 0 0 0 auto; }
   html[dir="rtl"] .sidebar.collapsed { transform: translateX(100%); }
   html[dir="rtl"] .sidebar:not(.collapsed) { transform: translateX(0); }
@@ -3156,7 +3157,7 @@ html[dir="rtl"] .switch:has(input[type="checkbox"]:checked) .switch-thumb {
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3C/svg%3E");
 }
 
-@media (max-width: 720px) {
+@media (max-width: 768px) {
   .settings-panels { padding: 16px 16px 32px; background: var(--card); }
   .settings-card { padding: 14px 0; column-gap: 12px; }
   .settings-card > select { width: auto; min-width: 128px; max-width: 55%; }
@@ -3361,7 +3362,7 @@ html[dir="rtl"] .switch.on .switch-thumb { transform: translateX(-18px); }
   font-size: 13.5px;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 768px) {
   .memory-item { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
   .memory-item-meta { grid-column: 1; font-size: 11.5px; }
 }
@@ -3573,6 +3574,7 @@ html[dir="rtl"] .switch.on .switch-thumb { transform: translateX(-18px); }
 }
 .graph-controls .field { min-width: 0; flex: initial; }
 .graph-controls .field + .field { flex: initial; }
+.graph-controls input, .graph-controls select { height: var(--uc-control-h); }
 .graph-plot-btn {
   height: var(--uc-control-h);
   align-self: end;
@@ -3666,7 +3668,7 @@ html[dir="rtl"] .switch.on .switch-thumb { transform: translateX(-18px); }
 .memory-detail-body li + li { box-shadow: inset 0 1px 0 var(--border); }
 .memory-detail-body li::before { inset-inline-start: 14px; top: 19px; }
 
-@media (max-width: 720px) {
+@media (max-width: 768px) {
   .memory-item { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
   .memory-item-meta { grid-column: 1; justify-self: start; }
 }

@@ -856,7 +856,7 @@ async function openConversationLink(id: string) {
   // Use toggleSidebar() rather than touching the class directly: it also syncs
   // the header "open sidebar" button, which otherwise stayed hidden on mobile
   // after switching chats, leaving no way to reopen the sidebar.
-  if (window.innerWidth <= 720) toggleSidebar(true);
+  if (window.innerWidth <= 768) toggleSidebar(true);
 }
 
 /** Checks the URL for a `#conv=<id>` link and opens it if present. */
@@ -1060,7 +1060,7 @@ async function selectConversation(id: string) {
   // Use toggleSidebar() rather than touching the class directly: it also syncs
   // the header "open sidebar" button, which otherwise stayed hidden on mobile
   // after switching chats, leaving no way to reopen the sidebar.
-  if (window.innerWidth <= 720) toggleSidebar(true);
+  if (window.innerWidth <= 768) toggleSidebar(true);
 }
 
 function startNewConversation() {
@@ -1076,7 +1076,7 @@ function startNewConversation() {
   // Use toggleSidebar() rather than touching the class directly: it also syncs
   // the header "open sidebar" button, which otherwise stayed hidden on mobile
   // after switching chats, leaving no way to reopen the sidebar.
-  if (window.innerWidth <= 720) toggleSidebar(true);
+  if (window.innerWidth <= 768) toggleSidebar(true);
 }
 
 function renderQuickActions() {
@@ -1209,7 +1209,7 @@ sidebarBackdrop.className = "sidebar-backdrop";
 document.body.appendChild(sidebarBackdrop);
 
 function syncSidebarBackdrop() {
-  const open = window.innerWidth <= 720 && !sidebar.classList.contains("collapsed");
+  const open = window.innerWidth <= 768 && !sidebar.classList.contains("collapsed");
   sidebarBackdrop.classList.toggle("visible", open);
 }
 
@@ -1218,7 +1218,7 @@ function syncSidebarOpenBtn() {
   // showing this header button too would put two "open/close sidebar" icons on
   // screen at once. It's only needed on mobile, where collapsing hides the rail
   // entirely (see the <=720 media query) and leaves no other way back in.
-  const isMobile = window.innerWidth <= 720;
+  const isMobile = window.innerWidth <= 768;
   sidebarOpenBtn.style.display = isMobile && sidebar.classList.contains("collapsed") ? "inline-flex" : "none";
 }
 
@@ -1339,7 +1339,7 @@ export function initChatView(user: User) {
   // Use toggleSidebar() rather than touching the class directly: it also syncs
   // the header "open sidebar" button, which otherwise stayed hidden on mobile
   // after switching chats, leaving no way to reopen the sidebar.
-  if (window.innerWidth <= 720) toggleSidebar(true);
+  if (window.innerWidth <= 768) toggleSidebar(true);
   syncSidebarOpenBtn();
 
   // If the studio voice isn't available, tell the user why the device voice spoke.
