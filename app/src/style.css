@@ -2697,7 +2697,7 @@ canvas#graph-canvas {
 .day-row:last-child { border-bottom: none; }
 .day-row .d-icon { font-size: 16px; text-align: center; }
 .day-row .d-precip { color: var(--text-secondary); font-size: 11.5px; }
-.day-row .d-temps { text-align: right; }
+.day-row .d-temps { text-align: end; }
 .day-row .d-max { font-weight: 600; }
 .day-row .d-min { color: var(--text-secondary); }
 
@@ -4440,4 +4440,93 @@ html[data-animation="none"] *::after {
   animation-iteration-count: 1 !important;
   transition-duration: 0.01ms !important;
   scroll-behavior: auto !important;
+}
+
+
+/* ---- v8 bugfixes: RTL menus, weather, settings rows -------------------- */
+
+/* Language / Learn more flyout: open inward in RTL so it stays on-screen */
+html[dir="rtl"] .user-submenu {
+  inset-inline-start: auto;
+  inset-inline-end: calc(100% + 6px);
+}
+
+/* Keyboard hint stays LTR (Ctrl+, not ,+Ctrl) */
+.menu-kbd {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* Settings: title + desc wrapper stacks correctly next to controls */
+.settings-card > div:has(.settings-card-title) {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-self: center;
+}
+.settings-card-title {
+  display: block;
+  margin-bottom: 0;
+}
+.settings-card-desc {
+  display: block;
+}
+
+/* Weather place row */
+.weather-place {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+}
+.weather-place-name { font-weight: 600; }
+.weather-google-link {
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.weather-google-link:hover { text-decoration: underline; }
+
+.day-row {
+  display: grid;
+  grid-template-columns: minmax(4.5rem, auto) 1.75rem minmax(0, 1fr) auto;
+  gap: 8px 10px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.day-row .d-day { font-weight: 500; }
+.day-row .d-temps {
+  text-align: end;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+html[dir="rtl"] .hourly-scroll {
+  direction: rtl;
+}
+
+#mat-result {
+  unicode-bidi: isolate;
+  text-align: start;
+}
+
+/* Ensure language flyout is tappable and not clipped */
+.user-menu { overflow: visible; }
+.user-menu-item-wrap { position: relative; z-index: 2; }
+.user-submenu { z-index: 20; }
+
+@media (max-width: 768px) {
+  html[dir="rtl"] .user-submenu,
+  .user-submenu {
+    position: static;
+    inset: auto;
+    width: auto;
+    margin: 4px 6px 8px;
+  }
 }

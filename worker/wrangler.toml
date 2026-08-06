@@ -2,6 +2,10 @@ name = "mistral-agent-chat"
 main = "src/index.ts"
 compatibility_date = "2026-07-31"
 
+# Workers AI binding — used for ElevenLabs multilingual TTS
+[ai]
+binding = "AI"
+
 # Created with: wrangler d1 create mistral-agent-chat-db
 # Then paste the printed database_id below.
 [[d1_databases]]

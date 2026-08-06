@@ -19,14 +19,19 @@ export function initMaterialEstimate() {
     const areaM2 = wM * lM;
     const withWaste = areaM2 * (1 + waste / 100);
 
-    result.textContent = t("material.areaResult")
+    // Isolate numbers so RTL UIs do not reorder "12 m² (13.2 …)" into a mess.
+    const text = t("material.areaResult")
       .replace("{area}", fmt(areaM2, 2))
       .replace("{withWaste}", fmt(withWaste, 2));
+    result.setAttribute("dir", "auto");
+    result.style.unicodeBidi = "isolate";
+    result.textContent = text;
   }
 
   [widthInput, widthUnit, lengthInput, lengthUnit, wasteInput].forEach((el) => {
     el.addEventListener("input", update);
     el.addEventListener("change", update);
   });
+  document.addEventListener("langchange", update);
   update();
 }

@@ -306,8 +306,9 @@ languageSubmenu.addEventListener("mouseenter", openLanguage);
 languageSubmenu.addEventListener("mouseleave", () => closeLanguage(150));
 
 languageMenuBtn.addEventListener("click", (e) => {
+  e.preventDefault();
   e.stopPropagation();
-  if (languagePinned) {
+  if (languagePinned && languageSubmenu.style.display !== "none") {
     languagePinned = false;
     closeLanguage(0, true);
   } else {
@@ -316,8 +317,13 @@ languageMenuBtn.addEventListener("click", (e) => {
   }
 });
 
+// Prevent the document-level "click outside menu" handler from treating
+// a language pick as outside (submenu can paint outside the menu box).
+languageSubmenu.addEventListener("click", (e) => e.stopPropagation());
+
 languageSubmenu.querySelectorAll<HTMLButtonElement>(".lang-option").forEach((btn) => {
   btn.addEventListener("click", (e) => {
+    e.preventDefault();
     e.stopPropagation();
     const lang = btn.dataset.lang as Lang | undefined;
     if (!lang) return;
@@ -325,7 +331,6 @@ languageSubmenu.querySelectorAll<HTMLButtonElement>(".lang-option").forEach((btn
     syncLanguageMenuChecks();
     languagePinned = false;
     closeLanguage(0, true);
-    // Keep the settings language select in sync if it's on the page.
     const sel = document.getElementById("language-select") as HTMLSelectElement | null;
     if (sel) sel.value = lang;
   });

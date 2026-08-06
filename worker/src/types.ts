@@ -39,6 +39,11 @@ export interface Env {
   CLOUDFLARE_ACCOUNT_ID?: string;
   /** Optional: override the TTS model id used on the Cloudflare path. */
   TTS_MODEL?: string;
+  /**
+   * Workers AI binding (`[ai] binding = "AI"` in wrangler.toml).
+   * Preferred path for `elevenlabs/eleven-multilingual-v2`.
+   */
+  AI?: { run: (model: string, input: Record<string, unknown>) => Promise<unknown> };
 }
 
 export interface UserRow {

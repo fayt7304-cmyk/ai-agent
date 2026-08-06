@@ -471,9 +471,9 @@ async function checkHighQualityVoice(): Promise<{ ok: boolean; message: string }
       await resp.blob().catch(() => null);
       return { ok: true, message: "" };
     }
-    const data = await resp.json().catch(() => null);
     if (resp.status === 501) return { ok: false, message: t("settings.hqVoiceNotConfigured") };
-    return { ok: false, message: data?.error || t("settings.hqVoiceError") };
+    // Never surface raw upstream JSON (Workers AI / ElevenLabs) in the settings UI.
+    return { ok: false, message: t("settings.hqVoiceError") };
   } catch {
     return { ok: false, message: t("settings.hqVoiceError") };
   }

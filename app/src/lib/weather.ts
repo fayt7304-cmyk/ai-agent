@@ -133,28 +133,29 @@ export function loadWeather() {
         const dayLabel = i === 0 ? t("weather.today") : date.toLocaleDateString(locale, { weekday: "short" });
         return `
         <div class="day-row">
-          <div>${dayLabel}</div>
+          <div class="d-day">${dayLabel}</div>
           <div class="d-icon">${weatherIcon(daily.weather_code[i])}</div>
-          <div class="d-precip">${weatherDesc(daily.weather_code[i])} · ${daily.precipitation_sum[i]} mm</div>
-          <div class="d-temps"><span class="d-max">${Math.round(daily.temperature_2m_max[i])}°</span> / <span class="d-min">${Math.round(daily.temperature_2m_min[i])}°</span></div>
+          <div class="d-precip">${weatherDesc(daily.weather_code[i])} · <span dir="ltr">${daily.precipitation_sum[i]} mm</span></div>
+          <div class="d-temps" dir="ltr"><span class="d-max">${Math.round(daily.temperature_2m_max[i])}°</span> / <span class="d-min">${Math.round(daily.temperature_2m_min[i])}°</span></div>
         </div>`;
       })
       .join("");
 
+    const arrow = document.documentElement.getAttribute("dir") === "rtl" ? "↖" : "↗";
     content.innerHTML = `
-      <div class="weather-place">${placeName}
-        <a href="https://www.google.com/search?q=${encodeURIComponent("weather in " + placeName)}"
-           target="_blank" rel="noopener" class="weather-google-link"
-           style="font-size:12px; color:var(--accent); text-decoration:none;">
-          ${t("weather.openGoogle")} ↗
+      <div class="weather-place">
+        <span class="weather-place-name">${placeName}</span>
+        <a href="https://www.google.com/search?q=${encodeURIComponent("weather " + placeName)}"
+           target="_blank" rel="noopener" class="weather-google-link">
+          ${t("weather.openGoogle")} ${arrow}
         </a>
       </div>
       <div class="weather-main">
-        <div class="weather-temp">${Math.round(c.temperature_2m)}°C</div>
+        <div class="weather-temp" dir="ltr">${Math.round(c.temperature_2m)}°C</div>
         <div class="weather-details">
-          ${weatherIcon(c.weather_code)} ${weatherDesc(c.weather_code)}<br>
-          ${t("weather.feelsLike")} ${Math.round(c.apparent_temperature)}°C · ${t("weather.precipitation")} ${c.precipitation} mm<br>
-          ${t("weather.humidity")} ${c.relative_humidity_2m}% · ${t("weather.wind")} ${Math.round(c.wind_speed_10m)} km/h
+          <div>${weatherIcon(c.weather_code)} ${weatherDesc(c.weather_code)}</div>
+          <div dir="ltr">${t("weather.feelsLike")} ${Math.round(c.apparent_temperature)}°C · ${t("weather.precipitation")} ${c.precipitation} mm</div>
+          <div dir="ltr">${t("weather.humidity")} ${c.relative_humidity_2m}% · ${t("weather.wind")} ${Math.round(c.wind_speed_10m)} km/h</div>
         </div>
       </div>
       <div class="uc-section-title">${t("weather.next24h")}</div>

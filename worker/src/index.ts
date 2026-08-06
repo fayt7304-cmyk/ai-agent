@@ -1009,12 +1009,11 @@ async function handleListUploads(request: Request, env: Env): Promise<Response> 
 /**
  * POST /api/tts  { text, voiceId?, language?, speed? } -> audio/mpeg
  *
- * The synthesis key lives only on the Worker (a wrangler secret), so the browser
- * never sees it. Two backends are supported:
- *   1. Cloudflare Workers AI (preferred when CLOUDFLARE_AI_TOKEN + CLOUDFLARE_ACCOUNT_ID are set)
- *   2. ElevenLabs directly (ELEVENLABS_API_KEY)
- * When neither is configured this returns 501 and the frontend falls back to the
- * browser's built-in voice.
+ * Preferred order:
+ *   1. Workers AI binding  env.AI.run("elevenlabs/eleven-multilingual-v2", …)
+ *   2. Workers AI REST     (CLOUDFLARE_AI_TOKEN + CLOUDFLARE_ACCOUNT_ID)
+ *   3. ElevenLabs direct   (ELEVENLABS_API_KEY)
+ * When none work → 501 so the app falls back to the device voice.
  */
 async function handleTts(request: Request, env: Env): Promise<Response> {
   const user = await getUserFromRequest(env, request);
@@ -1029,16 +1028,16 @@ async function handleTts(request: Request, env: Env): Promise<Response> {
 
   const text = typeof body?.text === "string" ? body.text.trim() : "";
   if (!text) return err("Nothing to read aloud.", 400);
-  // Hard cap so one request can't run away with the account's quota.
   const input = text.slice(0, 4000);
 
   const voiceId =
     typeof body?.voiceId === "string" && /^[A-Za-z0-9]{8,40}$/.test(body.voiceId)
       ? body.voiceId
-      : "EXAVITQu4vr4xnSDxMaL"; // Sarah
+      : "JBFqnCBsd6RMkjVDRzZb"; // ElevenLabs default from CF model docs
   const speedRaw = Number(body?.speed);
   const speed = Number.isFinite(speedRaw) ? Math.min(1.2, Math.max(0.7, speedRaw)) : 1.0;
-  const language = typeof body?.language === "string" ? body.language : "en-US";
+  const language = typeof body?.language === "string" ? body.language : "en";
+  const lang2 = (language.split("-")[0] || "en").toLowerCase();
 
   const audio = (stream: BodyInit) =>
     new Response(stream, {
@@ -1046,165 +1045,156 @@ async function handleTts(request: Request, env: Env): Promise<Response> {
       headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" },
     });
 
-  // Secrets pasted through a terminal often pick up a trailing newline or space.
-  // An account id with whitespace in it produced a Cloudflare API 400 / error
-  // 7000 "no route for that URI", which surfaced in the app as a broken
-  // "high-quality voice" instead of a clean fallback.
-  const elevenKey = env.ELEVENLABS_API_KEY?.trim();
+  function bytesFromBase64(b64: string): Uint8Array {
+    // Accept raw base64 or a data:audio/...;base64, URI
+    const pure = b64.includes(",") ? b64.slice(b64.indexOf(",") + 1) : b64;
+    const binary = atob(pure);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  function extractAudioFromAiResult(data: any): Uint8Array | null {
+    if (!data) return null;
+    // Workers AI / ElevenLabs binding shapes:
+    //  - string data URI or raw base64
+    //  - { audio: "..." }
+    //  - { result: { audio: "..." } }
+    if (typeof data === "string" && data.length > 32) return bytesFromBase64(data);
+    const candidates = [
+      data.audio,
+      data.result?.audio,
+      data.result?.audio_base64,
+      data.audio_base64,
+    ];
+    for (const c of candidates) {
+      if (typeof c === "string" && c.length > 32) return bytesFromBase64(c);
+    }
+    // Some runtimes return ArrayBuffer / Uint8Array
+    if (data instanceof ArrayBuffer) return new Uint8Array(data);
+    if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer);
+    return null;
+  }
+
+  const elevenPayload = {
+    text: input,
+    voice_id: voiceId,
+    language_code: lang2,
+    output_format: "mp3_44100_128",
+  };
+
+  // Model id: dashboard uses "elevenlabs/eleven-multilingual-v2"
+  // REST often wants "@cf/elevenlabs/eleven-multilingual-v2"
+  const bindingModel =
+    env.TTS_MODEL?.trim() || "elevenlabs/eleven-multilingual-v2";
+  const restModel = bindingModel.startsWith("@cf/")
+    ? bindingModel
+    : `@cf/${bindingModel.replace(/^@cf\//, "")}`;
+
+  let lastDetail = "";
+
+  // --- Path 1: Workers AI binding (env.AI) — what the CF dashboard Quick Start uses
+  if (env.AI && typeof env.AI.run === "function") {
+    try {
+      const result = await env.AI.run(bindingModel, {
+        ...elevenPayload,
+        // Some model wrappers also accept these aliases
+        voiceId,
+        language: lang2,
+      });
+      const bytes = extractAudioFromAiResult(result);
+      if (bytes && bytes.length) {
+        return audio(bytes);
+      }
+      lastDetail = `AI binding returned no audio: ${JSON.stringify(result)?.slice(0, 200)}`;
+      console.log("TTS: AI binding empty", lastDetail);
+    } catch (e: any) {
+      lastDetail = String(e?.message || e).slice(0, 300);
+      console.log("TTS: AI binding failed", lastDetail);
+    }
+  }
+
+  // --- Path 2: Workers AI REST (token + account)
   const cfToken = env.CLOUDFLARE_AI_TOKEN?.trim();
   const cfAccount = env.CLOUDFLARE_ACCOUNT_ID?.trim();
+  if (cfToken && cfAccount) {
+    const url = `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/ai/run/${restModel}`;
+    try {
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${cfToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(elevenPayload),
+      });
+      if (resp.ok) {
+        const contentType = resp.headers.get("Content-Type") || "";
+        if (contentType.includes("application/json")) {
+          const data: any = await resp.json().catch(() => null);
+          const bytes = extractAudioFromAiResult(data) || extractAudioFromAiResult(data?.result);
+          if (bytes && bytes.length) return audio(bytes);
+          lastDetail = `REST JSON had no audio: ${JSON.stringify(data)?.slice(0, 200)}`;
+        } else {
+          return audio(resp.body!);
+        }
+      } else {
+        lastDetail = (await resp.text().catch(() => "")).slice(0, 300);
+        console.log("TTS: Workers AI REST failed", resp.status, restModel, lastDetail);
+      }
+    } catch (e: any) {
+      lastDetail = String(e?.message || e).slice(0, 300);
+      console.log("TTS: Workers AI REST exception", lastDetail);
+    }
+  }
 
-  // --- Path 1: ElevenLabs directly (most reliable when a key is present)
+  // --- Path 3: ElevenLabs direct API
+  const elevenKey = env.ELEVENLABS_API_KEY?.trim();
   if (elevenKey) {
-    const lang2 = (language.split("-")[0] || "en").toLowerCase();
-    // Arabic (and the other non-Latin languages) is NOT covered by the plain
-    // turbo v2 model, and asking it to read Arabic came back as a 4xx from
-    // ElevenLabs which this Worker turned into a 502 — that's the
-    // "POST /api/tts 502" seen in the console. Try a language-appropriate model
-    // first, then fall back through the other multilingual ones.
-    const nonLatin = !["en"].includes(lang2);
-    const preferred = env.ELEVENLABS_MODEL?.trim();
     const models = Array.from(
       new Set(
         [
-          preferred,
-          nonLatin ? "eleven_multilingual_v2" : "eleven_turbo_v2_5",
-          "eleven_turbo_v2_5",
+          env.ELEVENLABS_MODEL?.trim(),
           "eleven_multilingual_v2",
+          "eleven_turbo_v2_5",
         ].filter(Boolean) as string[]
       )
     );
-
-    const callEleven = (model: string, withSpeed: boolean) =>
-      fetch(
-        // output_format MUST be a query param, not part of the JSON body.
-        // /stream + a low latency hint: the non-streaming call routinely took
-        // 10-20s for a long reply, which is what made "high-quality voice" look
-        // broken. Streaming lets playback start as soon as the first bytes land.
-        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=mp3_44100_128&optimize_streaming_latency=3`,
-        {
-          method: "POST",
-          headers: {
-            "xi-api-key": elevenKey,
-            "Content-Type": "application/json",
-            Accept: "audio/mpeg",
-          },
-          body: JSON.stringify({
-            text: input,
-            model_id: model,
-            language_code: nonLatin ? lang2 : undefined,
-            voice_settings: {
-              stability: 0.5,
-              similarity_boost: 0.75,
-              use_speaker_boost: true,
-              // `speed` isn't accepted by every model/plan; a rejected value
-              // used to fail the whole request instead of just losing the speed.
-              ...(withSpeed ? { speed } : {}),
-            },
-          }),
-        }
-      );
-
-    let lastStatus = 0;
-    let lastDetail = "";
     for (const model of models) {
       for (const withSpeed of [true, false]) {
-        const resp = await callEleven(model, withSpeed);
+        const resp = await fetch(
+          `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=mp3_44100_128&optimize_streaming_latency=3`,
+          {
+            method: "POST",
+            headers: {
+              "xi-api-key": elevenKey,
+              "Content-Type": "application/json",
+              Accept: "audio/mpeg",
+            },
+            body: JSON.stringify({
+              text: input,
+              model_id: model,
+              language_code: lang2 === "en" ? undefined : lang2,
+              voice_settings: {
+                stability: 0.5,
+                similarity_boost: 0.75,
+                use_speaker_boost: true,
+                ...(withSpeed ? { speed } : {}),
+              },
+            }),
+          }
+        );
         if (resp.ok) return audio(resp.body!);
-        lastStatus = resp.status;
         lastDetail = (await resp.text().catch(() => "")).slice(0, 300);
         console.log("TTS: ElevenLabs failed", model, withSpeed, resp.status, lastDetail);
-        // 401/402/429 are account-level problems — retrying other models is pointless.
         if ([401, 402, 403, 429].includes(resp.status)) break;
       }
-      if ([401, 402, 403, 429].includes(lastStatus)) break;
-    }
-
-    // Fall through to Workers AI if it's configured; otherwise tell the app the
-    // voice isn't available (501) so it quietly uses the device voice instead of
-    // showing a red error. Only true outages are reported as 502.
-    if (!(cfToken && cfAccount)) {
-      const unavailable = lastStatus >= 400 && lastStatus < 500;
-      return err(
-        unavailable
-          ? "High-quality voice isn't available for this language on this deployment."
-          : `Voice service error (${lastStatus}): ${lastDetail}`,
-        unavailable ? 501 : 502
-      );
     }
   }
 
-
-  // --- Path 2: Cloudflare Workers AI
-  if (cfToken && cfAccount) {
-    // NOTE: there is no ElevenLabs model on Workers AI — the old default
-    // ("@cf/elevenlabs/eleven-multilingual-v2") does not exist, which is exactly
-    // what made the Cloudflare API answer 400 / code 7000 "no route for that
-    // URI". MeloTTS is the supported text-to-speech model.
-    const model = env.TTS_MODEL?.trim() || "@cf/myshell-ai/melotts";
-    const url = `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/ai/run/${model}`;
-
-    // MeloTTS takes { prompt, lang }; other models take { text }. Send a payload
-    // that satisfies whichever model is configured.
-    const lang = (language.split("-")[0] || "en").toLowerCase();
-    const meloLangs = ["en", "es", "fr", "zh", "jp", "kr"];
-    // MeloTTS has no Arabic voice. Reading Arabic text with the English voice
-    // produced gibberish, so report "not available" and let the app fall back to
-    // the device voice, which does speak Arabic.
-    if (!meloLangs.includes(lang)) {
-      return err("High-quality voice isn't available for this language on this deployment.", 501);
-    }
-    const payload: Record<string, unknown> = {
-      prompt: input,
-      text: input,
-      lang,
-    };
-
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${cfToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!resp.ok) {
-      const detail = (await resp.text().catch(() => "")).slice(0, 300);
-      console.log("TTS: Workers AI failed", resp.status, url, detail);
-      // 400/404 here means this deployment isn't wired up correctly (wrong model
-      // id, wrong account id, token without Workers AI permission). Report it as
-      // "not configured" so the app quietly falls back to the device voice
-      // instead of showing a raw Cloudflare error to the person chatting.
-      const misconfigured = resp.status === 400 || resp.status === 403 || resp.status === 404;
-      return err(
-        misconfigured
-          ? "High-quality voice isn't configured on this deployment."
-          : `Voice service error (${resp.status}): ${detail}`,
-        misconfigured ? 501 : 502
-      );
-    }
-
-    const contentType = resp.headers.get("Content-Type") || "";
-    // Workers AI answers either with raw audio or with JSON carrying base64 audio,
-    // depending on the model. Handling only the first case is why this path
-    // produced unplayable "audio" before.
-    if (contentType.includes("application/json")) {
-      const data: any = await resp.json().catch(() => null);
-      const b64 = data?.result?.audio || data?.audio || data?.result?.audio_base64;
-      if (typeof b64 !== "string" || !b64) {
-        console.log("TTS: Workers AI returned no audio", JSON.stringify(data)?.slice(0, 300));
-        return err("High-quality voice isn't configured on this deployment.", 501);
-      }
-      const binary = atob(b64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      return audio(bytes);
-    }
-    return audio(resp.body!);
-  }
-
-  return err("High-quality voice isn't configured on this deployment.", 501);
+  console.log("TTS: all paths failed", lastDetail);
+  // 501 → frontend falls back to system voice without a scary red JSON dump
+  return err("High-quality voice isn't available right now. Using device voice.", 501);
 }
 
 async function handleListConversations(request: Request, env: Env): Promise<Response> {

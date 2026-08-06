@@ -2441,7 +2441,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "uconvert.currencyFetching": "جارٍ جلب أسعار الصرف الحية\u2026",
     "uconvert.currencyUpdated": "تم تحديث الأسعار: {date}",
     "uconvert.currencyError": "تعذّر جلب أسعار الصرف. تحقق من اتصالك وحاول مرة أخرى.",
-    "material.areaResult": "{area}\u00a0م\u00b2 ({withWaste}\u00a0م\u00b2 مع الهدر)",
+    "material.areaResult": "\u2066{area}\u00a0m\u00b2 ({withWaste}\u00a0m\u00b2)\u2069 · مع الهدر",
     "settings.memoryExport": "تصدير كـ .txt",
     "settings.memoryImport": "استيراد من .txt",
     "settings.editMemory": "تعديل الذاكرة",
