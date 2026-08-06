@@ -11,7 +11,12 @@ import { showConfirm } from "./lib/dialog";
 import { renderFileList, downloadAllFiles, type StoredFile } from "./lib/file-downloads";
 import { icons } from "./lib/icons";
 
-// Claude-style appearance icons in General → Appearance
+const overlay = document.getElementById("settings-overlay") as HTMLDivElement;
+const closeBtn = document.getElementById("settings-close-btn") as HTMLButtonElement;
+const themeSegmented = document.getElementById("theme-segmented") as HTMLDivElement;
+const languageSelect = document.getElementById("language-select") as HTMLSelectElement;
+
+// Claude-style appearance icons in General → Appearance (after themeSegmented exists)
 (() => {
   const map: Record<string, string> = {
     system: icons.monitor,
@@ -23,11 +28,6 @@ import { icons } from "./lib/icons";
     if (map[key]) btn.innerHTML = map[key];
   });
 })();
-
-const overlay = document.getElementById("settings-overlay") as HTMLDivElement;
-const closeBtn = document.getElementById("settings-close-btn") as HTMLButtonElement;
-const themeSegmented = document.getElementById("theme-segmented") as HTMLDivElement;
-const languageSelect = document.getElementById("language-select") as HTMLSelectElement;
 const passwordInput = document.getElementById("new-password-input") as HTMLInputElement;
 const setPasswordBtn = document.getElementById("set-password-btn") as HTMLButtonElement;
 const settingsError = document.getElementById("settings-error") as HTMLDivElement;

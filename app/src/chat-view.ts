@@ -1215,10 +1215,21 @@ document.body.appendChild(sidebarBackdrop);
  * scrollbar/zoom/orientation edge cases and keeps JS + CSS aligned.
  */
 const MOBILE_BP = 768;
-const mobileMq =
+const mobileMq: MediaQueryList =
   typeof window.matchMedia === "function"
     ? window.matchMedia(`(max-width: ${MOBILE_BP}px)`)
-    : ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} } as MediaQueryList);
+    : ({
+        matches: false,
+        media: `(max-width: ${MOBILE_BP}px)`,
+        onchange: null,
+        addEventListener() {},
+        removeEventListener() {},
+        addListener() {},
+        removeListener() {},
+        dispatchEvent() {
+          return false;
+        },
+      } as MediaQueryList);
 
 function isMobileLayout(): boolean {
   return mobileMq.matches;
