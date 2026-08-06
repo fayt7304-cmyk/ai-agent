@@ -1,7 +1,14 @@
 import type { Env, UserRow } from "./types";
 
 const SESSION_COOKIE = "session";
-const SESSION_DAYS = 30;
+/** Registered (claimed) accounts: session lasts this many days from login. */
+export const SESSION_DAYS = 90;
+/**
+ * Guest / unclaimed sessions hard-expire after one month. They are not
+ * extended on activity — after 30 days the guest must start a new session
+ * (or claim the account) and prior guest data may be cleaned up.
+ */
+export const GUEST_SESSION_DAYS = 30;
 const PBKDF2_ITERATIONS = 100_000;
 
 function bufToBase64(buf: ArrayBuffer): string {
@@ -87,14 +94,96 @@ export function readSessionToken(request: Request): string | null {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-export async function createSession(env: Env, userId: string): Promise<{ token: string; maxAge: number }> {
+/** Turn a raw User-Agent into a short label for the sessions table. */
+export function summarizeUserAgent(ua: string | null | undefined): string {
+  if (!ua || !ua.trim()) return "Unknown device";
+  const s = ua;
+  let browser = "Browser";
+  if (/Edg\//i.test(s)) browser = "Edge";
+  else if (/OPR\//i.test(s) || /Opera/i.test(s)) browser = "Opera";
+  else if (/Chrome\//i.test(s) || /CriOS\//i.test(s)) browser = "Chrome";
+  else if (/Firefox\//i.test(s) || /FxiOS\//i.test(s)) browser = "Firefox";
+  else if (/Safari\//i.test(s)) browser = "Safari";
+
+  let os = "";
+  if (/Windows NT/i.test(s)) os = "Windows";
+  else if (/Android/i.test(s)) os = "Android";
+  else if (/iPhone/i.test(s)) os = "iPhone";
+  else if (/iPad/i.test(s)) os = "iPad";
+  else if (/Mac OS X|Macintosh/i.test(s)) os = "macOS";
+  else if (/CrOS/i.test(s)) os = "Chrome OS";
+  else if (/Linux/i.test(s)) os = "Linux";
+
+  return os ? `${browser} on ${os}` : browser;
+}
+
+export async function createSession(
+  env: Env,
+  userId: string,
+  days: number = SESSION_DAYS,
+  userAgent?: string | null
+): Promise<{ token: string; maxAge: number }> {
   const token = randomToken(32);
   const now = new Date();
-  const expires = new Date(now.getTime() + SESSION_DAYS * 24 * 60 * 60 * 1000);
-  await env.DB.prepare("INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)")
-    .bind(token, userId, now.toISOString(), expires.toISOString())
-    .run();
-  return { token, maxAge: SESSION_DAYS * 24 * 60 * 60 };
+  const safeDays = Math.max(1, Math.min(days, 365));
+  const expires = new Date(now.getTime() + safeDays * 24 * 60 * 60 * 1000);
+  const ua = (userAgent || "").slice(0, 512) || null;
+  try {
+    await env.DB.prepare(
+      "INSERT INTO sessions (token, user_id, created_at, expires_at, user_agent) VALUES (?, ?, ?, ?, ?)"
+    )
+      .bind(token, userId, now.toISOString(), expires.toISOString(), ua)
+      .run();
+  } catch {
+    // Pre-migration deployments without the user_agent column.
+    await env.DB.prepare("INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)")
+      .bind(token, userId, now.toISOString(), expires.toISOString())
+      .run();
+  }
+  return { token, maxAge: safeDays * 24 * 60 * 60 };
+}
+
+/**
+ * Drop expired sessions, and delete guest accounts that never claimed a
+ * login and whose last session expired more than GUEST_SESSION_DAYS ago.
+ * Best-effort; called opportunistically on guest login.
+ */
+export async function purgeExpiredGuestData(env: Env): Promise<void> {
+  const now = new Date().toISOString();
+  try {
+    await env.DB.prepare("DELETE FROM sessions WHERE expires_at <= ?").bind(now).run();
+  } catch {
+    /* ignore */
+  }
+  try {
+    // Guests older than one month with no remaining sessions → remove user row
+    // (conversations/messages cascade or are orphaned; prefer explicit cleanup
+    // when FK cascade is present).
+    const cutoff = new Date(Date.now() - GUEST_SESSION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    const { results } = await env.DB.prepare(
+      `SELECT u.id FROM users u
+       WHERE u.is_guest = 1 AND u.created_at < ?
+         AND NOT EXISTS (
+           SELECT 1 FROM sessions s WHERE s.user_id = u.id AND s.expires_at > ?
+         )
+       LIMIT 50`
+    )
+      .bind(cutoff, now)
+      .all<{ id: string }>();
+    for (const row of results || []) {
+      try {
+        await env.DB.prepare("DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE user_id = ?)").bind(row.id).run();
+        await env.DB.prepare("DELETE FROM conversations WHERE user_id = ?").bind(row.id).run();
+        await env.DB.prepare("DELETE FROM memories WHERE user_id = ?").bind(row.id).run();
+        await env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(row.id).run();
+        await env.DB.prepare("DELETE FROM users WHERE id = ? AND is_guest = 1").bind(row.id).run();
+      } catch {
+        /* best-effort per guest */
+      }
+    }
+  } catch {
+    /* ignore purge failures */
+  }
 }
 
 export async function destroySession(env: Env, token: string): Promise<void> {

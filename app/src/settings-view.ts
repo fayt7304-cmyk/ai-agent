@@ -9,6 +9,20 @@ import { showCropper } from "./lib/cropper";
 import { getPreferences, updateAnimationLevel, updateFontFamily, updateFontSize, updateVoiceLanguage, updateVoiceStyle, updateVoiceSpeed, updateHighQualityVoice, type AnimationLevel, type FontFamily, type VoiceLanguage, type VoiceStyle } from "./lib/preferences";
 import { showConfirm } from "./lib/dialog";
 import { renderFileList, downloadAllFiles, type StoredFile } from "./lib/file-downloads";
+import { icons } from "./lib/icons";
+
+// Claude-style appearance icons in General → Appearance
+(() => {
+  const map: Record<string, string> = {
+    system: icons.monitor,
+    light: icons.sun,
+    dark: icons.moon,
+  };
+  themeSegmented?.querySelectorAll<HTMLButtonElement>("button[data-theme-option]").forEach((btn) => {
+    const key = btn.dataset.themeOption || "";
+    if (map[key]) btn.innerHTML = map[key];
+  });
+})();
 
 const overlay = document.getElementById("settings-overlay") as HTMLDivElement;
 const closeBtn = document.getElementById("settings-close-btn") as HTMLButtonElement;
@@ -94,16 +108,13 @@ const memoryDetailTitle = document.getElementById("memory-detail-title") as HTML
 const memoryDetailMeta = document.getElementById("memory-detail-meta") as HTMLDivElement;
 const memoryDetailBody = document.getElementById("memory-detail-body") as HTMLUListElement;
 const memoryDetailDelete = document.getElementById("memory-detail-delete") as HTMLButtonElement;
-const memoryDetailEdit = document.getElementById("memory-detail-edit") as HTMLButtonElement;
+const memoryDetailSummary = document.getElementById("memory-detail-summary") as HTMLDivElement;
 const memoryExportBtn = document.getElementById("memory-export-btn") as HTMLButtonElement;
 const memoryImportBtn = document.getElementById("memory-import-btn") as HTMLButtonElement;
 const memoryImportFile = document.getElementById("memory-import-file") as HTMLInputElement;
-const memoryEditMode = document.getElementById("memory-edit-mode") as HTMLDivElement;
-const memoryEditForm = document.getElementById("memory-edit-form") as HTMLFormElement;
-const memoryEditTitle = document.getElementById("memory-edit-title") as HTMLInputElement;
-const memoryEditContent = document.getElementById("memory-edit-content") as HTMLTextAreaElement;
-const memoryEditBack = document.getElementById("memory-edit-back") as HTMLButtonElement;
-const memoryEditCancel = document.getElementById("memory-edit-cancel") as HTMLButtonElement;
+const memoryTalkForm = document.getElementById("memory-talk-form") as HTMLFormElement;
+const memoryTalkInput = document.getElementById("memory-talk-input") as HTMLInputElement;
+const memoryTalkSend = document.getElementById("memory-talk-send") as HTMLButtonElement;
 
 let openMemoryId: string | null = null;
 let allMemories: MemoryEntry[] = [];
@@ -115,10 +126,16 @@ function formatMemoryDate(iso: string): string {
 /** Split a stored entry into readable bullets, the way the detail view shows them. */
 function memoryBullets(content: string): string[] {
   const lines = content
-    .split(/\n+|(?<=[.;])\s+(?=[A-Z0-9])/)
+    .split(/\n+|(?<=[.;])\s+(?=[A-Z0-9\u0600-\u06FF\u4e00-\u9fff])/)
     .map((l) => l.replace(/^[-•*]\s*/, "").trim())
     .filter(Boolean);
   return lines.length ? lines : [content];
+}
+
+/** Short one-line summary for the Claude-style detail header. */
+function memorySummary(entry: MemoryEntry): string {
+  const first = memoryBullets(entry.content)[0] || entry.content;
+  return first.length > 140 ? first.slice(0, 137) + "…" : first;
 }
 
 function showMemoryList() {
@@ -131,12 +148,14 @@ function showMemoryDetail(entry: MemoryEntry) {
   openMemoryId = entry.id;
   memoryDetailTitle.textContent = entry.title;
   memoryDetailMeta.textContent = `${t("settings.memoryUpdated")} ${formatMemoryDate(entry.updated_at)}`;
+  memoryDetailSummary.textContent = memorySummary(entry);
   memoryDetailBody.innerHTML = "";
   for (const line of memoryBullets(entry.content)) {
     const li = document.createElement("li");
     li.textContent = line;
     memoryDetailBody.appendChild(li);
   }
+  memoryTalkInput.value = "";
   memoryBrowser.style.display = "none";
   memoryDetail.style.display = "";
 }
@@ -173,54 +192,48 @@ function renderMemories(memories: MemoryEntry[]) {
 
 memoryDetailBack.addEventListener("click", showMemoryList);
 
-memoryDetailEdit.addEventListener("click", () => {
-  if (!openMemoryId) return;
-  const entry = allMemories.find((m) => m.id === openMemoryId);
-  if (!entry) return;
-  memoryEditTitle.value = entry.title;
-  memoryEditContent.value = entry.content;
-  memoryBrowser.style.display = "none";
-  memoryDetail.style.display = "none";
-  memoryEditMode.style.display = "";
-});
-
-memoryEditBack.addEventListener("click", () => {
-  if (openMemoryId) {
-    const entry = allMemories.find((m) => m.id === openMemoryId);
-    if (entry) showMemoryDetail(entry);
-  }
-});
-
-memoryEditCancel.addEventListener("click", () => {
-  if (openMemoryId) {
-    const entry = allMemories.find((m) => m.id === openMemoryId);
-    if (entry) showMemoryDetail(entry);
-  }
-});
-
-memoryEditForm.addEventListener("submit", async (e) => {
+/** Ask Paul to revise the open memory from a natural-language instruction. */
+memoryTalkForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!openMemoryId) return;
-  const newTitle = memoryEditTitle.value.trim();
-  const newContent = memoryEditContent.value.trim();
-  if (!newTitle || !newContent) {
-    settingsError.textContent = t("settings.memoryEmptyTitle");
-    return;
-  }
-  const submitBtn = memoryEditForm.querySelector("button[type='submit']") as HTMLButtonElement;
-  submitBtn.disabled = true;
+  const instruction = memoryTalkInput.value.trim();
+  if (!instruction) return;
+
+  const entry = allMemories.find((m) => m.id === openMemoryId);
+  if (!entry) return;
+
+  memoryTalkSend.disabled = true;
+  memoryTalkInput.disabled = true;
+  settingsError.textContent = "";
+  settingsSuccess.textContent = t("settings.memoryTalking");
+
   try {
-    const { memories: next } = await api.addMemory(newContent, newTitle);
+    const { memories: next, deleted } = await api.reviseMemory(openMemoryId, instruction);
     allMemories = next;
-    renderMemories(next);
+    memoryTalkInput.value = "";
     settingsSuccess.textContent = t("settings.memorySaved");
-    setTimeout(() => { settingsSuccess.textContent = ""; }, 3000);
-    const entry = next.find((m) => m.id === openMemoryId);
-    if (entry) showMemoryDetail(entry);
+    setTimeout(() => {
+      settingsSuccess.textContent = "";
+    }, 3000);
+    if (deleted) {
+      showMemoryList();
+      renderMemories(next);
+    } else {
+      renderMemories(next);
+      const updated = next.find((m) => m.id === openMemoryId) || next.find((m) => m.title === entry.title);
+      if (updated) showMemoryDetail(updated);
+      else {
+        showMemoryList();
+        renderMemories(next);
+      }
+    }
   } catch (err) {
+    settingsSuccess.textContent = "";
     settingsError.textContent = err instanceof ApiError ? err.message : t("settings.memoryNotAvailable");
   } finally {
-    submitBtn.disabled = false;
+    memoryTalkSend.disabled = false;
+    memoryTalkInput.disabled = false;
+    memoryTalkInput.focus();
   }
 });
 
@@ -398,6 +411,9 @@ export function openSettings(tabOrUser: string | User = "general", userOrMessage
     });
     renderGoogleLinkState(user);
     renderProfile(user);
+    deletionUiSync?.(user);
+  } else if (currentUser) {
+    deletionUiSync?.(currentUser);
   }
   
   passwordInput.value = "";
@@ -410,6 +426,9 @@ export function openSettings(tabOrUser: string | User = "general", userOrMessage
   // The panels scroll independently; always open at the top of the chosen tab.
   document.querySelector<HTMLElement>(`.settings-panel[data-settings-panel="${tab}"]`)?.scrollTo({ top: 0 });
 }
+
+/** Filled in by initSettingsView so openSettings can refresh soft-delete UI. */
+let deletionUiSync: ((user: User) => void) | null = null;
 
 /** Copy text to the clipboard, with a fallback for browsers/contexts without the async API. */
 async function copyText(text: string): Promise<boolean> {
@@ -535,14 +554,28 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     settingsError.textContent = "";
   });
 
-  voiceSpeedSlider.value = prefs.voiceSpeed.toString();
-  voiceSpeedValue.textContent = prefs.voiceSpeed.toFixed(1) + "x";
+  const syncVoiceSpeedUi = (speed: number) => {
+    const s = Math.max(0.5, Math.min(2, speed));
+    voiceSpeedSlider.value = String(s);
+    voiceSpeedValue.textContent = s.toFixed(1) + "x";
+    voiceSpeedSlider.setAttribute("aria-valuenow", s.toFixed(1));
+    voiceSpeedSlider.setAttribute("aria-valuetext", s.toFixed(1) + "x");
+  };
+  syncVoiceSpeedUi(prefs.voiceSpeed);
+  voiceSpeedSlider.setAttribute("aria-label", t("settings.voiceSpeed"));
+  let voiceSpeedToastTimer = 0;
   voiceSpeedSlider.addEventListener("input", () => {
     const speed = parseFloat(voiceSpeedSlider.value);
     updateVoiceSpeed(speed);
-    voiceSpeedValue.textContent = speed.toFixed(1) + "x";
-    settingsSuccess.textContent = t("settings.voiceSpeed") + " " + t("settings.updated");
+    syncVoiceSpeedUi(getPreferences().voiceSpeed);
     settingsError.textContent = "";
+    window.clearTimeout(voiceSpeedToastTimer);
+    voiceSpeedToastTimer = window.setTimeout(() => {
+      settingsSuccess.textContent = t("settings.voiceSpeed") + " " + t("settings.updated");
+    }, 280);
+  });
+  voiceSpeedSlider.addEventListener("change", () => {
+    syncVoiceSpeedUi(getPreferences().voiceSpeed);
   });
 
   const syncHqVoice = (on: boolean) => {
@@ -607,14 +640,28 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
     settingsError.textContent = "";
   });
 
-  fontSizeSlider.value = prefs.fontSize.toString();
-  fontSizeValue.textContent = prefs.fontSize + "px";
+  const syncFontSizeUi = (size: number) => {
+    const s = Math.max(12, Math.min(18, Math.round(size)));
+    fontSizeSlider.value = String(s);
+    fontSizeValue.textContent = s + "px";
+    fontSizeSlider.setAttribute("aria-valuenow", String(s));
+    fontSizeSlider.setAttribute("aria-valuetext", s + "px");
+  };
+  syncFontSizeUi(prefs.fontSize);
+  fontSizeSlider.setAttribute("aria-label", t("settings.fontSize"));
+  let fontSizeToastTimer = 0;
   fontSizeSlider.addEventListener("input", () => {
-    const size = parseInt(fontSizeSlider.value);
+    const size = parseInt(fontSizeSlider.value, 10);
     updateFontSize(size);
-    fontSizeValue.textContent = size + "px";
-    settingsSuccess.textContent = t("settings.fontSize") + " " + t("settings.updated");
+    syncFontSizeUi(getPreferences().fontSize);
     settingsError.textContent = "";
+    window.clearTimeout(fontSizeToastTimer);
+    fontSizeToastTimer = window.setTimeout(() => {
+      settingsSuccess.textContent = t("settings.fontSize") + " " + t("settings.updated");
+    }, 280);
+  });
+  fontSizeSlider.addEventListener("change", () => {
+    syncFontSizeUi(getPreferences().fontSize);
   });
 
   memoryEnabledToggle.addEventListener("change", async () => {
@@ -715,67 +762,261 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
 
   const activeSessionsList = document.getElementById("active-sessions-list") as HTMLDivElement;
   const deleteAccountBtn = document.getElementById("delete-account-btn") as HTMLButtonElement;
+  const logoutAllBtn = document.getElementById("logout-all-btn") as HTMLButtonElement;
+
+  function formatSessionWhen(iso: string | undefined): string {
+    if (!iso) return "—";
+    try {
+      return new Date(iso).toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    } catch {
+      return iso;
+    }
+  }
+
+  function closeSessionMenus() {
+    activeSessionsList.querySelectorAll(".session-menu.open").forEach((el) => el.classList.remove("open"));
+  }
+
+  document.addEventListener("click", (e) => {
+    if (!(e.target as HTMLElement).closest?.(".session-actions")) closeSessionMenus();
+  });
 
   async function loadActiveSessions() {
-    activeSessionsList.innerHTML = `<p style='padding: 12px; color: var(--text-secondary); font-size: 13px;'>${t("settings.loadingSessions")}</p>`;
+    activeSessionsList.innerHTML = `
+      <div class="sessions-head">
+        <span>${t("settings.sessionDevice")}</span>
+        <span>${t("settings.sessionCreated")}</span>
+        <span>${t("settings.sessionExpires")}</span>
+        <span aria-hidden="true"></span>
+      </div>
+      <p class="settings-muted sessions-empty">${t("settings.loadingSessions")}</p>`;
     try {
       const data = await apiRequest<any[]>("/api/sessions", { method: "GET" });
       const sessions: any[] = Array.isArray(data) ? data : [];
-      activeSessionsList.innerHTML = "";
+      activeSessionsList.innerHTML = `
+        <div class="sessions-head">
+          <span>${t("settings.sessionDevice")}</span>
+          <span>${t("settings.sessionCreated")}</span>
+          <span>${t("settings.sessionExpires")}</span>
+          <span aria-hidden="true"></span>
+        </div>`;
       if (sessions.length === 0) {
-        activeSessionsList.innerHTML = `<p style='padding: 12px; color: var(--text-secondary); font-size: 13px;'>${t("settings.noActiveSessions")}</p>`;
-      } else {
-        sessions.forEach((session: any) => {
-          const sessionEl = document.createElement("div");
-          sessionEl.className = "session-item";
-          sessionEl.style.cssText = "padding: 12px 14px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 12px;";
-          const revokeBtn = document.createElement("button");
-          revokeBtn.textContent = t("settings.revokeSession");
-          revokeBtn.className = "danger-btn";
-          revokeBtn.style.cssText = "padding: 5px 12px; font-size: 12px; flex-shrink: 0;";
-          revokeBtn.onclick = async () => {
-            revokeBtn.disabled = true;
+        const empty = document.createElement("p");
+        empty.className = "settings-muted sessions-empty";
+        empty.textContent = t("settings.noActiveSessions");
+        activeSessionsList.appendChild(empty);
+        return;
+      }
+
+      sessions.forEach((session: any) => {
+        const row = document.createElement("div");
+        row.className = "session-row" + (session.is_current ? " is-current" : "");
+
+        const device = document.createElement("div");
+        device.className = "session-device";
+        const name = document.createElement("span");
+        name.className = "session-device-name";
+        name.textContent = session.device || t("settings.unknownDevice");
+        device.appendChild(name);
+        if (session.user_agent) {
+          const uaLine = document.createElement("span");
+          uaLine.className = "session-ua";
+          uaLine.title = session.user_agent;
+          // Short secondary line: first ~48 chars of the raw UA for power users
+          const short =
+            session.user_agent.length > 48
+              ? session.user_agent.slice(0, 48) + "…"
+              : session.user_agent;
+          uaLine.textContent = short;
+          device.appendChild(uaLine);
+        }
+        if (session.is_current) {
+          const badge = document.createElement("span");
+          badge.className = "session-current-badge";
+          badge.textContent = t("settings.sessionCurrent");
+          device.appendChild(badge);
+        }
+
+        const created = document.createElement("div");
+        created.className = "session-col";
+        created.textContent = formatSessionWhen(session.created_at);
+
+        const expires = document.createElement("div");
+        expires.className = "session-col";
+        expires.textContent = formatSessionWhen(session.expires_at);
+
+        const actions = document.createElement("div");
+        actions.className = "session-actions";
+        if (!session.is_current) {
+          const more = document.createElement("button");
+          more.type = "button";
+          more.className = "icon-btn session-more-btn";
+          more.setAttribute("aria-label", t("settings.sessionMore"));
+          more.innerHTML = "⋮";
+          const menu = document.createElement("div");
+          menu.className = "session-menu";
+          const terminate = document.createElement("button");
+          terminate.type = "button";
+          terminate.className = "session-menu-item danger";
+          terminate.textContent = t("settings.revokeSession");
+          terminate.addEventListener("click", async (ev) => {
+            ev.stopPropagation();
+            terminate.disabled = true;
             try {
               await apiRequest(`/api/sessions/${session.id}`, { method: "DELETE" });
               loadActiveSessions();
-            } catch {
-              revokeBtn.disabled = false;
+            } catch (err) {
+              settingsError.textContent =
+                err instanceof ApiError ? err.message : t("settings.sessionsNotAvailable");
+              terminate.disabled = false;
             }
-          };
-          const info = document.createElement("div");
-          info.innerHTML = `
-            <div style='font-weight: 500; font-size: 13px;'>${session.device || t("settings.unknownDevice")}</div>
-            <div style='font-size: 12px; color: var(--text-secondary); margin-top: 2px;'>${new Date(session.created_at).toLocaleString()}</div>
-          `;
-          sessionEl.appendChild(info);
-          sessionEl.appendChild(revokeBtn);
-          activeSessionsList.appendChild(sessionEl);
-        });
-      }
+          });
+          menu.appendChild(terminate);
+          more.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            const open = menu.classList.contains("open");
+            closeSessionMenus();
+            if (!open) menu.classList.add("open");
+          });
+          actions.appendChild(more);
+          actions.appendChild(menu);
+        }
+
+        row.appendChild(device);
+        row.appendChild(created);
+        row.appendChild(expires);
+        row.appendChild(actions);
+        activeSessionsList.appendChild(row);
+      });
     } catch (err) {
-      const msg = err instanceof ApiError && err.status !== 404
-        ? err.message
-        : t("settings.sessionsNotAvailable");
-      activeSessionsList.innerHTML = `<p style='padding: 12px; color: var(--text-secondary); font-size: 13px;'>${msg}</p>`;
+      const msg =
+        err instanceof ApiError && err.status !== 404
+          ? err.message
+          : t("settings.sessionsNotAvailable");
+      activeSessionsList.innerHTML = `
+        <div class="sessions-head">
+          <span>${t("settings.sessionDevice")}</span>
+          <span>${t("settings.sessionCreated")}</span>
+          <span>${t("settings.sessionExpires")}</span>
+          <span aria-hidden="true"></span>
+        </div>
+        <p class="settings-muted sessions-empty">${msg}</p>`;
     }
   }
   loadActiveSessions();
 
+  logoutAllBtn?.addEventListener("click", async () => {
+    const ok = await showConfirm({
+      title: t("settings.logoutAll"),
+      message: t("settings.logoutAllConfirm"),
+      confirmLabel: t("menu.logout"),
+      danger: true,
+    });
+    if (!ok) return;
+    logoutAllBtn.disabled = true;
+    settingsError.textContent = "";
+    try {
+      await apiRequest("/api/sessions/logout-all", { method: "POST", body: "{}" });
+      // End this browser session too — matches "log out of all devices".
+      await api.logout().catch(() => {});
+      window.location.reload();
+    } catch (err) {
+      settingsError.textContent =
+        err instanceof ApiError ? err.message : t("settings.sessionsNotAvailable");
+      logoutAllBtn.disabled = false;
+    }
+  });
+
+  const cancelDeletionBtn = document.getElementById("cancel-deletion-btn") as HTMLButtonElement | null;
+  const deleteAccountStatus = document.getElementById("delete-account-status") as HTMLDivElement | null;
+
+  function syncDeletionUi(user: User) {
+    const pending = !!user.deletion_requested_at;
+    if (cancelDeletionBtn) cancelDeletionBtn.style.display = pending ? "" : "none";
+    if (deleteAccountBtn) {
+      deleteAccountBtn.style.display = pending ? "none" : "";
+      deleteAccountBtn.disabled = false;
+    }
+    if (deleteAccountStatus) {
+      if (pending && user.deletion_requested_at) {
+        const purge = new Date(
+          new Date(user.deletion_requested_at).getTime() + 7 * 24 * 60 * 60 * 1000
+        );
+        deleteAccountStatus.style.display = "";
+        deleteAccountStatus.textContent = t("settings.deletionPending").replace(
+          "{date}",
+          purge.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+        );
+      } else {
+        deleteAccountStatus.style.display = "none";
+        deleteAccountStatus.textContent = "";
+      }
+    }
+  }
+
+  deletionUiSync = syncDeletionUi;
+  if (currentUser) syncDeletionUi(currentUser);
+
   deleteAccountBtn.addEventListener("click", async () => {
     const ok = await showConfirm({
       title: t("settings.deleteAccount"),
-      message: t("settings.deleteAccountConfirm"),
-      confirmLabel: t("settings.deleteAccount"),
+      message: t("settings.deleteAccountConfirmSoft"),
+      confirmLabel: t("settings.deleteAccountShort"),
       danger: true,
     });
     if (!ok) return;
     deleteAccountBtn.disabled = true;
+    settingsError.textContent = "";
     try {
-      await apiRequest("/api/user/delete", { method: "DELETE" });
-      window.location.reload();
+      const data = await apiRequest<{
+        ok: boolean;
+        soft?: boolean;
+        purge_at?: string;
+        email_sent?: boolean;
+        user?: User;
+      }>("/api/user/delete", { method: "DELETE" });
+      if (data.user) {
+        currentUser = data.user;
+        onUserUpdated(data.user);
+        syncDeletionUi(data.user);
+      }
+      settingsSuccess.textContent = data.email_sent
+        ? t("settings.deletionEmailSent")
+        : t("settings.deletionScheduled");
+      // Stay signed in during the grace period — no reload/logout.
     } catch (err) {
       settingsError.textContent = err instanceof ApiError ? err.message : t("settings.deleteAccountError");
       deleteAccountBtn.disabled = false;
+    }
+  });
+
+  cancelDeletionBtn?.addEventListener("click", async () => {
+    cancelDeletionBtn.disabled = true;
+    settingsError.textContent = "";
+    try {
+      const data = await apiRequest<{ ok: boolean; user?: User }>("/api/user/cancel-deletion", {
+        method: "POST",
+        body: "{}",
+      });
+      if (data.user) {
+        currentUser = data.user;
+        onUserUpdated(data.user);
+        syncDeletionUi(data.user);
+      } else if (currentUser) {
+        currentUser = { ...currentUser, deletion_requested_at: null };
+        syncDeletionUi(currentUser);
+      }
+      settingsSuccess.textContent = t("settings.deletionCancelled");
+    } catch (err) {
+      settingsError.textContent = err instanceof ApiError ? err.message : t("settings.deleteAccountError");
+    } finally {
+      cancelDeletionBtn.disabled = false;
     }
   });
 

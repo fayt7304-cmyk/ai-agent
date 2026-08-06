@@ -135,17 +135,22 @@ export function initUnitConverter() {
   const convStatus = document.getElementById("conv-status") as HTMLDivElement;
   const convSwap = document.getElementById("conv-swap") as HTMLButtonElement;
 
-  if (!categorySelect.children.length) {
-    Object.entries(categories).forEach(([key, cat]) => {
+  function fillCategories() {
+    const prev = categorySelect.value || "length";
+    categorySelect.innerHTML = "";
+    Object.keys(categories).forEach((key) => {
       const opt = document.createElement("option");
       opt.value = key;
       opt.textContent = t("uconvert.cat." + key);
       categorySelect.appendChild(opt);
     });
+    if (categories[prev]) categorySelect.value = prev;
   }
 
   function populateUnits(categoryKey: string) {
     const cat = categories[categoryKey];
+    const prevIn = inUnitSelect.value;
+    const prevOut = outUnitSelect.value;
     inUnitSelect.innerHTML = "";
     outUnitSelect.innerHTML = "";
     Object.keys(cat.names).forEach((u) => {
@@ -159,7 +164,16 @@ export function initUnitConverter() {
       outUnitSelect.appendChild(o2);
     });
     const keys = Object.keys(cat.names);
-    if (keys.length > 1) outUnitSelect.selectedIndex = 1;
+    if (prevIn && keys.includes(prevIn)) inUnitSelect.value = prevIn;
+    if (prevOut && keys.includes(prevOut)) outUnitSelect.value = prevOut;
+    else if (keys.length > 1) outUnitSelect.selectedIndex = 1;
+  }
+
+  /** Rebuild labels when the UI language changes (dropdowns are filled in JS). */
+  function refreshLabels() {
+    fillCategories();
+    populateUnits(categorySelect.value || "length");
+    void updateConversion();
   }
 
   async function loadCurrencyRates(base: string) {
@@ -239,6 +253,9 @@ export function initUnitConverter() {
     updateConversion();
   });
 
-  populateUnits("length");
+  document.addEventListener("langchange", () => refreshLabels());
+
+  fillCategories();
+  populateUnits(categorySelect.value || "length");
   updateConversion();
 }

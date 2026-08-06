@@ -3,7 +3,7 @@
 
 export type AnimationLevel = "none" | "reduced" | "normal";
 export type FontFamily = "system" | "serif" | "monospace" | "rounded";
-export type VoiceLanguage = "en" | "es" | "fr" | "de" | "it" | "pt" | "ja" | "zh";
+export type VoiceLanguage = "en" | "es" | "fr" | "de" | "it" | "pt" | "ja" | "zh" | "ar";
 export type VoiceStyle = "natural" | "formal" | "friendly" | "calm";
 
 export interface Preferences {
@@ -115,6 +115,10 @@ export function updateVoiceLanguage(lang: VoiceLanguage) {
   prefs.voiceLanguage = lang;
   savePreferences(prefs);
   applyVoiceSettings(prefs);
+  // Re-warm so the new language's voice is cached before the next speak().
+  import("./speech")
+    .then((m) => m.warmBrowserVoices())
+    .catch(() => {});
 }
 
 export function updateVoiceStyle(style: VoiceStyle) {

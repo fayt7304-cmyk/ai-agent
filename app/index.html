@@ -28,7 +28,7 @@
 <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=Noto+Sans+Arabic:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="/src/style.css">
   <link rel="stylesheet" href="/src/rtl-fixes.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css">
@@ -157,51 +157,67 @@
       </button>
       <div class="user-menu" id="user-menu" style="display:none;">
         <div class="user-menu-header">
-          <span class="avatar" id="menu-avatar"></span>
           <div class="user-menu-id">
-            <div class="user-menu-name" id="menu-username"></div>
             <div class="user-menu-email" id="menu-email"></div>
+            <div class="user-menu-name" id="menu-username"></div>
           </div>
+          <span class="avatar" id="menu-avatar" style="display:none;"></span>
         </div>
         <div class="user-menu-items">
           <button id="save-account-btn" style="display:none;">
-            <span class="menu-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 13v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2"/><polyline points="7 9 10 12 13 9"/><line x1="10" y1="3" x2="10" y2="12"/></svg></span>
+            <span class="menu-icon"></span>
             <span data-i18n="menu.saveAccount">Save my account</span>
           </button>
           <button id="login-menu-btn" style="display:none;">
-            <span class="menu-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-2"/><polyline points="10 15 15 10 10 5"/><line x1="15" y1="10" x2="3" y2="10"/></svg></span>
+            <span class="menu-icon"></span>
             <span data-i18n="menu.login">Log in</span>
           </button>
           <button id="open-settings-btn">
-            <span class="menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.1"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.32a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6h.05A1.7 1.7 0 0 0 10.1 3V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.13 4.6a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9v.05c.28.63.9 1.04 1.6 1.05H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"/></svg></span>
+            <span class="menu-icon"></span>
             <span data-i18n="menu.settings">Settings</span>
+            <span class="menu-kbd" data-i18n="menu.settingsKbd">Ctrl+,</span>
           </button>
+          <div class="user-menu-item-wrap" id="language-menu-wrap">
+            <button id="language-menu-btn" type="button">
+              <span class="menu-icon"></span>
+              <span data-i18n="menu.language">Language</span>
+              <span class="menu-caret">›</span>
+            </button>
+            <div class="user-submenu" id="language-submenu" style="display:none;">
+              <button type="button" class="lang-option" data-lang="en"><span class="lang-check" aria-hidden="true"></span><span>English</span></button>
+              <button type="button" class="lang-option" data-lang="fr"><span class="lang-check" aria-hidden="true"></span><span>Français</span></button>
+              <button type="button" class="lang-option" data-lang="es"><span class="lang-check" aria-hidden="true"></span><span>Español</span></button>
+              <button type="button" class="lang-option" data-lang="zh"><span class="lang-check" aria-hidden="true"></span><span>中文</span></button>
+              <button type="button" class="lang-option" data-lang="ar"><span class="lang-check" aria-hidden="true"></span><span>العربية</span></button>
+            </div>
+          </div>
           <div class="user-menu-item-wrap" id="learn-more-wrap">
             <button id="learn-more-btn" type="button">
-              <span class="menu-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="8"/><line x1="10" y1="9" x2="10" y2="14"/><circle cx="10" cy="6.5" r="0.5" fill="currentColor"/></svg></span>
+              <span class="menu-icon"></span>
               <span data-i18n="menu.learnMore">Learn more</span>
-              <span class="menu-caret" style="margin-inline-start:auto;opacity:0.5;">›</span>
+              <span class="menu-caret">›</span>
             </button>
             <div class="user-submenu" id="learn-more-submenu" style="display:none;">
               <button id="keyboard-shortcuts-btn" type="button">
-                <span class="menu-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="16" height="12" rx="2"/><path d="M6 9h1M10 9h1M14 9h1M6 13h8"/></svg></span>
+                <span class="menu-icon"></span>
                 <span data-i18n="menu.keyboardShortcuts">Keyboard shortcuts</span>
               </button>
               <button id="privacy-choices-btn" type="button">
-                <span class="menu-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2L3 5v5c0 4.4 3 8.5 7 9.5 4-1 7-5.1 7-9.5V5z"/></svg></span>
+                <span class="menu-icon"></span>
                 <span data-i18n="menu.privacyChoices">Your privacy choices</span>
               </button>
             </div>
           </div>
+          <div class="user-menu-divider"></div>
           <button id="logout-btn" class="danger-item">
-            <span class="menu-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"/><polyline points="10 15 5 10 10 5"/><line x1="5" y1="10" x2="17" y2="10"/></svg></span>
+            <span class="menu-icon"></span>
             <span data-i18n="menu.logout">Log out</span>
           </button>
         </div>
         <div class="user-menu-theme-row" id="user-menu-theme-row">
+          <button type="button" class="theme-icon-btn" data-theme-option="system" title="Match system">🖥️</button>
           <button type="button" class="theme-icon-btn" data-theme-option="light" title="Light theme">☀️</button>
           <button type="button" class="theme-icon-btn" data-theme-option="dark" title="Dark theme">🌙</button>
-          <button type="button" class="theme-icon-btn" data-theme-option="system" title="Match system">🖥️</button>
         </div>
       </div>
     </div>
@@ -272,7 +288,7 @@
     </header>
 
     <div class="guest-banner" id="guest-banner" style="display:none;">
-      <span data-i18n="guest.banner">Browsing as a guest — your chats stay on this device only.</span>
+      <span data-i18n="guest.banner">Browsing as a guest — chats last 30 days unless you save an account.</span>
       <button type="button" id="guest-banner-save-btn" data-i18n="guest.save">Save account</button>
       <button type="button" id="guest-banner-dismiss-btn" class="icon-btn" title="Dismiss">✕</button>
     </div>
@@ -358,49 +374,51 @@
       <div class="settings-panels">
         <!-- ===================== GENERAL ===================== -->
         <section class="settings-panel active" data-settings-panel="general">
-          <h2 class="settings-panel-title" data-i18n="settings.tabGeneral">General</h2>
+          <h2 class="settings-panel-title" data-i18n="settings.groupProfile">Profile</h2>
 
-          <h3 class="settings-subheading" data-i18n="settings.groupProfile">Profile</h3>
+          <!-- Avatar (Claude-style: label left, control right) -->
           <div class="settings-card">
-            <div class="settings-card-title" data-i18n="settings.pictureName">Picture &amp; name</div>
-            <div class="settings-card-desc" data-i18n="settings.pictureNameDesc">This is what other people (and you) see around the app.</div>
-            <div class="avatar-edit-row">
+            <div class="settings-card-title" data-i18n="settings.avatar">Avatar</div>
+            <div class="avatar-edit-row avatar-edit-row-inline">
               <div class="avatar-edit-photo">
                 <div class="profile-avatar profile-avatar-lg" id="edit-profile-avatar">?</div>
                 <button type="button" id="avatar-upload-btn" class="avatar-upload-btn" title="Change photo" aria-label="Change profile photo" data-i18n-aria-label="settings.changePhoto">📷</button>
                 <input type="file" id="avatar-file-input" accept="image/*" style="display:none;">
               </div>
-              <div class="avatar-edit-actions">
-                <button type="button" id="avatar-remove-btn" class="link-btn" style="display:none;" data-i18n="settings.removePhoto">Remove photo</button>
-              </div>
-            </div>
-            <div class="field">
-              <label for="display-name-input" data-i18n="settings.displayName">Display name</label>
-              <input type="text" id="display-name-input" placeholder="How your name shows up in the app" data-i18n-placeholder="settings.displayNamePh" maxlength="60">
-            </div>
-            <div class="field">
-              <label for="username-input" data-i18n="settings.username">Username</label>
-              <input type="text" id="username-input" placeholder="Used to log in" data-i18n-placeholder="settings.usernamePh" minlength="3" maxlength="32">
-              <div class="hint" data-i18n="settings.usernameHint">Letters, numbers, underscores, dots and dashes only.</div>
-            </div>
-            <div>
-              <button type="button" id="save-profile-btn" class="primary" data-i18n="settings.saveProfile">Save profile</button>
+              <button type="button" id="avatar-remove-btn" class="link-btn" style="display:none;" data-i18n="settings.removePhoto">Remove photo</button>
             </div>
           </div>
 
-          <h3 class="settings-subheading" data-i18n="settings.groupPreferences">Preferences</h3>
           <div class="settings-card">
-            <div class="settings-card-title" data-i18n="settings.theme">Theme</div>
-            <div class="settings-card-desc" data-i18n="settings.themeDesc">Choose how the app looks on this device.</div>
-            <div class="segmented" id="theme-segmented">
-              <button type="button" data-theme-option="light" data-i18n="settings.themeLight">Light</button>
-              <button type="button" data-theme-option="dark" data-i18n="settings.themeDark">Dark</button>
-              <button type="button" data-theme-option="system" data-i18n="settings.themeSystem">System</button>
+            <div class="settings-card-title" data-i18n="settings.displayName">Full name</div>
+            <input type="text" id="display-name-input" class="settings-inline-input" placeholder="How your name shows up" data-i18n-placeholder="settings.displayNamePh" maxlength="60">
+          </div>
+
+          <div class="settings-card">
+            <div>
+              <div class="settings-card-title" data-i18n="settings.preferredName">What should Paul call you?</div>
+              <div class="settings-card-desc" data-i18n="settings.usernameHint">Also used to log in · letters, numbers, _ . -</div>
+            </div>
+            <input type="text" id="username-input" class="settings-inline-input" placeholder="Username" data-i18n-placeholder="settings.usernamePh" minlength="3" maxlength="32">
+          </div>
+
+          <div class="settings-card settings-card-stack">
+            <button type="button" id="save-profile-btn" class="secondary-btn" data-i18n="settings.saveProfile">Save profile</button>
+          </div>
+
+          <h3 class="settings-subheading" data-i18n="settings.groupPreferences">Preferences</h3>
+
+          <div class="settings-card">
+            <div class="settings-card-title" data-i18n="settings.appearance">Appearance</div>
+            <div class="segmented segmented-icons" id="theme-segmented">
+              <button type="button" data-theme-option="system" title="System" aria-label="System">🖥️</button>
+              <button type="button" data-theme-option="light" title="Light" aria-label="Light">☀️</button>
+              <button type="button" data-theme-option="dark" title="Dark" aria-label="Dark">🌙</button>
             </div>
           </div>
+
           <div class="settings-card">
             <div class="settings-card-title" data-i18n="settings.language">Language</div>
-            <div class="settings-card-desc" data-i18n="settings.languageDesc">Choose the language used across the app.</div>
             <select id="language-select">
               <option value="en">English</option>
               <option value="fr">Français</option>
@@ -409,18 +427,9 @@
               <option value="ar">العربية</option>
             </select>
           </div>
+
           <div class="settings-card">
-            <div class="settings-card-title" data-i18n="settings.animationLevel">Animation Level</div>
-            <div class="settings-card-desc" data-i18n="settings.animationLevelDesc">Control the amount of motion in the app.</div>
-            <div class="segmented" id="animation-segmented">
-              <button type="button" data-animation-level="none" data-i18n="settings.animNone">None</button>
-              <button type="button" data-animation-level="reduced" data-i18n="settings.animReduced">Reduced</button>
-              <button type="button" data-animation-level="normal" data-i18n="settings.animNormal">Normal</button>
-            </div>
-          </div>
-          <div class="settings-card">
-            <div class="settings-card-title" data-i18n="settings.fontFamily">Font Family</div>
-            <div class="settings-card-desc" data-i18n="settings.fontFamilyDesc">Choose the typeface used throughout the app.</div>
+            <div class="settings-card-title" data-i18n="settings.fontFamily">Chat font</div>
             <select id="font-family-select">
               <option value="system">System Default</option>
               <option value="serif">Serif</option>
@@ -428,17 +437,29 @@
               <option value="rounded">Rounded</option>
             </select>
           </div>
+
           <div class="settings-card">
-            <div class="settings-card-title" data-i18n="settings.fontSize">Font Size</div>
-            <div class="settings-card-desc" data-i18n="settings.fontSizeDesc">Adjust the base text size.</div>
+            <div>
+              <div class="settings-card-title" data-i18n="settings.animationLevel">Motion</div>
+              <div class="settings-card-desc" data-i18n="settings.animationLevelDesc">Reduce animation in streaming responses and other interface elements.</div>
+            </div>
+            <div class="segmented" id="animation-segmented">
+              <button type="button" data-animation-level="normal" data-i18n="settings.animNormal">System</button>
+              <button type="button" data-animation-level="reduced" data-i18n="settings.animReduced">Reduced</button>
+              <button type="button" data-animation-level="none" data-i18n="settings.animNone">None</button>
+            </div>
+          </div>
+
+          <div class="settings-card">
+            <div class="settings-card-title" data-i18n="settings.fontSize">Font size</div>
             <input type="range" id="font-size-slider" min="12" max="18" step="1" value="14" class="settings-range">
             <div class="settings-range-value" id="font-size-value">14px</div>
           </div>
 
           <h3 class="settings-subheading" data-i18n="settings.groupVoice">Voice</h3>
+
           <div class="settings-card">
-            <div class="settings-card-title" data-i18n="settings.voiceLanguage">Voice Language</div>
-            <div class="settings-card-desc" data-i18n="settings.voiceLanguageDesc">Choose the language for text-to-speech.</div>
+            <div class="settings-card-title" data-i18n="settings.voiceLanguage">Language</div>
             <select id="voice-language-select">
               <option value="en">English</option>
               <option value="es">Español</option>
@@ -450,9 +471,9 @@
               <option value="zh">中文</option>
             </select>
           </div>
+
           <div class="settings-card">
-            <div class="settings-card-title" data-i18n="settings.voiceStyle">Voice Style</div>
-            <div class="settings-card-desc" data-i18n="settings.voiceStyleDesc">Choose how Paul speaks to you.</div>
+            <div class="settings-card-title" data-i18n="settings.voiceStyle">Style</div>
             <select id="voice-style-select">
               <option value="natural">Natural</option>
               <option value="formal">Formal</option>
@@ -460,12 +481,13 @@
               <option value="calm">Calm</option>
             </select>
           </div>
+
           <div class="settings-card">
-            <div class="settings-card-title" data-i18n="settings.voiceSpeed">Voice Speed</div>
-            <div class="settings-card-desc" data-i18n="settings.voiceSpeedDesc">Adjust the speaking speed.</div>
+            <div class="settings-card-title" data-i18n="settings.voiceSpeed">Speed</div>
             <input type="range" id="voice-speed-slider" min="0.5" max="2" step="0.1" value="1" class="settings-range">
             <div class="settings-range-value" id="voice-speed-value">1.0x</div>
           </div>
+
           <div class="settings-card">
             <div class="settings-card-row">
               <div>
@@ -483,15 +505,40 @@
         <section class="settings-panel" data-settings-panel="account">
           <h2 class="settings-panel-title" data-i18n="settings.tabAccount">Account</h2>
 
+          <!-- Claude-style top actions -->
           <div class="settings-card">
-            <div class="settings-card-title" data-i18n="settings.userId">User ID</div>
-            <div class="user-id-row">
-              <code id="profile-user-id">—</code>
-              <button type="button" id="copy-user-id-btn" class="secondary-btn" data-i18n="settings.copy">Copy</button>
+            <div class="settings-card-row">
+              <div>
+                <div class="settings-card-title" data-i18n="settings.logoutAll">Log out of all devices</div>
+              </div>
+              <button type="button" id="logout-all-btn" class="secondary-btn" data-i18n="menu.logout">Log out</button>
+            </div>
+          </div>
+          <div class="settings-card" id="delete-account-card">
+            <div class="settings-card-row">
+              <div>
+                <div class="settings-card-title" data-i18n="settings.deleteAccount">Delete your account</div>
+                <div class="settings-card-desc" id="delete-account-status" style="display:none;"></div>
+              </div>
+              <div class="settings-card-actions">
+                <button type="button" id="cancel-deletion-btn" class="secondary-btn" style="display:none;" data-i18n="settings.keepAccount">Keep my account</button>
+                <button type="button" id="delete-account-btn" class="secondary-btn" data-i18n="settings.deleteAccountShort">Delete account</button>
+              </div>
+            </div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-row">
+              <div>
+                <div class="settings-card-title" data-i18n="settings.userId">User ID</div>
+              </div>
+              <div class="user-id-row">
+                <code id="profile-user-id" class="user-id-chip">—</code>
+                <button type="button" id="copy-user-id-btn" class="secondary-btn" data-i18n="settings.copy">Copy</button>
+              </div>
             </div>
           </div>
 
-          <h3 class="settings-subheading" data-i18n="settings.groupAccountSettings">Account settings</h3>
+          <h3 class="settings-subheading" data-i18n="settings.groupAccountSettings">Sign-in</h3>
           <div class="settings-card">
             <div class="settings-card-row">
               <div>
@@ -518,22 +565,16 @@
             </div>
           </div>
 
-          <h3 class="settings-subheading" data-i18n="settings.activeSessions">Active Sessions</h3>
-          <div class="settings-card">
-            <div class="settings-card-desc" data-i18n="settings.activeSessionsDesc">Manage your active sessions and devices.</div>
-            <div id="active-sessions-list" class="sessions-list">
-              <p class="settings-muted" data-i18n="settings.loadingSessions">Loading sessions…</p>
-            </div>
-          </div>
-
-          <h3 class="settings-subheading" data-i18n="settings.deleteAccount">Delete Account</h3>
-          <div class="settings-card danger-card">
-            <div class="settings-card-row">
-              <div>
-                <div class="settings-card-title" data-i18n="settings.deleteAccount">Delete Account</div>
-                <div class="settings-card-desc" data-i18n="settings.deleteAccountDesc">Permanently delete your account and all associated data. This action cannot be reversed.</div>
+          <h3 class="settings-subheading" data-i18n="settings.activeSessions">Active sessions</h3>
+          <div class="settings-card sessions-card">
+            <div class="sessions-table" id="active-sessions-list">
+              <div class="sessions-head">
+                <span data-i18n="settings.sessionDevice">Device</span>
+                <span data-i18n="settings.sessionCreated">Created</span>
+                <span data-i18n="settings.sessionExpires">Expires</span>
+                <span aria-hidden="true"></span>
               </div>
-              <button type="button" id="delete-account-btn" class="danger-btn" data-i18n="settings.deleteAccount">Delete Account</button>
+              <p class="settings-muted sessions-empty" data-i18n="settings.loadingSessions">Loading sessions…</p>
             </div>
           </div>
         </section>
@@ -617,46 +658,36 @@
             <div id="memory-list" class="memory-list"></div>
           </div>
 
-          <!-- Claude-style detail view: one memory topic, opened from the list above. -->
+          <!-- Claude-style detail: summary, details, talk-to-Paul composer -->
           <div class="settings-card memory-detail" id="memory-detail" style="display:none;">
             <div class="memory-detail-head">
-              <button type="button" id="memory-detail-back" class="icon-btn memory-back-btn" aria-label="Back">
+              <button type="button" id="memory-detail-back" class="icon-btn memory-back-btn" data-i18n-aria-label="settings.memoryBack" aria-label="Back">
                 <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="12 4 6 10 12 16"/></svg>
               </button>
               <div class="memory-detail-titles">
                 <div class="memory-detail-title" id="memory-detail-title"></div>
                 <div class="memory-detail-meta" id="memory-detail-meta"></div>
               </div>
+              <button type="button" id="memory-detail-delete" class="secondary-btn memory-detail-delete" data-i18n="settings.memoryRemove">Delete</button>
             </div>
-            <ul class="memory-detail-body" id="memory-detail-body"></ul>
-            <div class="memory-detail-actions">
-              <button type="button" id="memory-detail-edit" class="secondary-btn" data-i18n="settings.memoryEdit">Edit</button>
-              <button type="button" id="memory-detail-delete" class="danger-btn" data-i18n="settings.memoryRemove">Delete</button>
-            </div>
-          </div>
 
-          <!-- Memory edit mode: inline editing UI -->
-          <div class="settings-card memory-edit-mode" id="memory-edit-mode" style="display:none;">
-            <div class="memory-edit-head">
-              <button type="button" id="memory-edit-back" class="icon-btn memory-back-btn" aria-label="Back">
-                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="12 4 6 10 12 16"/></svg>
-              </button>
-              <h3 style="margin: 0; font-size: 18px; font-weight: 600;" data-i18n="settings.editMemory">Edit Memory</h3>
+            <div class="memory-section">
+              <div class="memory-section-label" data-i18n="settings.memorySummary">Summary</div>
+              <div class="memory-summary" id="memory-detail-summary"></div>
             </div>
-            <form id="memory-edit-form" class="memory-edit-form">
-              <div class="memory-edit-field">
-                <label for="memory-edit-title" data-i18n="settings.memoryTitle">Title</label>
-                <input type="text" id="memory-edit-title" maxlength="100" required>
-              </div>
-              <div class="memory-edit-field">
-                <label for="memory-edit-content" data-i18n="settings.memoryContent">Content</label>
-                <textarea id="memory-edit-content" rows="8" required></textarea>
-              </div>
-              <div class="memory-edit-actions">
-                <button type="button" id="memory-edit-cancel" class="secondary-btn" data-i18n="settings.cancel">Cancel</button>
-                <button type="submit" class="primary" data-i18n="settings.save">Save</button>
-              </div>
+
+            <div class="memory-section">
+              <div class="memory-section-label" data-i18n="settings.memoryDetails">Details</div>
+              <ul class="memory-detail-body" id="memory-detail-body"></ul>
+            </div>
+
+            <form class="memory-talk-row" id="memory-talk-form">
+              <input type="text" id="memory-talk-input" maxlength="500" data-i18n-placeholder="settings.memoryTalkPh" placeholder="Tell Paul what to change or remove">
+              <button type="submit" class="icon-btn memory-talk-send" id="memory-talk-send" data-i18n-aria-label="settings.memoryTalkSend" aria-label="Send">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="10" x2="16" y2="10"/><polyline points="11 5 16 10 11 15"/></svg>
+              </button>
             </form>
+            <p class="memory-talk-hint" data-i18n="settings.memoryTalkHint">Paul will update this memory from what you type — no manual form needed.</p>
           </div>
 
         </section>
@@ -787,12 +818,12 @@
 
       <!-- kept for the JS lookup table; no longer shown to the user -->
       <div class="tools-tabs" id="tools-tabs" style="display:none;">
-        <button class="tab active" data-tool-tab="convert">Format converter</button>
-        <button class="tab" data-tool-tab="bgremove">Background remover</button>
-        <button class="tab" data-tool-tab="ocr">Image to text</button>
-        <button class="tab" data-tool-tab="pdf2word">PDF to Word</button>
-        <button class="tab" data-tool-tab="docx">Markdown → Word</button>
-        <button class="tab" data-tool-tab="uconvert">Universal Converter</button>
+        <button class="tab active" data-tool-tab="convert" data-i18n="tools.convert.label">Convert Image</button>
+        <button class="tab" data-tool-tab="bgremove" data-i18n="tools.bgremove.label">Remove Background</button>
+        <button class="tab" data-tool-tab="ocr" data-i18n="tools.ocr.label">Image to Text</button>
+        <button class="tab" data-tool-tab="pdf2word" data-i18n="tools.pdf2word.label">PDF to Word</button>
+        <button class="tab" data-tool-tab="docx" data-i18n="tools.docx.label">Text to Word</button>
+        <button class="tab" data-tool-tab="uconvert" data-i18n="tools.uconvert.label">Converter & Calculator</button>
       </div>
 
       <!-- Format converter -->

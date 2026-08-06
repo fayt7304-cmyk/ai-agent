@@ -57,6 +57,8 @@ export interface UserRow {
   avatar: string | null;
   /** "Generate memory from chats" switch; missing/NULL is treated as on. */
   memory_enabled?: number | null;
+  /** ISO timestamp when the user requested account deletion; null = active. */
+  deletion_requested_at?: string | null;
   created_at: string;
 }
 
@@ -71,6 +73,8 @@ export interface PublicUser {
   display_name: string | null;
   avatar: string | null;
   memory_enabled: boolean;
+  /** When set, account is in the 7-day soft-delete grace period. */
+  deletion_requested_at: string | null;
 }
 
 export interface ConversationRow {
@@ -125,5 +129,6 @@ export function toPublicUser(u: UserRow): PublicUser {
     display_name: u.display_name ?? null,
     avatar: u.avatar ?? null,
     memory_enabled: u.memory_enabled === undefined || u.memory_enabled === null ? true : Number(u.memory_enabled) === 1,
+    deletion_requested_at: u.deletion_requested_at ?? null,
   };
 }

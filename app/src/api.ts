@@ -40,6 +40,9 @@ export interface User {
   is_guest: boolean;
   display_name: string | null;
   avatar: string | null;
+  /** ISO time when soft-delete was requested; null if active. */
+  deletion_requested_at?: string | null;
+  memory_enabled?: boolean;
 }
 
 /**
@@ -283,6 +286,13 @@ export const api = {
     request<{ memories: MemoryEntry[] }>("/api/memory", { method: "POST", body: JSON.stringify({ content, title }) }),
 
   deleteMemory: (id: string) => request<{ memories: MemoryEntry[] }>(`/api/memory/${id}`, { method: "DELETE" }),
+
+  /** Ask Paul to revise one memory entry from a natural-language instruction. */
+  reviseMemory: (id: string, instruction: string) =>
+    request<{ memories: MemoryEntry[]; deleted?: boolean }>("/api/memory/revise", {
+      method: "POST",
+      body: JSON.stringify({ id, instruction }),
+    }),
 
   refreshMemory: () =>
     request<{ added: number; memories: MemoryEntry[] }>("/api/memory/generate", { method: "POST", body: "{}" }),

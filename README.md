@@ -1,153 +1,193 @@
-# Paul — Your Personal AI Agent (v7)
+# Paul — Personal AI Agent (v8)
 
-A comprehensive chat web application powered by a Mistral AI agent, designed to run entirely on your own Cloudflare account for maximum privacy and control.
-
----
-
-## 🚀 What's New in v7
-
-This version (v7) introduces critical layout fixes, UI alignments, and advanced memory management capabilities:
-
-| Feature | Description & Fix |
-| :--- | :--- |
-| **Mobile Sidebar** | Updated the responsive breakpoint to **768px** and added `z-index` layering to ensure the sidebar correctly overlays the chat content on all mobile devices. |
-| **Calculator Modal** | Standardized the height of input fields and dropdowns to **42px** and wrapped the **Plot** button in a dedicated field container with a spacer label for flawless vertical alignment. |
-| **User Menu** | Refined flexbox centering and icon container properties to ensure icons are vertically centered with their text labels on both mobile and desktop. |
-| **Memory Management** | Added full support for **editing**, **exporting**, and **importing** memory entries using standard `.txt` file formats. |
+Self-hosted chat app powered by a **Mistral AI agent**, running on **Cloudflare Workers + D1**.  
+Frontend is a Vite TypeScript SPA; the Worker owns auth, sessions, chat, tools, memory, and email.
 
 ---
 
-## 🛠️ Comprehensive Setup Guide
+## What’s new in v8
 
-Follow these steps to set up your own instance of Paul from scratch.
+| Area | Change |
+|------|--------|
+| **Profile menu** | Claude-style menu: email header, Settings, **Language ›** submenu, Learn more, Log out, theme row |
+| **General settings** | Profile + Preferences layout (avatar, full name, preferred name, Appearance icons, Motion, Voice) |
+| **Mobile** | Settings full-screen sheet, pill tabs, 768px breakpoint, safe-area, 16px inputs (no iOS zoom) |
+| **Guest sessions** | Hard **30-day** expiry; abandoned guests cleaned up; banner copy updated |
+| **Account deletion** | **Soft-delete** with **7-day** grace; Resend email; **Keep my account** cancel |
+| **Sessions** | **User-Agent** stored and shown (e.g. Chrome on Windows); terminate other devices |
+| **i18n / RTL** | en · fr · es · zh · ar; logical CSS; Arabic font stack |
+| **Voice** | High-quality path + adaptive delay before browser TTS fallback |
 
-### 1. Prerequisites & API Keys
+---
 
-Before starting, you need to collect the following API keys:
+## Stack
 
-- **Mistral AI**: Sign up at the [Mistral AI Console](https://console.mistral.ai/), create an **API Key**, and optionally create a custom **Agent** to get an `Agent ID`.
-- **Google Cloud (Optional for OAuth)**: If you want Google Login, create a project in the [Google Cloud Console](https://console.cloud.google.com/), set up an OAuth 2.0 Client ID, and add `https://your-worker-url.workers.dev/api/auth/google/callback` to the Authorized redirect URIs.
-- **Resend (Optional for Leads)**: If you want email notifications for new leads, get an API key from [Resend](https://resend.com/).
+- **App** (`app/`): Vite, TypeScript, CSS  
+- **API** (`worker/`): Cloudflare Worker, D1, Mistral Agent API, optional ElevenLabs / Workers AI TTS, Resend, Google OAuth  
 
-### 2. Backend Setup (Cloudflare Worker)
+---
 
-The backend handles all sensitive logic, database interactions, and API calls.
+## Prerequisites
 
-#### A. Initialize Wrangler
+| Key / account | Required | Used for |
+|---------------|----------|----------|
+| [Mistral](https://console.mistral.ai/) API key + Agent ID | Yes | Chat |
+| Cloudflare account | Yes | Worker + D1 |
+| [Resend](https://resend.com/) API key | Soft-delete email + password reset + leads | Email |
+| Google OAuth client | Optional | Sign in with Google |
+| ElevenLabs or Workers AI TTS | Optional | High-quality voice |
+
+---
+
+## Quick start
+
+### 1. Worker
+
 ```bash
-npm install -g wrangler
-wrangler login
 cd worker
 npm install
+npx wrangler login
 ```
 
-#### B. Create the Database
-Create a Cloudflare D1 database:
+Create D1 and put `database_id` in `wrangler.toml`:
+
 ```bash
-wrangler d1 create mistral-agent-chat-db
-```
-Copy the `database_id` from the output and paste it into `worker/wrangler.toml`:
-```toml
-[[d1_databases]]
-binding = "DB"
-database_name = "mistral-agent-chat-db"
-database_id = "PASTE_YOUR_DATABASE_ID_HERE"
+npx wrangler d1 create mistral-agent-chat-db
 ```
 
-#### C. Run Migrations
-Apply the database schema and all versioned migrations:
+Apply schema + migrations (**use `--remote` for production**):
+
 ```bash
-# Initialize schema
-wrangler d1 execute mistral-agent-chat-db --file=./schema.sql --remote
+npx wrangler d1 execute mistral-agent-chat-db --remote --file=./schema.sql
 
-# Apply versioned migrations (run these in order)
-wrangler d1 execute mistral-agent-chat-db --file=./migrations/0002_oauth_and_reset.sql --remote
-wrangler d1 execute mistral-agent-chat-db --file=./migrations/0003_leads.sql --remote
-wrangler d1 execute mistral-agent-chat-db --file=./migrations/0004_profile.sql --remote
-wrangler d1 execute mistral-agent-chat-db --file=./migrations/0005_star_archive.sql --remote
-wrangler d1 execute mistral-agent-chat-db --file=./migrations/0006_conversation_visibility.sql --remote
-wrangler d1 execute mistral-agent-chat-db --file=./migrations/0007_memory.sql --remote
+npx wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0002_oauth_and_reset.sql
+npx wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0003_leads.sql
+npx wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0004_profile.sql
+npx wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0005_star_archive.sql
+npx wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0006_conversation_visibility.sql
+npx wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0007_memory.sql
+npx wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0008_account_deletion.sql
+npx wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0009_session_user_agent.sql
 ```
 
-#### D. Configure Secrets
-Set your sensitive API keys as encrypted secrets on Cloudflare:
+Secrets:
+
 ```bash
-wrangler secret put MISTRAL_API_KEY
-# Optional secrets
-wrangler secret put GOOGLE_CLIENT_ID
-wrangler secret put GOOGLE_CLIENT_SECRET
-wrangler secret put RESEND_API_KEY
+npx wrangler secret put MISTRAL_API_KEY
+npx wrangler secret put RESEND_API_KEY          # optional but recommended
+npx wrangler secret put GOOGLE_CLIENT_ID        # optional
+npx wrangler secret put GOOGLE_CLIENT_SECRET    # optional
 ```
 
-#### E. Deploy Backend
+Public vars live in `wrangler.toml` `[vars]`:
+
+- `MISTRAL_AGENT_ID`
+- `FRONTEND_URL` (e.g. `https://ai.example.com`)
+- `RESEND_FROM`
+- `COOKIE_DOMAIN` (e.g. `.example.com` for shared cookie across app + API host)
+- `GOOGLE_REDIRECT_URI`
+- `LEAD_NOTIFY_TO`
+
+Deploy:
+
 ```bash
-wrangler deploy
-```
-Note your Worker URL (e.g., `https://mistral-agent.username.workers.dev`).
-
----
-
-### 3. Frontend Setup (Vite + TypeScript)
-
-The frontend is a high-performance web app that connects to your Worker.
-
-#### A. Connect to Backend
-Open `app/src/api.ts` and update the `API_BASE` constant with your Worker URL:
-```ts
-export const API_BASE = "https://mistral-agent.username.workers.dev";
+npx wrangler deploy
+npx wrangler tail   # optional live logs
 ```
 
-#### B. Build & Deploy
+### 2. Frontend
+
 ```bash
 cd app
 npm install
+# Point the SPA at your Worker origin (see vite / API_BASE resolution in src/api.ts)
 npm run build
-wrangler deploy
+```
+
+Host the `dist/` folder on Cloudflare Pages, any static host, or your own CDN.  
+Set the API base so the browser talks to the Worker (custom domain recommended: `api.example.com` + `COOKIE_DOMAIN=.example.com`).
+
+Dev:
+
+```bash
+npm run dev
 ```
 
 ---
 
-### 4. Custom Domain Configuration
+## Auth & sessions
 
-To point your own domain (e.g., `chat.yourdomain.com`) to the app:
-
-1. **For the Frontend**:
-   - Go to the **Cloudflare Dashboard** → **Workers & Pages** → Your Frontend Project.
-   - Select **Custom Domains** and click **Set up a custom domain**.
-   - Enter your domain (e.g., `chat.yourdomain.com`) and follow the CNAME setup instructions.
-
-2. **For the Backend (API)**:
-   - Go to the **Cloudflare Dashboard** → **Workers & Pages** → Your Backend Worker.
-   - Select **Settings** → **Triggers** → **Custom Domains**.
-   - Add a domain like `api.yourdomain.com`.
-   - **Important**: If you change the API domain, remember to update `API_BASE` in `app/src/api.ts` and redeploy the frontend.
+| Mode | Behavior |
+|------|----------|
+| **Guest** | Instant account; session **30 days**; not extended by activity; purge of abandoned guests |
+| **Registered** | Password and/or Google; session **90 days** |
+| **Soft-delete** | `deletion_requested_at` set; still logged in; email via Resend; hard delete after **7 days** unless cancelled |
+| **Sessions UI** | Device from User-Agent; revoke others; log out all devices |
 
 ---
 
-## 🧠 Memory Management (v7 New Feature)
+## Settings overview
 
-Paul maintains cross-chat memory to remember durable facts about you across all conversations. In v7, you have complete control over your memory:
-- **Edit**: Click on any memory entry in **Settings → Memory** to view its details and click **Edit** to open the built-in inline editor. You can now modify the title and content directly within the app UI without browser prompts.
-- **Export**: Click **Export as .txt** to download all your memory entries as a formatted text file.
-- **Import**: Click **Import from .txt** to upload and restore memory entries from a previously exported text file.
+- **General** — Profile (avatar, names), Appearance, language, font, motion, voice  
+- **Account** — Password, Google link, active sessions + UA, soft-delete  
+- **Privacy** — Cookies / privacy choices  
+- **Memory** — List / detail, talk-to-Paul revise, import / export  
 
 ---
 
-## 📂 Project Structure
+## Tools (in-app)
 
-```text
-worker/
-  schema.sql          Base D1 database schema
-  migrations/         Incremental database updates (v2 to v7)
-  src/
-    index.ts          Main router & API endpoints
-    auth.ts           Security, Hashing & Session logic
-    mistral.ts        Mistral AI integration client
-app/
-  src/
-    api.ts            Frontend API client (Set API_BASE here)
-    main.ts           App bootstrap & Global coordination
-    chat-view.ts      Chat UI, Sidebar & Message handling
-    settings-view.ts  Settings, Memory Edit/Import/Export UI
-    style.css         Core styling & Responsive layouts (v7 fixes here)
+Converter, weather, calculator, image tools, OCR, PDF/DOCX helpers — labels follow the active UI language where wired.
+
+---
+
+## Wrangler remote cheatsheet
+
+```bash
+# Production D1
+npx wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0009_session_user_agent.sql
+
+# Deploy Worker
+npx wrangler deploy
+
+# Logs
+npx wrangler tail
 ```
+
+Omit `--remote` only when intentionally using a **local** D1 with `wrangler dev`.
+
+---
+
+## Project layout
+
+```
+repo/
+  app/                 # Vite SPA
+    src/
+      main.ts
+      settings-view.ts
+      chat-view.ts
+      lib/i18n.ts
+      style.css
+  worker/
+    src/index.ts       # API routes
+    src/auth.ts        # sessions, guests, passwords
+    src/email.ts       # Resend
+    migrations/
+    schema.sql
+    wrangler.toml
+  README.md
+  DEPLOY_CHECKLIST.md
+```
+
+---
+
+## Version
+
+**8.0.0** — see “What’s new in v8” above. Earlier notes for v7 remain in git history.
+
+---
+
+## License / use
+
+Deploy on your own Cloudflare account. You are responsible for Mistral, Resend, and Google terms and for protecting user data in your D1 database.

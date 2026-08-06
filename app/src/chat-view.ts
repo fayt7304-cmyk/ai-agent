@@ -856,7 +856,7 @@ async function openConversationLink(id: string) {
   // Use toggleSidebar() rather than touching the class directly: it also syncs
   // the header "open sidebar" button, which otherwise stayed hidden on mobile
   // after switching chats, leaving no way to reopen the sidebar.
-  if (window.innerWidth <= 768) toggleSidebar(true);
+  if (isMobileLayout()) toggleSidebar(true);
 }
 
 /** Checks the URL for a `#conv=<id>` link and opens it if present. */
@@ -1060,7 +1060,7 @@ async function selectConversation(id: string) {
   // Use toggleSidebar() rather than touching the class directly: it also syncs
   // the header "open sidebar" button, which otherwise stayed hidden on mobile
   // after switching chats, leaving no way to reopen the sidebar.
-  if (window.innerWidth <= 768) toggleSidebar(true);
+  if (isMobileLayout()) toggleSidebar(true);
 }
 
 function startNewConversation() {
@@ -1076,7 +1076,7 @@ function startNewConversation() {
   // Use toggleSidebar() rather than touching the class directly: it also syncs
   // the header "open sidebar" button, which otherwise stayed hidden on mobile
   // after switching chats, leaving no way to reopen the sidebar.
-  if (window.innerWidth <= 768) toggleSidebar(true);
+  if (isMobileLayout()) toggleSidebar(true);
 }
 
 function renderQuickActions() {
@@ -1208,8 +1208,24 @@ const sidebarBackdrop = document.createElement("div");
 sidebarBackdrop.className = "sidebar-backdrop";
 document.body.appendChild(sidebarBackdrop);
 
+/**
+ * Single source of truth for the mobile layout band. Must stay in sync with the
+ * `@media (max-width: 768px)` rules in style.css (drawer sidebar, bottom-sheet
+ * modals, 16px inputs, etc.). Using matchMedia instead of innerWidth avoids
+ * scrollbar/zoom/orientation edge cases and keeps JS + CSS aligned.
+ */
+const MOBILE_BP = 768;
+const mobileMq =
+  typeof window.matchMedia === "function"
+    ? window.matchMedia(`(max-width: ${MOBILE_BP}px)`)
+    : ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} } as MediaQueryList);
+
+function isMobileLayout(): boolean {
+  return mobileMq.matches;
+}
+
 function syncSidebarBackdrop() {
-  const open = window.innerWidth <= 768 && !sidebar.classList.contains("collapsed");
+  const open = isMobileLayout() && !sidebar.classList.contains("collapsed");
   sidebarBackdrop.classList.toggle("visible", open);
 }
 
@@ -1217,15 +1233,29 @@ function syncSidebarOpenBtn() {
   // On desktop the collapsed rail stays visible with its own toggle button, so
   // showing this header button too would put two "open/close sidebar" icons on
   // screen at once. It's only needed on mobile, where collapsing hides the rail
-  // entirely (see the <=720 media query) and leaves no other way back in.
-  const isMobile = window.innerWidth <= 768;
-  sidebarOpenBtn.style.display = isMobile && sidebar.classList.contains("collapsed") ? "inline-flex" : "none";
+  // entirely and leaves no other way back in.
+  sidebarOpenBtn.style.display =
+    isMobileLayout() && sidebar.classList.contains("collapsed") ? "inline-flex" : "none";
 }
 
 function toggleSidebar(collapsed?: boolean) {
   sidebar.classList.toggle("collapsed", collapsed ?? !sidebar.classList.contains("collapsed"));
   syncSidebarBackdrop();
   syncSidebarOpenBtn();
+}
+
+/** When crossing the mobile/desktop band, reset sidebar to the mode that fits. */
+function onLayoutBandChange() {
+  if (isMobileLayout()) {
+    // Phones/tablets in portrait: drawer starts closed so chat is usable.
+    toggleSidebar(true);
+  } else {
+    // Desktop / wide tablet: show the rail (expanded). Collapsed icon-rail is
+    // still available via the in-sidebar toggle.
+    sidebar.classList.remove("collapsed");
+    syncSidebarBackdrop();
+    syncSidebarOpenBtn();
+  }
 }
 
 function closeSidebarSearch() {
@@ -1339,8 +1369,8 @@ export function initChatView(user: User) {
   // Use toggleSidebar() rather than touching the class directly: it also syncs
   // the header "open sidebar" button, which otherwise stayed hidden on mobile
   // after switching chats, leaving no way to reopen the sidebar.
-  if (window.innerWidth <= 768) toggleSidebar(true);
-  syncSidebarOpenBtn();
+  if (isMobileLayout()) toggleSidebar(true);
+  else syncSidebarOpenBtn();
 
   // If the studio voice isn't available, tell the user why the device voice spoke.
   document.addEventListener("tts-fallback", (e) => {
@@ -1355,8 +1385,19 @@ export function initChatView(user: User) {
   sidebarToggle.addEventListener("click", () => toggleSidebar());
   sidebarOpenBtn.addEventListener("click", () => toggleSidebar(false));
   sidebarBackdrop.addEventListener("click", () => toggleSidebar(true));
+
+  // Cross the mobile/desktop band via matchMedia (not raw resize/innerWidth) so
+  // orientation changes, zoom, and scrollbar differences stay consistent with CSS.
+  const onMqChange = () => onLayoutBandChange();
+  if (typeof mobileMq.addEventListener === "function") {
+    mobileMq.addEventListener("change", onMqChange);
+  } else if (typeof (mobileMq as any).addListener === "function") {
+    // Safari < 14
+    (mobileMq as any).addListener(onMqChange);
+  }
+  // Still sync backdrop/open-btn on generic resize (e.g. desktop window drag
+  // that doesn't cross 768, or visual viewport changes on mobile keyboards).
   window.addEventListener("resize", () => {
-    if (window.innerWidth > 720) sidebar.classList.remove("collapsed");
     syncSidebarBackdrop();
     syncSidebarOpenBtn();
   });

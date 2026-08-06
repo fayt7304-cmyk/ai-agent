@@ -1,5 +1,35 @@
 import type { Env } from "./types";
 
+export async function sendAccountDeletionEmail(
+  env: Env,
+  to: string,
+  opts: { username: string; purgeAt: string; settingsUrl: string }
+): Promise<void> {
+  const purgeDate = new Date(opts.purgeAt).toLocaleString("en-GB", {
+    dateStyle: "long",
+    timeStyle: "short",
+  });
+  const resp = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: env.RESEND_FROM,
+      to,
+      subject: "Your Paul account is scheduled for deletion",
+      html: `<p>Hi ${opts.username},</p>
+             <p>We received a request to delete your Paul account.</p>
+             <p><strong>Your data will be permanently deleted on ${purgeDate}</strong> (about 7 days from now).</p>
+             <p>Until then you can still sign in and use the app. To keep your account, open Settings → Account and choose <strong>Keep my account</strong>, or visit:</p>
+             <p><a href="${opts.settingsUrl}">${opts.settingsUrl}</a></p>
+             <p>If you did not request this, cancel the deletion as soon as possible.</p>`,
+    }),
+  });
+  if (!resp.ok) throw new Error(`Failed to send deletion email: ${await resp.text()}`);
+}
+
 export async function sendPasswordResetEmail(env: Env, to: string, resetUrl: string): Promise<void> {
   const resp = await fetch("https://api.resend.com/emails", {
     method: "POST",

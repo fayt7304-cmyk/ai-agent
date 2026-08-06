@@ -1,41 +1,27 @@
 /*
  * RTL layout fixes.
- * This file is owned by the front-end (view) layer and is intentionally kept
- * separate from style.css. It only contains overrides scoped to
- * html[dir="rtl"] so LTR languages are completely unaffected.
+ * Overrides scoped to html[dir="rtl"] so LTR languages are unaffected.
  */
 
-/* Header "Share" dropdown and the sidebar "..." conversation menu (.header-dropdown,
-   reused by .convo-dropdown) are positioned with a hardcoded `right: 0` in the base
-   stylesheet, which pins them to the wrong inline edge once the page flips to RTL. */
+/* ---------- Dropdowns pinned with physical left/right ---------- */
 html[dir="rtl"] .header-dropdown {
   right: auto;
   left: 0;
 }
 
-/* Menu item text/icons should read from the trailing edge in RTL too. */
 html[dir="rtl"] .share-option,
-html[dir="rtl"] .more-option {
-  text-align: right;
-}
-
-/* Sidebar "..." dropdown is positioned in JS (chat-view.ts) with inline
-   left/top styles that are already direction-aware; just make sure text
-   inside it is right-aligned to match. */
+html[dir="rtl"] .more-option,
 html[dir="rtl"] .convo-dropdown {
   text-align: right;
 }
 
-/* Icon + label rows built via innerHTML (menuItemHtml / the "..." menu items)
-   use a plain flex/inline layout that already mirrors correctly under
-   `direction: rtl`, but make sure the gap between icon and label stays
-   symmetric regardless of direction. */
+/* Icon slot spacing in menu rows */
 html[dir="rtl"] .menu-icon {
   margin-inline-end: 8px;
   margin-inline-start: 0;
 }
 
-/* Attach menu / tool menus anchored near the composer: mirror the caret edge. */
+/* Attach / tool menus near the composer */
 html[dir="rtl"] #attach-menu,
 html[dir="rtl"] .tool-menu,
 html[dir="rtl"] .tools-menu {
@@ -43,12 +29,117 @@ html[dir="rtl"] .tools-menu {
   left: 0;
 }
 
-/* Weather panel: keep the numeric grid readable (times, %, temperatures) while
-   letting Arabic labels/condition text and the overall panel align to the
-   trailing edge like the rest of the RTL UI. */
+/* ---------- Account (PFP) menu ---------- */
+html[dir="rtl"] .user-menu {
+  text-align: right;
+}
+
+html[dir="rtl"] .user-menu-header {
+  flex-direction: row; /* direction:rtl already mirrors flex start */
+}
+
+html[dir="rtl"] .user-menu-items button {
+  text-align: right;
+}
+
+html[dir="rtl"] .user-submenu {
+  /* Fly out toward the inline-start side of the parent menu in RTL */
+  inset-inline-start: auto;
+  inset-inline-end: calc(100% + 6px);
+}
+
+html[dir="rtl"] .menu-caret {
+  transform: scaleX(-1);
+}
+
+/* Collapsed-rail account menu still opens full width to the side of the rail */
+html[dir="rtl"] .sidebar.collapsed .user-menu {
+  inset-inline-start: auto;
+  inset-inline-end: 10px;
+}
+
+/* ---------- Guest banner ---------- */
+html[dir="rtl"] .guest-banner {
+  text-align: right;
+}
+
+/* ---------- Chat / messages ---------- */
+html[dir="rtl"] .empty-state {
+  text-align: center; /* keep centered */
+}
+
+html[dir="rtl"] .quick-actions {
+  direction: rtl;
+}
+
+html[dir="rtl"] .msg-actions {
+  flex-direction: row-reverse;
+}
+
+/* ---------- Composer ---------- */
+html[dir="rtl"] .composer-row {
+  direction: rtl;
+}
+
+html[dir="rtl"] #chat-input {
+  text-align: right;
+}
+
+html[dir="rtl"] .attachment-chips {
+  direction: rtl;
+}
+
+/* ---------- Settings ---------- */
+html[dir="rtl"] #settings-overlay .settings-help,
+html[dir="rtl"] #settings-overlay .settings-section-title,
+html[dir="rtl"] #settings-overlay .settings-card-title,
+html[dir="rtl"] #settings-overlay .settings-card-desc,
+html[dir="rtl"] #settings-overlay .settings-panel-title {
+  text-align: right;
+}
+
+html[dir="rtl"] #settings-overlay .settings-nav-btn {
+  text-align: right;
+}
+
+html[dir="rtl"] #settings-overlay .settings-card-row {
+  text-align: right;
+}
+
+/* ---------- Tools / converter ---------- */
+html[dir="rtl"] .tool-pane label,
+html[dir="rtl"] .tool-pane .label,
+html[dir="rtl"] .tool-pane .tool-subheading,
+html[dir="rtl"] .tool-pane .result .label,
+html[dir="rtl"] .tool-pane .status {
+  text-align: right;
+}
+
+html[dir="rtl"] .tool-pane select,
+html[dir="rtl"] .tool-pane input[type="number"],
+html[dir="rtl"] .tool-pane input[type="text"] {
+  text-align: right;
+}
+
+/* Swap button: mirror so the glyph still "swaps" visually in RTL */
+html[dir="rtl"] #conv-swap {
+  transform: scaleX(-1);
+}
+
+html[dir="rtl"] .tool-card-text {
+  text-align: right;
+}
+
+html[dir="rtl"] .tools-grid {
+  direction: rtl;
+}
+
+/* ---------- Weather ----------
+ * Labels and titles follow RTL; numeric hour cards stay LTR so digits don't scramble. */
 html[dir="rtl"] #weather-content {
   text-align: right;
 }
+
 html[dir="rtl"] #weather-content .weather-place {
   display: flex;
   align-items: baseline;
@@ -56,48 +147,84 @@ html[dir="rtl"] #weather-content .weather-place {
   flex-direction: row-reverse;
   text-align: right;
 }
+
 html[dir="rtl"] #weather-content .weather-place .weather-google-link {
   margin-inline-start: 10px;
   margin-inline-end: 0;
 }
+
 html[dir="rtl"] #weather-content .weather-main {
   flex-direction: row-reverse;
 }
+
 html[dir="rtl"] #weather-content .weather-details {
   text-align: right;
 }
+
 html[dir="rtl"] #weather-content .uc-section-title {
   text-align: right;
 }
-/* Individual hour/day cards keep their internal LTR number formatting (times,
-   percentages, temperatures) so digits/units never reverse, but the cards
-   themselves flow start-to-end like the rest of the RTL page. */
+
 html[dir="rtl"] #weather-content .hourly-scroll {
   flex-direction: row-reverse;
 }
-html[dir="rtl"] #weather-content .hour-card,
-html[dir="rtl"] #weather-content .day-row {
+
+html[dir="rtl"] #weather-content .hour-card {
   direction: ltr;
   text-align: left;
 }
+
 html[dir="rtl"] #weather-content .day-row {
   direction: rtl;
   text-align: right;
 }
+
 html[dir="rtl"] #weather-content .day-row > * {
   direction: ltr;
 }
+
 html[dir="rtl"] #weather-content .d-precip {
   text-align: right;
   direction: rtl;
   unicode-bidi: plaintext;
 }
 
-/* Settings modal: form rows/help text should read start-to-end. Scoped so it
-   only affects the settings overlay, not global form defaults owned elsewhere. */
-html[dir="rtl"] #settings-overlay .settings-help {
+/* ---------- Auth / modals ---------- */
+html[dir="rtl"] .auth-card,
+html[dir="rtl"] .modal {
   text-align: right;
 }
-html[dir="rtl"] #settings-overlay .settings-section-title {
+
+html[dir="rtl"] .auth-card input,
+html[dir="rtl"] .modal input:not([type="checkbox"]):not([type="radio"]),
+html[dir="rtl"] .modal textarea {
   text-align: right;
+}
+
+html[dir="rtl"] .auth-tabs {
+  direction: rtl;
+}
+
+/* ---------- Sidebar list ---------- */
+html[dir="rtl"] .convo-item {
+  text-align: right;
+}
+
+html[dir="rtl"] .convo-list-label,
+html[dir="rtl"] .brand,
+html[dir="rtl"] .username {
+  text-align: right;
+}
+
+/* ---------- Memory editor ---------- */
+html[dir="rtl"] .memory-detail-body,
+html[dir="rtl"] .memory-list,
+html[dir="rtl"] .memory-summary,
+html[dir="rtl"] .memory-section-label,
+html[dir="rtl"] .memory-talk-hint {
+  text-align: right;
+}
+
+html[dir="rtl"] .memory-talk-send svg {
+  transform: scaleX(-1);
 }

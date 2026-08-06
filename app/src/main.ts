@@ -1,6 +1,6 @@
 import { api, type User } from "./api";
 import { initTheme, setTheme } from "./theme";
-import { initI18n, t } from "./lib/i18n";
+import { initI18n, t, setLang, getStoredLang, type Lang } from "./lib/i18n";
 import { icons } from "./lib/icons";
 import { showAuthScreen, hideAuthScreen, initAuthView, openClaimScreen, openLoginScreen } from "./auth-view";
 import { initChatView, updateChatUser, resetChatView } from "./chat-view";
@@ -9,6 +9,7 @@ import { initLeadView } from "./lead-view";
 import { initToolsView } from "./tools-view";
 import { applyAvatar } from "./lib/avatar";
 import { initPreferences } from "./lib/preferences";
+import { warmBrowserVoices } from "./lib/speech";
 
 // Apply the language + text direction immediately, before anything else touches the
 // DOM, so there's no flash of English/LTR before we know the stored preference.
@@ -22,6 +23,10 @@ initTheme();
 
 // Apply user preferences (animations, fonts, voice settings)
 initPreferences();
+
+// Preload speechSynthesis voices so the first "Read aloud" is not blocked on
+// Chrome's async voiceschanged event.
+void warmBrowserVoices();
 
 // Register the service worker (app-shell caching, installability). Safe no-op if unsupported.
 if ("serviceWorker" in navigator) {
@@ -71,6 +76,9 @@ const GUEST_BANNER_DISMISSED_KEY = "guest-banner-dismissed";
 const learnMoreWrap = document.getElementById("learn-more-wrap") as HTMLDivElement;
 const learnMoreBtn = document.getElementById("learn-more-btn") as HTMLButtonElement;
 const learnMoreSubmenu = document.getElementById("learn-more-submenu") as HTMLDivElement;
+const languageMenuWrap = document.getElementById("language-menu-wrap") as HTMLDivElement;
+const languageMenuBtn = document.getElementById("language-menu-btn") as HTMLButtonElement;
+const languageSubmenu = document.getElementById("language-submenu") as HTMLDivElement;
 const keyboardShortcutsBtn = document.getElementById("keyboard-shortcuts-btn") as HTMLButtonElement;
 const shortcutsOverlay = document.getElementById("shortcuts-overlay") as HTMLDivElement;
 const shortcutsCloseBtn = document.getElementById("shortcuts-close-btn") as HTMLButtonElement;
@@ -91,6 +99,7 @@ function mountGlobalIcons() {
   document.querySelector("#save-account-btn .menu-icon")!.innerHTML = icons.bookmark;
   document.querySelector("#login-menu-btn .menu-icon")!.innerHTML = icons.key;
   document.querySelector("#open-settings-btn .menu-icon")!.innerHTML = icons.gear;
+  document.querySelector("#language-menu-btn .menu-icon")!.innerHTML = icons.globe;
   document.querySelector("#learn-more-btn .menu-icon")!.innerHTML = icons.lightbulb;
   document.querySelector("#keyboard-shortcuts-btn .menu-icon")!.innerHTML = icons.keyboard;
   document.querySelector("#privacy-choices-btn .menu-icon")!.innerHTML = icons.lock;
@@ -142,19 +151,32 @@ let chatInitialized = false;
 
 function refreshGuestUi(user: User) {
   guestBadge.style.display = user.is_guest ? "inline-flex" : "none";
-  saveAccountBtn.style.display = user.is_guest ? "block" : "none";
-  loginMenuBtn.style.display = user.is_guest ? "block" : "none";
+  // Use "" so the stylesheet's `display: flex` applies — forcing "block"
+  // broke icon/label alignment vs Settings / Learn more / Log out.
+  saveAccountBtn.style.display = user.is_guest ? "" : "none";
+  loginMenuBtn.style.display = user.is_guest ? "" : "none";
   const dismissed = sessionStorage.getItem(GUEST_BANNER_DISMISSED_KEY) === "1";
   guestBanner.style.display = user.is_guest && !dismissed ? "flex" : "none";
+}
+
+function syncLanguageMenuChecks() {
+  const current = getStoredLang();
+  languageSubmenu.querySelectorAll<HTMLButtonElement>(".lang-option").forEach((btn) => {
+    btn.classList.toggle("is-active", btn.dataset.lang === current);
+  });
 }
 
 function refreshUserMenu(user: User) {
   applyAvatar(menuAvatar, user);
   menuUsername.textContent = user.display_name || user.username;
-  menuEmail.textContent = user.email || (user.is_guest ? "Guest session" : "No email on file");
+  // Claude-style: primary line is email (or username when none).
+  menuEmail.textContent =
+    user.email || (user.is_guest ? t("sidebar.guest") : user.display_name || user.username);
+  menuUsername.style.display = user.email ? "" : "none";
   themeIconBtns.forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.themeOption === user.theme);
   });
+  syncLanguageMenuChecks();
 }
 
 function enterApp(user: User) {
@@ -218,17 +240,18 @@ openSettingsBtn.addEventListener("click", () => {
 });
 
 let learnMoreCloseTimer: ReturnType<typeof setTimeout> | null = null;
-// On a mouse, hovering "Learn more" already opens the flyout, so a plain
-// click-toggle immediately closed it again and the submenu looked broken.
-// Clicking now pins the flyout open (and a second click unpins it), while
-// hover-only opens still close on mouse-out.
+let languageCloseTimer: ReturnType<typeof setTimeout> | null = null;
 let learnMorePinned = false;
+let languagePinned = false;
 
 function openLearnMore() {
   if (learnMoreCloseTimer) {
     clearTimeout(learnMoreCloseTimer);
     learnMoreCloseTimer = null;
   }
+  // Only one flyout open at a time.
+  closeLanguage(0, true);
+  languagePinned = false;
   learnMoreSubmenu.style.display = "block";
 }
 
@@ -241,18 +264,31 @@ function closeLearnMore(delay = 0, force = false) {
   }, delay);
 }
 
-// Pointer devices open it on hover, like the reference menu. A short close
-// delay means moving the mouse from the "Learn more" row into the flyout
-// itself doesn't close it partway there.
+function openLanguage() {
+  if (languageCloseTimer) {
+    clearTimeout(languageCloseTimer);
+    languageCloseTimer = null;
+  }
+  closeLearnMore(0, true);
+  learnMorePinned = false;
+  syncLanguageMenuChecks();
+  languageSubmenu.style.display = "block";
+}
+
+function closeLanguage(delay = 0, force = false) {
+  if (!force && languagePinned) return;
+  if (languageCloseTimer) clearTimeout(languageCloseTimer);
+  languageCloseTimer = setTimeout(() => {
+    languageSubmenu.style.display = "none";
+    languageCloseTimer = null;
+  }, delay);
+}
+
 learnMoreWrap.addEventListener("mouseenter", openLearnMore);
 learnMoreWrap.addEventListener("mouseleave", () => closeLearnMore(150));
-// The flyout itself sits outside the wrap's own box (it's positioned past the
-// menu's right edge), so it needs its own hover handling too — otherwise moving
-// the pointer from the "Learn more" row toward the flyout closes it en route.
 learnMoreSubmenu.addEventListener("mouseenter", openLearnMore);
 learnMoreSubmenu.addEventListener("mouseleave", () => closeLearnMore(150));
 
-// Touch/keyboard still needs a tap-to-toggle, since there's no hover to rely on.
 learnMoreBtn.addEventListener("click", (e) => {
   e.stopPropagation();
   if (learnMorePinned) {
@@ -263,6 +299,40 @@ learnMoreBtn.addEventListener("click", (e) => {
     openLearnMore();
   }
 });
+
+languageMenuWrap.addEventListener("mouseenter", openLanguage);
+languageMenuWrap.addEventListener("mouseleave", () => closeLanguage(150));
+languageSubmenu.addEventListener("mouseenter", openLanguage);
+languageSubmenu.addEventListener("mouseleave", () => closeLanguage(150));
+
+languageMenuBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (languagePinned) {
+    languagePinned = false;
+    closeLanguage(0, true);
+  } else {
+    languagePinned = true;
+    openLanguage();
+  }
+});
+
+languageSubmenu.querySelectorAll<HTMLButtonElement>(".lang-option").forEach((btn) => {
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const lang = btn.dataset.lang as Lang | undefined;
+    if (!lang) return;
+    setLang(lang);
+    syncLanguageMenuChecks();
+    languagePinned = false;
+    closeLanguage(0, true);
+    // Keep the settings language select in sync if it's on the page.
+    const sel = document.getElementById("language-select") as HTMLSelectElement | null;
+    if (sel) sel.value = lang;
+  });
+});
+
+document.addEventListener("langchange", () => syncLanguageMenuChecks());
+syncLanguageMenuChecks();
 
 function closeShortcuts() {
   shortcutsOverlay.style.display = "none";

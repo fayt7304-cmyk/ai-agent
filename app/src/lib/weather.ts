@@ -68,7 +68,18 @@ function weatherDesc(code: number): string {
 
 export function initWeather() {
   // Weather loads lazily the first time the Weather sub-tab is opened
-  // (see tools-view.ts), so there's nothing to do on init.
+  // (see tools-view.ts). When the UI language changes, re-render if the
+  // panel already has content so labels/conditions match the new language.
+  document.addEventListener("langchange", () => {
+    const content = document.getElementById("weather-content");
+    const panel = document.getElementById("weather-panel");
+    if (!content || !panel) return;
+    if (panel.style.display === "none") return;
+    // Only reload if we previously showed real weather (not the initial empty state).
+    if (content.querySelector(".weather-main, .hour-card, .day-row, #weather-retry")) {
+      loadWeather();
+    }
+  });
 }
 
 export function loadWeather() {

@@ -117,6 +117,25 @@ body {
   line-height: 1.5;
 }
 
+/* Arabic: use a script-aware stack and slightly more open line-height for
+   connected letterforms. Noto Sans Arabic is loaded in index.html. */
+html[lang="ar"] {
+  --font-family: "Noto Sans Arabic", "Segoe UI", Tahoma, "Arabic Typesetting", system-ui, sans-serif;
+  --font-display: "Noto Sans Arabic", "Segoe UI", Tahoma, system-ui, sans-serif;
+  line-height: 1.7;
+}
+
+html[lang="ar"] body {
+  line-height: 1.7;
+  letter-spacing: 0; /* tracking hurts connected Arabic script */
+}
+
+html[lang="ar"] h1,
+html[lang="ar"] h2 {
+  letter-spacing: 0;
+  font-weight: 600;
+}
+
 h1, h2 {
   font-family: var(--font-display);
   font-weight: 600;
@@ -275,9 +294,19 @@ button, input, textarea, select {
   border-bottom: 1px solid var(--border);
   font-size: 13px;
   color: var(--text);
+  flex-shrink: 0;
+  min-width: 0;
 }
 
-.guest-banner span { flex: 1; }
+.guest-banner span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
 
 .guest-banner button:not(.icon-btn) {
   border: 1px solid var(--accent);
@@ -288,15 +317,19 @@ button, input, textarea, select {
   font-size: 12.5px;
   cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .guest-banner .icon-btn {
   width: 26px;
   height: 26px;
   font-size: 13px;
+  flex-shrink: 0;
 }
 
+/* Accent color only — do not override display/layout (must stay flex like siblings). */
 #save-account-btn { color: var(--accent); font-weight: 500; }
+#login-menu-btn { color: var(--text); }
 
 .tabs {
   display: flex;
@@ -408,11 +441,12 @@ select:focus-visible,
    sidebar but need to visually pop out past its edge — most noticeably in the
    collapsed 64px rail, where the menu is deliberately wider than its container.
    overflow-x:hidden above exists for the collapse/expand width transition, not
-   to clip open menus, so lift it only while a menu is actually open. */
+   to clip open menus, so lift it only while a menu is actually open.
+   position:relative is required on desktop so z-index takes effect. On mobile
+   the 768px media query re-asserts position:fixed so the rail stays an overlay
+   and does not squeeze chat-main / the guest banner. */
 .sidebar.menu-open {
   overflow: visible;
-  /* Also raise the whole rail: the flyout paints inside the sidebar's stacking
-     context, so without this the main chat column covered it. */
   position: relative;
   z-index: 40;
 }
@@ -717,70 +751,92 @@ select:focus-visible,
   inset-inline-end: 10px;
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 14px;
-  box-shadow: 0 12px 40px rgba(20, 20, 18, 0.14), 0 2px 8px rgba(20, 20, 18, 0.06);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(20, 20, 18, 0.18), 0 2px 8px rgba(20, 20, 18, 0.08);
   z-index: 5;
-  /* No overflow:hidden here — the "Learn more" flyout is positioned outside this
-     box, and clipping it made the submenu invisible even though it was open.
-     Rounded corners are preserved by the children's own radii. */
   overflow: visible;
+  min-width: 240px;
+  max-width: 300px;
 }
 
-/* Collapsed sidebar is only 64px wide — anchoring the menu to left:10px/right:10px
-   like above would squeeze it down to ~44px, wrapping every label onto multiple
-   lines and clipping the rest off-screen (the exact bug this fixes). Instead give
-   it a real fixed width and let it float out over the main content, anchored to
-   the rail's left edge, the same way the collapsed rail's other flyouts behave. */
 .sidebar.collapsed .user-menu {
   inset-inline-start: 10px;
   inset-inline-end: auto;
   width: 260px;
 }
 
+/* Claude-style: email as primary header line */
 .user-menu-header {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 14px 12px;
+  padding: 12px 14px 10px;
   border-bottom: 1px solid var(--border);
-  background: var(--sidebar);
 }
 
-.user-menu-header .avatar { width: 32px; height: 32px; font-size: 13px; }
+.user-menu-header .avatar { width: 28px; height: 28px; font-size: 12px; }
 
-.user-menu-id { min-width: 0; }
+.user-menu-id { min-width: 0; flex: 1; }
 .user-menu-name {
-  font-size: 13.5px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.user-menu-email {
   font-size: 12px;
+  font-weight: 400;
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  margin-top: 1px;
+}
+.user-menu-email {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.user-menu-items { border-bottom: 1px solid var(--border); padding: 6px 0; }
+.user-menu-items { padding: 4px 0; }
+
+.user-menu-divider {
+  height: 1px;
+  margin: 4px 10px;
+  background: var(--border);
+}
 
 .user-menu-items button {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
   text-align: start;
-  padding: 10px 14px;
+  padding: 9px 12px;
+  margin: 0 4px;
+  width: calc(100% - 8px);
   border: none;
   background: transparent;
   cursor: pointer;
   font-size: 13.5px;
   color: var(--text);
-  min-height: 44px;
-  transition: background 0.15s ease, color 0.15s ease;
-  border-radius: 0;
+  min-height: 38px;
+  transition: background 0.12s ease, color 0.12s ease;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+.menu-kbd {
+  margin-inline-start: auto;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+
+.user-menu-items .user-menu-item-wrap {
+  width: 100%;
+}
+
+.user-menu-items .user-menu-item-wrap > button {
+  width: 100%;
 }
 
 .user-menu-items button:hover {
@@ -820,16 +876,15 @@ select:focus-visible,
 .user-submenu {
   position: absolute;
   top: 0;
-  /* Logical inset so the flyout opens to the correct side in RTL layouts. */
   inset-inline-start: calc(100% + 6px);
-  min-width: 180px;
+  min-width: 200px;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 10px;
-  box-shadow: var(--shadow);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
   overflow: hidden;
   z-index: 6;
-  padding: 4px 0;
+  padding: 4px;
 }
 
 .user-submenu button {
@@ -838,14 +893,46 @@ select:focus-visible,
   gap: 10px;
   width: 100%;
   text-align: start;
-  padding: 9px 12px;
+  padding: 8px 10px;
   border: none;
+  border-radius: 8px;
   background: transparent;
   cursor: pointer;
   font-size: 13.5px;
+  color: var(--text);
+  min-height: 36px;
 }
 
-.user-submenu button:hover { background: var(--accent-bg); color: var(--accent); }
+.user-submenu button:hover { background: var(--bg-hover, rgba(127, 127, 127, 0.12)); }
+
+.lang-option .lang-check {
+  width: 16px;
+  flex: none;
+  font-size: 12px;
+  color: var(--accent);
+}
+.lang-option.is-active .lang-check::before { content: "✓"; }
+.lang-option:not(.is-active) .lang-check::before { content: ""; }
+
+@media (max-width: 768px) {
+  .user-menu {
+    inset-inline-start: 8px;
+    inset-inline-end: 8px;
+    max-width: none;
+    bottom: 64px;
+  }
+  /* On mobile, flyouts open as nested panels under the parent row */
+  .user-submenu {
+    position: static;
+    inset: auto;
+    width: 100%;
+    min-width: 0;
+    margin: 2px 8px 6px;
+    box-shadow: none;
+    border: 1px solid var(--border);
+  }
+  .menu-kbd { display: none; }
+}
 
 .user-menu-footer {
   padding: 8px 10px;
@@ -1417,6 +1504,109 @@ html[dir="rtl"] .msg-row.user .msg {
 .segmented button:last-child { border-inline-end: none; }
 .segmented button.active { background: var(--accent-bg); color: var(--accent); font-weight: 500; }
 
+/* Claude-style appearance: icon-only system / light / dark */
+.segmented.segmented-icons {
+  padding: 2px;
+  gap: 0;
+  background: var(--bg);
+}
+.segmented.segmented-icons button {
+  width: 36px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-inline-end: none;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 14px;
+}
+.segmented.segmented-icons button.active {
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--border);
+  font-weight: 500;
+}
+.segmented.segmented-icons button svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.settings-inline-input {
+  width: min(220px, 46vw);
+  min-width: 120px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: end;
+}
+.settings-inline-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.avatar-edit-row-inline {
+  justify-content: flex-end;
+  gap: 10px;
+  margin: 0;
+}
+.avatar-edit-row-inline .profile-avatar-lg {
+  width: 40px;
+  height: 40px;
+  font-size: 14px;
+  border-radius: 50%;
+}
+.avatar-edit-row-inline .avatar-upload-btn {
+  width: 22px;
+  height: 22px;
+  font-size: 11px;
+}
+.settings-card-stack {
+  display: flex !important;
+  justify-content: flex-end;
+  border-bottom: 0 !important;
+  padding-top: 8px;
+  padding-bottom: 4px;
+  grid-template-columns: none !important;
+}
+.settings-card > .settings-inline-input {
+  grid-column: 2 / -1;
+  grid-row: 1 / span 2;
+  justify-self: end;
+  align-self: center;
+}
+.settings-card > .avatar-edit-row-inline {
+  grid-column: 2 / -1;
+  grid-row: 1 / span 2;
+  justify-self: end;
+  align-self: center;
+}
+
+@media (max-width: 640px) {
+  .settings-inline-input {
+    width: 100%;
+    max-width: 100%;
+    text-align: start;
+  }
+  .settings-card > .settings-inline-input,
+  .settings-card > .avatar-edit-row-inline {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    justify-self: stretch;
+    margin-top: 8px;
+  }
+  .settings-card > .segmented.segmented-icons {
+    justify-self: start;
+  }
+}
+
 select, .modal-body input, .modal-body textarea {
   padding: 9px 11px;
   border-radius: 8px;
@@ -1975,52 +2165,100 @@ select, .modal-body input, .modal-body textarea {
 
 .danger-btn:disabled { opacity: 0.6; cursor: default; }
 
-@media (max-width: 640px) {
-  .modal-settings { height: 100%; max-height: 100%; }
-  .settings-shell { flex-direction: column; }
+/* ---- Settings modal: tablet + phone ------------------------------------
+   Align with the app’s primary mobile breakpoint (768px / matchMedia). */
+@media (max-width: 768px) {
+  .modal-settings {
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    margin: 0;
+  }
+  .settings-close-float {
+    top: max(10px, env(safe-area-inset-top, 0px));
+    inset-inline-end: max(10px, env(safe-area-inset-right, 0px));
+  }
+  .settings-shell {
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
   .settings-nav {
     width: 100%;
-    flex-direction: row;
-    flex-wrap: wrap;
-    padding: 10px 12px;
+    flex-direction: column;
+    flex-shrink: 0;
+    padding: max(10px, env(safe-area-inset-top, 0px)) 12px 8px;
+    border-inline-end: none;
+    border-bottom: 1px solid var(--border);
+    overflow: visible;
+    gap: 0;
   }
   .settings-nav-profile {
     order: -1;
-    flex: 0 0 100%;
     width: 100%;
+    padding: 4px 8px 12px;
+    padding-inline-end: 44px; /* room for close button */
+    margin-bottom: 4px;
   }
   .settings-nav-tabs {
-    flex: 0 0 100%;
-    width: 100%;
     display: flex;
     flex-direction: row;
     flex-wrap: nowrap;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     gap: 6px;
+    padding: 2px 0 4px;
     scrollbar-width: none;
   }
   .settings-nav-tabs::-webkit-scrollbar { display: none; }
   .settings-nav-btn {
-    flex: 1 1 0;
-    min-width: 0;
+    flex: 0 0 auto;
+    min-width: max-content;
+    min-height: 40px;
     text-align: center;
     justify-content: center;
     background: var(--card);
     border: 1px solid var(--border);
-    padding: 9px 10px;
+    border-inline-start: 1px solid var(--border);
+    padding: 8px 14px;
     font-size: 13px;
+    border-radius: 999px;
+    white-space: nowrap;
   }
+  .settings-nav-btn::before { display: none; } /* icons optional on chips */
   .settings-nav-btn.active {
     background: var(--accent-bg);
     border-color: var(--accent);
+    color: var(--accent-strong);
+    font-weight: 600;
+    border-inline-start: 1px solid var(--accent);
   }
-  /* Phones: cards read as a flat list with hairline separators instead of a
-     stack of heavy bordered boxes, which made settings feel cramped. */
-  .settings-panels { padding: 14px 14px 28px; gap: 0; background: var(--card); }
-  .settings-panel-title { font-size: 17px; margin-bottom: 2px; }
-  .settings-subheading { margin: 18px 0 2px; }
+  .settings-panels {
+    flex: 1;
+    min-height: 0;
+    padding: 12px 16px calc(28px + env(safe-area-inset-bottom, 0px));
+    gap: 0;
+    background: var(--card);
+    -webkit-overflow-scrolling: touch;
+  }
+  .settings-panel-title {
+    font-size: 18px;
+    margin-bottom: 4px;
+    padding-inline-end: 8px;
+  }
+  .settings-subheading {
+    margin: 20px 0 4px;
+    font-size: 11.5px;
+  }
+  /* Flat list of rows (Claude-like) instead of boxed cards */
   .settings-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 6px;
     padding: 14px 2px;
     border: none;
     border-radius: 0;
@@ -2028,19 +2266,127 @@ select, .modal-body input, .modal-body textarea {
     border-bottom: 1px solid var(--border);
     box-shadow: none;
   }
-  .settings-card.danger-card { background: transparent; }
+  .settings-card.danger-card,
+  .settings-card.sessions-card { background: transparent; }
   .settings-card:last-child { border-bottom: none; }
-  .settings-card-row { flex-direction: column; align-items: stretch; gap: 10px; }
-  .settings-card-actions { flex-direction: column; }
-  .settings-card-actions .secondary-btn { width: 100%; }
-  .settings-card-row .switch { align-self: flex-start; }
-  .settings-panels select,
-  .settings-panels .segmented { width: 100%; }
-  .avatar-edit-row { justify-content: center; text-align: center; }
-  .settings-panels button.primary { align-self: stretch; }
-  .settings-panels .danger-btn { width: 100%; }
-  .inline-action-row { flex-direction: column; align-items: stretch; }
-  .user-id-row { flex-wrap: wrap; }
+  .settings-card-title { font-size: 14px; }
+  .settings-card-desc { font-size: 12.5px; line-height: 1.45; }
+  .settings-card-row {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 12px;
+    grid-column: 1 / -1;
+  }
+  .settings-card-row > div:first-child { flex: 1; min-width: 0; }
+  .settings-card-row .switch,
+  .settings-card-row > button { flex-shrink: 0; }
+  .settings-card-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+    grid-column: 1 / -1;
+  }
+  .settings-card-actions .secondary-btn { width: auto; }
+  /* Controls under labels when they don’t fit beside them */
+  .settings-card > select,
+  .settings-card > .segmented:not(.segmented-icons),
+  .settings-card > .settings-inline-input,
+  .settings-card > .avatar-edit-row-inline,
+  .settings-card > .inline-action-row,
+  .settings-card > .field,
+  .settings-card > .settings-card-actions {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    width: 100%;
+    max-width: 100%;
+  }
+  .settings-card > .segmented.segmented-icons {
+    grid-column: 2 / -1;
+    justify-self: end;
+    width: auto;
+  }
+  .settings-card > .settings-range {
+    grid-column: 1 / 3;
+    width: 100%;
+    max-width: none;
+    justify-self: stretch;
+  }
+  .settings-card > .settings-range-value {
+    grid-column: 3;
+    justify-self: end;
+  }
+  .settings-inline-input {
+    width: 100%;
+    text-align: start;
+  }
+  .avatar-edit-row-inline {
+    justify-content: flex-start;
+  }
+  .settings-card-stack {
+    justify-content: stretch;
+  }
+  .settings-card-stack .secondary-btn,
+  .settings-card-stack .primary {
+    width: 100%;
+  }
+  .settings-panels select {
+    min-height: 40px;
+    font-size: 15px; /* avoid iOS zoom on focus */
+  }
+  .settings-panels .segmented button {
+    min-height: 40px;
+    flex: 1;
+  }
+  .settings-panels button.primary,
+  .settings-panels .danger-btn {
+    align-self: stretch;
+    width: 100%;
+    min-height: 44px;
+  }
+  .inline-action-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .inline-action-row input,
+  .inline-action-row button {
+    width: 100%;
+    min-height: 40px;
+  }
+  .user-id-row {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .user-id-chip {
+    max-width: 100%;
+  }
+  /* Memory talk composer stays usable above the home indicator */
+  .memory-talk-row {
+    margin-bottom: 4px;
+  }
+  .memory-talk-row input {
+    font-size: 16px; /* no iOS zoom */
+  }
+  /* Session rows already collapse under 640; ensure padding */
+  .session-row {
+    padding-inline: 2px;
+  }
+}
+
+@media (max-width: 480px) {
+  .settings-nav-profile .profile-email {
+    max-width: 70vw;
+  }
+  .settings-panel-title {
+    font-size: 17px;
+  }
+  .settings-card {
+    padding: 12px 0;
+  }
+  .segmented.segmented-icons button {
+    width: 40px;
+    height: 36px;
+  }
 }
 
 /* ---------------- Sidebar backdrop (mobile) ---------------- */
@@ -2055,6 +2401,8 @@ select, .modal-body input, .modal-body textarea {
 .sidebar-backdrop.visible { display: block; }
 
 /* ---------------- Responsive ---------------- */
+/* Primary mobile/desktop split. Keep in sync with MOBILE_BP / isMobileLayout()
+   in chat-view.ts (matchMedia max-width: 768px). */
 @media (max-width: 768px) {
   body { overflow: hidden; }
 
@@ -2071,7 +2419,25 @@ select, .modal-body input, .modal-body textarea {
   .sidebar.collapsed { transform: translateX(-100%); }
   .sidebar:not(.collapsed) { transform: translateX(0); }
 
+  /* Keep the rail fixed when the account menu is open — never let menu-open
+     change position or pull the sidebar into document flow on phones. */
+  .sidebar.menu-open {
+    position: fixed;
+    z-index: 40;
+    overflow: visible;
+  }
+
   .chat-main { width: 100%; position: relative; z-index: 1; }
+
+  .guest-banner {
+    padding: 8px 12px;
+    gap: 8px;
+    font-size: 12.5px;
+  }
+  .guest-banner button:not(.icon-btn) {
+    padding: 5px 10px;
+    font-size: 12px;
+  }
 
   .messages { padding: 14px 12px; gap: 10px; }
   .msg-row { max-width: 92%; }
@@ -2086,6 +2452,18 @@ select, .modal-body input, .modal-body textarea {
   .modal-overlay { padding: 0; align-items: flex-end; }
   .modal { max-width: 100%; max-height: 92vh; border-radius: 14px 14px 0 0; }
 
+  /* Settings is a full-screen app sheet on phones — not a bottom sheet. */
+  .modal-overlay:has(.modal-settings) {
+    align-items: stretch;
+    padding: 0;
+  }
+  .modal.modal-settings {
+    max-width: 100%;
+    max-height: 100%;
+    height: 100%;
+    border-radius: 0;
+  }
+
   /* iOS Safari zooms the whole page in when a focused input's computed font-size is
      under 16px, and then doesn't reliably zoom back out — that's what causes the page
      to look "zoomed in" and stuck that way on a phone. Bumping every form control to
@@ -2096,14 +2474,17 @@ select, .modal-body input, .modal-body textarea {
   select,
   .modal-body input,
   .modal-body textarea,
-  .settings-panels input {
+  .settings-panels input,
+  .settings-panels select,
+  .memory-talk-row input {
     font-size: 16px;
   }
 }
 
 @media (max-width: 380px) {
   .composer-row { padding: 5px 6px; }
-  /* Keep this at 16px (not 14px) — see the 720px media query above for why. */
+  /* Keep this at 16px (not 14px) — see the 768px mobile block above for why
+     (iOS Safari zoom-on-focus when computed size is under 16px). */
   #chat-input { font-size: 16px; }
 }
 
@@ -2357,18 +2738,8 @@ html[dir="rtl"] code {
   text-align: right;
 }
 
-/* Weather mixes numbers, times, and icons in a fixed grid — always keep it
-   left-to-right, even in Arabic, so hours/temperatures/forecast rows don't
-   visually scramble. Arabic condition text inside still renders correctly
-   (an RTL text run inside an LTR container shapes fine per the bidi algorithm). */
-html[dir="rtl"] #weather-content {
-  direction: ltr;
-  text-align: left;
-}
-html[dir="rtl"] #weather-content .weather-place,
-html[dir="rtl"] #weather-content .uc-section-title {
-  text-align: left;
-}
+/* Weather RTL details (labels right-aligned, hour cards LTR for digits) live in
+   rtl-fixes.css so one place owns the weather direction rules. */
 
 @media (max-width: 768px) {
   html[dir="rtl"] .sidebar { inset: 0 0 0 auto; }
@@ -2688,7 +3059,9 @@ html[dir="rtl"] #weather-content .uc-section-title {
   grid-column: span 1;
 }
 
-/* Toast notification */
+/* Toast notification — physical left:50% + translateX(-50%) is intentional:
+   horizontal centering is relative to the viewport’s left edge in both LTR
+   and RTL, so logical inset-inline-start:50% would mis-center under dir=rtl. */
 #chat-toast {
   position: fixed;
   bottom: 80px;
@@ -2704,8 +3077,10 @@ html[dir="rtl"] #weather-content .uc-section-title {
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.2s;
-  white-space: nowrap;
   box-shadow: var(--shadow-lg);
+  max-width: min(90vw, 420px);
+  white-space: normal;
+  text-align: center;
 }
 
 
@@ -2913,6 +3288,153 @@ html[dir="rtl"] .switch:has(input[type="checkbox"]:checked) .switch-thumb {
 
 .sessions-list { margin-top: 12px; }
 
+/* Claude-style active sessions table */
+.settings-card.sessions-card {
+  display: block;
+  padding-top: 8px;
+  padding-bottom: 4px;
+}
+.sessions-table {
+  width: 100%;
+  margin-top: 4px;
+}
+.sessions-head,
+.session-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) 36px;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 4px;
+}
+.sessions-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+.session-row {
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text);
+}
+.session-row:last-child { border-bottom: 0; }
+.session-row.is-current { background: transparent; }
+.session-device {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.session-device-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-ua {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  margin-top: 1px;
+}
+
+.session-current-badge {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-text, #111);
+}
+.session-col {
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-actions {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+}
+.session-more-btn {
+  width: 28px;
+  height: 28px;
+  font-size: 16px;
+  line-height: 1;
+  opacity: 0.7;
+}
+.session-more-btn:hover { opacity: 1; }
+.session-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  inset-inline-end: 0;
+  z-index: 20;
+  min-width: 120px;
+  padding: 4px;
+  border-radius: var(--radius-md, 10px);
+  border: 1px solid var(--border);
+  background: var(--card-elevated, var(--card));
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0,0,0,0.25));
+}
+.session-menu.open { display: block; }
+.session-menu-item {
+  display: block;
+  width: 100%;
+  text-align: start;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.session-menu-item.danger { color: var(--danger, #e55); }
+.session-menu-item:hover { background: var(--bg-hover, rgba(127,127,127,0.12)); }
+.sessions-empty {
+  text-align: center;
+  padding: 28px 12px;
+  margin: 0;
+}
+
+.user-id-chip {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--bg-hover, rgba(127,127,127,0.12));
+  color: var(--text-secondary);
+  max-width: min(280px, 50vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .sessions-head { display: none; }
+  .session-row {
+    grid-template-columns: minmax(0, 1fr) 36px;
+    grid-template-rows: auto auto;
+    row-gap: 4px;
+  }
+  .session-device { grid-column: 1; grid-row: 1; }
+  .session-actions { grid-column: 2; grid-row: 1 / span 2; align-self: start; }
+  .session-col {
+    grid-column: 1;
+    font-size: 11.5px;
+  }
+}
+
 /* ================================================================
    File lists with per-row download
    ================================================================ */
@@ -3065,22 +3587,66 @@ html[dir="rtl"] .switch:has(input[type="checkbox"]:checked) .switch-thumb {
 }
 .settings-card > select { width: auto; min-width: 176px; }
 
-/* Sliders: track and read-out on one centred line */
+/* Sliders: track + live read-out on one line, opposite the label */
 .settings-card > .settings-range {
   grid-column: 2;
   grid-row: 1 / span 2;
   align-self: center;
   justify-self: end;
   width: 160px;
+  max-width: 40vw;
+  height: 28px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
 }
 .settings-card > .settings-range-value {
   grid-column: 3;
   grid-row: 1 / span 2;
   align-self: center;
   justify-self: end;
-  min-width: 42px;
+  min-width: 48px;
   margin: 0;
+  padding: 0;
   text-align: end;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* WebKit track/thumb so the control is easy to hit and matches accent */
+.settings-card > .settings-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+}
+.settings-card > .settings-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--card, #fff);
+  box-shadow: 0 0 0 1px var(--border);
+  cursor: pointer;
+}
+.settings-card > .settings-range::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+}
+.settings-card > .settings-range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--card, #fff);
+  box-shadow: 0 0 0 1px var(--border);
+  cursor: pointer;
 }
 
 /* Rows that carry their own label/control pair keep the full width and never
@@ -3159,7 +3725,8 @@ html[dir="rtl"] .switch:has(input[type="checkbox"]:checked) .switch-thumb {
   .settings-panels { padding: 16px 16px 32px; background: var(--card); }
   .settings-card { padding: 14px 0; column-gap: 12px; }
   .settings-card > select { width: auto; min-width: 128px; max-width: 55%; }
-  .settings-card > .settings-range { width: 120px; }
+  .settings-card > .settings-range { width: min(120px, 32vw); }
+  .settings-card > .settings-range-value { min-width: 40px; font-size: 12px; }
   .settings-card > .settings-card-row {
     flex-direction: row;
     align-items: center;
@@ -3315,15 +3882,39 @@ html[dir="rtl"] .switch.on .switch-thumb { transform: translateX(-18px); }
 .memory-item-caret { opacity: 0.45; font-size: 15px; line-height: 1; }
 .memory-item:hover .memory-item-caret { opacity: 0.8; }
 
-.memory-detail-head { display: flex; align-items: flex-start; gap: 10px; }
+.memory-detail-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+}
 .memory-back-btn { width: 30px; height: 30px; flex: none; }
 .memory-back-btn svg { width: 18px; height: 18px; }
-.memory-detail-titles { min-width: 0; }
-.memory-detail-title { font-size: 15px; font-weight: 600; color: var(--text); }
+.memory-detail-titles { min-width: 0; flex: 1; }
+.memory-detail-title { font-size: 16px; font-weight: 600; color: var(--text); }
 .memory-detail-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.memory-detail-delete {
+  flex: none;
+  margin-inline-start: auto;
+  font-size: 13px;
+}
+
+.memory-section { margin-top: 18px; }
+.memory-section-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.memory-summary {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
 .memory-detail-body {
   list-style: none;
-  margin: 14px 0 0;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -3346,7 +3937,44 @@ html[dir="rtl"] .switch.on .switch-thumb { transform: translateX(-18px); }
   border-radius: 50%;
   background: var(--text-secondary);
 }
-.memory-detail-actions { margin-top: 18px; display: flex; }
+
+/* Talk-to-Paul composer (Claude-style bottom input) */
+.memory-talk-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 22px;
+  padding: 8px 10px 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+}
+.memory-talk-row input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  outline: none;
+}
+.memory-talk-send {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  flex: none;
+}
+.memory-talk-send svg { width: 16px; height: 16px; }
+.memory-talk-send:disabled { opacity: 0.5; cursor: not-allowed; }
+.memory-talk-hint {
+  margin: 8px 4px 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
 
 .memory-add-row { display: flex; gap: 8px; margin-top: 14px; }
 .memory-add-row input {
@@ -3361,25 +3989,6 @@ html[dir="rtl"] .switch.on .switch-thumb { transform: translateX(-18px); }
 }
 
 .memory-actions-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-
-.memory-edit-head { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
-.memory-edit-head h3 { margin: 0; font-size: 18px; font-weight: 600; color: var(--text); }
-.memory-edit-form { display: flex; flex-direction: column; gap: 20px; }
-.memory-edit-field { display: flex; flex-direction: column; gap: 8px; }
-.memory-edit-field label { font-size: 13px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
-.memory-edit-field input,
-.memory-edit-field textarea {
-  padding: 9px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg);
-  color: var(--text);
-  font-family: inherit;
-  font-size: 13.5px;
-}
-.memory-edit-field textarea { resize: vertical; min-height: 120px; font-family: monospace; }
-.memory-edit-actions { display: flex; gap: 8px; margin-top: 12px; }
-.memory-edit-actions button { flex: 1; }
 
 @media (max-width: 768px) {
   .memory-item { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
@@ -3749,4 +4358,86 @@ html[dir="rtl"] .switch.on .switch-thumb { transform: translateX(-18px); }
   .memory-item { padding: 11px; column-gap: 8px; }
   .memory-item-title { font-size: 13px; }
   .memory-item-content { font-size: 12px; }
+}
+
+/* ---- v8 polish --------------------------------------------------------- */
+
+/* Grid settings rows: title + optional desc stack in first column */
+.settings-card > .settings-card-title {
+  grid-column: 1;
+  grid-row: 1;
+  margin-bottom: 0;
+}
+.settings-card > .settings-card-desc {
+  grid-column: 1;
+  grid-row: 2;
+}
+.settings-card > .settings-card-row {
+  grid-column: 1 / -1;
+}
+.settings-card > select,
+.settings-card > .segmented {
+  grid-column: 2 / -1;
+  grid-row: 1 / span 2;
+  justify-self: end;
+  align-self: center;
+  max-width: min(240px, 100%);
+}
+.settings-card > .switch {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  justify-self: end;
+  align-self: center;
+}
+
+/* Guest banner: readable on narrow screens */
+.guest-banner {
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding-block: 10px;
+  padding-inline: 12px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.guest-banner span {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+/* User menu: denser Claude-like rows */
+.user-menu-items button {
+  min-height: 36px;
+}
+.user-menu-header {
+  padding-block: 12px;
+}
+
+/* Session UA secondary line already styled; ensure badge doesn't wrap badly */
+.session-device {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+.session-current-badge {
+  margin-inline-start: 0;
+  margin-top: 2px;
+}
+
+/* Soft-delete pending status */
+#delete-account-status {
+  color: var(--danger, #c44);
+  font-size: 12.5px;
+  margin-top: 4px;
+}
+
+/* Prefer reduced motion globally when user chose “none” */
+html[data-animation="none"] *,
+html[data-animation="none"] *::before,
+html[data-animation="none"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }

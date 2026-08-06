@@ -2,26 +2,21 @@
  * Text-to-speech for Paul's replies.
  *
  * Two paths:
- *  - "High-quality voice" ON  → POST /api/tts, which proxies a studio voice
- *    (ElevenLabs multilingual) server-side so the API key never reaches the
- *    browser. Returns MP3 audio we play with an <audio> element.
- *  - OFF (or the proxy is unavailable) → the browser's built-in
- *    speechSynthesis voice, exactly as before.
+ *  - "High-quality voice" ON  → POST /api/tts (studio voice proxy).
+ *  - OFF (or proxy unavailable) → browser speechSynthesis.
  *
- * Two things used to go wrong and are handled explicitly here:
- *  1. The studio request is slower than the device voice, so the old code could
- *     start the device voice *and* then let the studio clip play on top of it.
- *     Every speak() call now owns a generation id: a late studio response from
- *     an older generation is thrown away instead of played.
- *  2. A slow-but-successful request surfaced as "the service didn't respond".
- *     The request now has a generous abort timeout and the fallback notice is
- *     only emitted when nothing was spoken by the studio voice at all.
+ * Latency notes:
+ *  - Browser voices are warmed and cached at startup so the first "Read aloud"
+ *    does not wait on voiceschanged.
+ *  - Voice pick is cached per language code.
+ *  - While a studio request is in flight, browser voices are warmed in parallel
+ *    so a fallback can start immediately after the settle delay.
+ *  - Settle delay is short for "not configured" (501) and longer for real errors.
  */
 
 import { API_BASE, authHeaders } from "../api";
 import { getPreferences, type VoiceStyle } from "./preferences";
 
-/** Studio voices chosen to roughly match each "voice style" option. */
 const VOICE_IDS: Record<VoiceStyle, string> = {
   natural: "EXAVITQu4vr4xnSDxMaL", // Sarah
   formal: "JBFqnCBsd6RMkjVDRZzb", // George
@@ -29,23 +24,22 @@ const VOICE_IDS: Record<VoiceStyle, string> = {
   calm: "XrExE9yKIg1WjnnlVkGX", // Matilda
 };
 
-/** How long to wait for the studio clip before giving up on it. Generous on
- *  purpose: the previous short wait was what produced the "didn't respond"
- *  warning on perfectly good (just slow) requests. */
 const TTS_TIMEOUT_MS = 45000;
 
-/** Minimum wait (ms) before the system voice reader is allowed to start as a
- *  fallback. This prevents the device voice from firing immediately while the
- *  studio request is still in-flight on a slow connection. */
-const SYSTEM_VOICE_FALLBACK_DELAY_MS = 800;
+/** Settle delay after a hard studio failure before system voice. */
+const SYSTEM_VOICE_FALLBACK_DELAY_MS = 1200;
+/** Faster settle when the deployment simply has no studio voice (501). */
+const SYSTEM_VOICE_QUICK_FALLBACK_MS = 350;
 
 let currentAudio: HTMLAudioElement | null = null;
 let currentAbort: AbortController | null = null;
-/** Incremented on every speak()/stopSpeaking(); anything from an older
- *  generation must not produce sound. */
 let generation = 0;
 
-/** Thrown when the studio-voice proxy can't serve audio (not configured, upstream error…). */
+/** Cached voice list + per-lang picks (invalidated on voiceschanged). */
+let cachedVoices: SpeechSynthesisVoice[] | null = null;
+const voiceByLang = new Map<string, SpeechSynthesisVoice | null>();
+let voicesWarmPromise: Promise<void> | null = null;
+
 export class TtsUnavailableError extends Error {
   status: number;
   constructor(status: number) {
@@ -54,7 +48,6 @@ export class TtsUnavailableError extends Error {
   }
 }
 
-/** Strip markdown so the voice doesn't read out asterisks and backticks. */
 function toPlainText(markdown: string): string {
   return markdown
     .replace(/```[\s\S]*?```/g, " ")
@@ -69,7 +62,6 @@ function toPlainText(markdown: string): string {
     .trim();
 }
 
-/** Hard-stop the studio clip (and cancel an in-flight request for it). */
 function killStudioAudio() {
   if (currentAbort) {
     currentAbort.abort();
@@ -81,30 +73,175 @@ function killStudioAudio() {
       currentAudio.removeAttribute("src");
       currentAudio.load();
     } catch {
-      // element already detached — nothing to do
+      // ignore
     }
     currentAudio = null;
   }
 }
 
-/** Stop anything currently being read aloud, on either path. */
+function killBrowserVoice() {
+  if ("speechSynthesis" in window) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch {
+      // ignore
+    }
+  }
+}
+
 export function stopSpeaking() {
   generation++;
-  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  killBrowserVoice();
   killStudioAudio();
 }
 
+function invalidateVoiceCache() {
+  cachedVoices = null;
+  voiceByLang.clear();
+}
+
+function readVoices(): SpeechSynthesisVoice[] {
+  if (!("speechSynthesis" in window)) return [];
+  if (cachedVoices && cachedVoices.length) return cachedVoices;
+  const list = window.speechSynthesis.getVoices();
+  if (list.length) cachedVoices = list;
+  return list;
+}
+
+/**
+ * Score voices so we prefer local, matching-language, high-quality engines
+ * (e.g. Google / Microsoft / Apple) over remote/slow ones.
+ */
+function scoreVoice(v: SpeechSynthesisVoice, lang: string, prefix: string): number {
+  let score = 0;
+  const vLang = (v.lang || "").toLowerCase();
+  if (vLang === lang.toLowerCase()) score += 100;
+  else if (vLang.startsWith(prefix)) score += 60;
+  else if (vLang.split("-")[0] === prefix) score += 40;
+  else return -1;
+
+  if (v.localService) score += 25;
+  if (v.default) score += 5;
+
+  const name = (v.name || "").toLowerCase();
+  // Prefer known quality engines slightly; penalize novelty/remote-sounding names.
+  if (/google|microsoft|apple|samantha|daniel|karen|thomas|nicky|zira|david/.test(name)) score += 10;
+  if (/remote|network|compact/.test(name)) score -= 5;
+  return score;
+}
+
+function pickBrowserVoice(lang: string): SpeechSynthesisVoice | null {
+  if (voiceByLang.has(lang)) return voiceByLang.get(lang) ?? null;
+
+  const voices = readVoices();
+  if (!voices.length) {
+    voiceByLang.set(lang, null);
+    return null;
+  }
+
+  const prefix = (lang.split("-")[0] || lang).toLowerCase();
+  let best: SpeechSynthesisVoice | null = null;
+  let bestScore = -1;
+  for (const v of voices) {
+    const s = scoreVoice(v, lang, prefix);
+    if (s > bestScore) {
+      bestScore = s;
+      best = v;
+    }
+  }
+  if (!best) best = voices.find((v) => v.default) || voices[0] || null;
+  voiceByLang.set(lang, best);
+  return best;
+}
+
+/**
+ * Warm the speechSynthesis voice list as early as possible so the first
+ * speak() call does not block on voiceschanged.
+ */
+export function warmBrowserVoices(): Promise<void> {
+  if (!("speechSynthesis" in window)) return Promise.resolve();
+  if (voicesWarmPromise) return voicesWarmPromise;
+
+  voicesWarmPromise = new Promise((resolve) => {
+    const finish = () => {
+      readVoices();
+      // Pre-cache the current preference language.
+      try {
+        pickBrowserVoice(getPreferences().voiceLanguage);
+      } catch {
+        // prefs may not be ready in edge cases
+      }
+      resolve();
+    };
+
+    const existing = window.speechSynthesis.getVoices();
+    if (existing.length) {
+      cachedVoices = existing;
+      finish();
+      return;
+    }
+
+    const onChange = () => {
+      window.speechSynthesis.removeEventListener("voiceschanged", onChange);
+      finish();
+    };
+    window.speechSynthesis.addEventListener("voiceschanged", onChange);
+    // Kick Chrome/Edge into loading the list.
+    try {
+      window.speechSynthesis.getVoices();
+    } catch {
+      // ignore
+    }
+    setTimeout(finish, 400);
+  });
+
+  // Keep cache fresh if the engine replaces the list later.
+  window.speechSynthesis.addEventListener("voiceschanged", () => {
+    invalidateVoiceCache();
+    readVoices();
+    try {
+      pickBrowserVoice(getPreferences().voiceLanguage);
+    } catch {
+      // ignore
+    }
+  });
+
+  return voicesWarmPromise;
+}
+
+/** Ensure voices are available; usually instant after warmBrowserVoices(). */
+function ensureVoicesLoaded(): Promise<void> {
+  if (readVoices().length) return Promise.resolve();
+  return warmBrowserVoices();
+}
+
 function speakWithBrowser(text: string, myGen: number, onEnd?: () => void): Promise<void> {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     if (!("speechSynthesis" in window) || myGen !== generation) {
       if (myGen === generation) onEnd?.();
       resolve();
       return;
     }
+
+    await ensureVoicesLoaded();
+    if (myGen !== generation) {
+      resolve();
+      return;
+    }
+
+    killBrowserVoice();
+
     const prefs = getPreferences();
     const utter = new SpeechSynthesisUtterance(text);
     utter.lang = prefs.voiceLanguage;
     utter.rate = prefs.voiceSpeed;
+    const voice = pickBrowserVoice(prefs.voiceLanguage);
+    if (voice) {
+      utter.voice = voice;
+      // Keep lang aligned with the chosen voice for engines that ignore voice.lang.
+      if (voice.lang) utter.lang = voice.lang;
+    }
+
     const finish = () => {
       if (myGen === generation) onEnd?.();
       resolve();
@@ -115,16 +252,14 @@ function speakWithBrowser(text: string, myGen: number, onEnd?: () => void): Prom
   });
 }
 
-/**
- * Fetch and play the studio clip.
- * Resolves once playback finished. Rejects only when nothing was played, so the
- * caller can fall back to the device voice without ever doubling up.
- */
 async function speakWithProxy(text: string, myGen: number, onEnd?: () => void): Promise<void> {
   const prefs = getPreferences();
   const abort = new AbortController();
   currentAbort = abort;
   const timer = setTimeout(() => abort.abort(), TTS_TIMEOUT_MS);
+
+  // Warm browser voices in parallel so a fallback does not pay load cost later.
+  void warmBrowserVoices();
 
   let resp: Response;
   try {
@@ -145,8 +280,6 @@ async function speakWithProxy(text: string, myGen: number, onEnd?: () => void): 
   }
   if (currentAbort === abort) currentAbort = null;
 
-  // The user pressed stop (or started another message) while we were waiting:
-  // stay silent instead of talking over whatever is happening now.
   if (myGen !== generation) throw new TtsUnavailableError(0);
   if (!resp.ok) throw new TtsUnavailableError(resp.status);
 
@@ -178,9 +311,12 @@ async function speakWithProxy(text: string, myGen: number, onEnd?: () => void): 
       audio
         .play()
         .then(() => {
-          // Playback really started — this generation now owns the speaker.
-          if (myGen === generation) currentAudio = audio;
-          else done(new Error("superseded"));
+          if (myGen === generation) {
+            currentAudio = audio;
+            killBrowserVoice();
+          } else {
+            done(new Error("superseded"));
+          }
         })
         .catch((e) => done(e));
     });
@@ -194,10 +330,6 @@ async function speakWithProxy(text: string, myGen: number, onEnd?: () => void): 
   }
 }
 
-/**
- * Read text aloud using the user's chosen voice path.
- * Falls back to the device voice if the studio proxy isn't available.
- */
 export async function speak(markdown: string, opts: { onEnd?: () => void } = {}): Promise<void> {
   const text = toPlainText(markdown);
   if (!text) {
@@ -216,17 +348,11 @@ export async function speak(markdown: string, opts: { onEnd?: () => void } = {})
     await speakWithProxy(text, myGen, opts.onEnd);
     return;
   } catch (err) {
-    // Superseded or stopped: another generation owns the speaker now, so this
-    // one must not start the device voice on top of it.
     if (myGen !== generation) return;
 
     const aborted = err instanceof DOMException && err.name === "AbortError";
     const status = err instanceof TtsUnavailableError ? err.status : 0;
 
-    // 501 = the studio voice simply isn't configured on this deployment. That's a
-    // known state, not a fault worth interrupting the conversation for, so the
-    // device voice takes over silently. 0 means "we chose not to play" (stopped
-    // or superseded) — also nothing to announce.
     if (status !== 501 && status !== 0) {
       document.dispatchEvent(
         new CustomEvent("tts-fallback", { detail: { status, timeout: aborted } })
@@ -236,11 +362,19 @@ export async function speak(markdown: string, opts: { onEnd?: () => void } = {})
     }
 
     killStudioAudio();
-    // Wait a short moment before starting the system voice reader. This ensures
-    // we don't accidentally double-up if the studio audio is still cleaning up,
-    // and gives the user a brief pause that feels intentional rather than abrupt.
-    await new Promise<void>((resolve) => setTimeout(resolve, SYSTEM_VOICE_FALLBACK_DELAY_MS));
-    if (myGen !== generation) return; // superseded during the wait
+    killBrowserVoice();
+
+    // Adaptive settle: quick when studio simply isn't configured; longer on errors.
+    const delay =
+      status === 501 || status === 0
+        ? SYSTEM_VOICE_QUICK_FALLBACK_MS
+        : SYSTEM_VOICE_FALLBACK_DELAY_MS;
+    await new Promise<void>((resolve) => setTimeout(resolve, delay));
+
+    if (myGen !== generation) return;
+    killBrowserVoice();
+    if (myGen !== generation) return;
+
     await speakWithBrowser(text, myGen, opts.onEnd);
   }
 }

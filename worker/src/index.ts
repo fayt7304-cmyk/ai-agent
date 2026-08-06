@@ -5,6 +5,9 @@ import {
   hashPassword,
   verifyPassword,
   createSession,
+  GUEST_SESSION_DAYS,
+  purgeExpiredGuestData,
+  summarizeUserAgent,
   destroySession,
   destroyAllSessionsForUser,
   getUserFromRequest,
@@ -22,7 +25,10 @@ import {
   randomToken,
 } from "./auth";
 import { buildGoogleAuthUrl, exchangeCodeForAccessToken, fetchGoogleUserInfo } from "./oauth-google";
-import { sendPasswordResetEmail, sendLeadNotificationEmail } from "./email";
+import { sendPasswordResetEmail, sendLeadNotificationEmail, sendAccountDeletionEmail } from "./email";
+
+/** Grace period before a soft-deleted account is purged for good. */
+const ACCOUNT_DELETION_GRACE_DAYS = 7;
 import { callMistral, extractMemories } from "./mistral";
 
 // ---- Customize your agent defaults here ----------------------------
@@ -82,7 +88,7 @@ async function handleSignup(request: Request, env: Env): Promise<Response> {
     .bind(id, username, email, hash, salt, DEFAULT_MODEL, DEFAULT_INSTRUCTIONS, nowIso())
     .run();
 
-  const { token, maxAge } = await createSession(env, id);
+  const { token, maxAge } = await createSession(env, id, undefined, request.headers.get("User-Agent"));
   const resp = json({
     user: {
       id,
@@ -121,7 +127,7 @@ async function handleLogin(request: Request, env: Env): Promise<Response> {
   const ok = await verifyPassword(password, user.password_hash, user.password_salt);
   if (!ok) return err("Invalid username or password.", 401);
 
-  const { token, maxAge } = await createSession(env, user.id);
+  const { token, maxAge } = await createSession(env, user.id, undefined, request.headers.get("User-Agent"));
   const resp = json({ user: toPublicUser(user), session_token: token });
   resp.headers.set("Set-Cookie", sessionCookieHeader(token, maxAge, env.COOKIE_DOMAIN));
   return resp;
@@ -136,8 +142,17 @@ async function handleLogout(request: Request, env: Env): Promise<Response> {
 }
 
 async function handleMe(request: Request, env: Env): Promise<Response> {
+  await purgeAccountsPastGrace(env).catch(() => {});
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
+  // If this account’s grace period already elapsed, finish the hard delete now.
+  if (user.deletion_requested_at) {
+    const purgeAt = new Date(user.deletion_requested_at).getTime() + ACCOUNT_DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000;
+    if (Date.now() >= purgeAt) {
+      await hardDeleteUser(env, user.id).catch(() => {});
+      return err("Not authenticated.", 401);
+    }
+  }
   return json({ user: toPublicUser(user) });
 }
 
@@ -237,7 +252,10 @@ async function handleUpdateSettings(request: Request, env: Env): Promise<Respons
 // The account can later be "claimed" (handleClaimAccount) into a normal
 // username/password account without losing any history, since it's the
 // same row/id the whole time.
-async function handleGuestLogin(env: Env): Promise<Response> {
+async function handleGuestLogin(request: Request, env: Env): Promise<Response> {
+  // Opportunistic cleanup of expired guest sessions / abandoned guest accounts.
+  await purgeExpiredGuestData(env).catch(() => {});
+
   const id = crypto.randomUUID();
   const username = `guest_${randomToken(6)}`;
   await env.DB.prepare(
@@ -247,7 +265,9 @@ async function handleGuestLogin(env: Env): Promise<Response> {
     .bind(id, username, DEFAULT_MODEL, DEFAULT_INSTRUCTIONS, nowIso())
     .run();
 
-  const { token, maxAge } = await createSession(env, id);
+  // Guest sessions hard-expire after one month (not extended on activity).
+  const { token, maxAge } = await createSession(env, id, GUEST_SESSION_DAYS, request.headers.get("User-Agent"));
+  const expiresAt = new Date(Date.now() + maxAge * 1000).toISOString();
   const resp = json({
     user: {
       id,
@@ -263,6 +283,8 @@ async function handleGuestLogin(env: Env): Promise<Response> {
     // Returned so the frontend can authenticate with a Bearer token when the
     // browser refuses to keep the cross-subdomain session cookie.
     session_token: token,
+    session_expires_at: expiresAt,
+    session_days: GUEST_SESSION_DAYS,
   });
   resp.headers.set("Set-Cookie", sessionCookieHeader(token, maxAge, env.COOKIE_DOMAIN));
   return resp;
@@ -469,7 +491,7 @@ async function handleGoogleCallback(request: Request, env: Env): Promise<Respons
     user = { id };
   }
 
-  const { token, maxAge } = await createSession(env, user.id);
+  const { token, maxAge } = await createSession(env, user.id, undefined, request.headers.get("User-Agent"));
   const resp = new Response(null, {
     status: 302,
     // Fragment (not query) so the token is never sent to a server or logged.
@@ -535,23 +557,35 @@ async function handleListSessions(request: Request, env: Env): Promise<Response>
   if (!user) return err("Not authenticated.", 401);
 
   const currentToken = readSessionToken(request);
-  const { results } = await env.DB.prepare(
-    `SELECT token, created_at, expires_at FROM sessions
-     WHERE user_id = ? AND expires_at > ?
-     ORDER BY created_at DESC`
-  )
-    .bind(user.id, nowIso())
-    .all<{ token: string; created_at: string; expires_at: string }>();
+  let results: { token: string; created_at: string; expires_at: string; user_agent?: string | null }[] = [];
+  try {
+    const q = await env.DB.prepare(
+      `SELECT token, created_at, expires_at, user_agent FROM sessions
+       WHERE user_id = ? AND expires_at > ?
+       ORDER BY created_at DESC`
+    )
+      .bind(user.id, nowIso())
+      .all<{ token: string; created_at: string; expires_at: string; user_agent: string | null }>();
+    results = q.results || [];
+  } catch {
+    const q = await env.DB.prepare(
+      `SELECT token, created_at, expires_at FROM sessions
+       WHERE user_id = ? AND expires_at > ?
+       ORDER BY created_at DESC`
+    )
+      .bind(user.id, nowIso())
+      .all<{ token: string; created_at: string; expires_at: string }>();
+    results = q.results || [];
+  }
 
-  // Return sessions as a list — use a hashed id so we never expose the raw token.
-  // The frontend only needs to identify a session to revoke it, not read the token.
-  const sessions = (results || []).map((s) => ({
-    id: s.token.slice(0, 8), // short prefix used as a display id for revocation
+  const sessions = results.map((s) => ({
+    id: s.token.slice(0, 8),
     token_prefix: s.token.slice(0, 8),
     created_at: s.created_at,
     expires_at: s.expires_at,
     is_current: s.token === currentToken,
-    device: "Browser session",
+    device: summarizeUserAgent(s.user_agent),
+    user_agent: s.user_agent || null,
   }));
 
   return json(sessions);
@@ -559,6 +593,14 @@ async function handleListSessions(request: Request, env: Env): Promise<Response>
 
 // Revokes (deletes) a single session by its token prefix. The current
 // session cannot be revoked this way — use /api/auth/logout instead.
+/** Log out every device: wipe all sessions for this user (including current). */
+async function handleLogoutAllSessions(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  await env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(user.id).run();
+  return json({ ok: true });
+}
+
 async function handleRevokeSession(request: Request, env: Env, tokenPrefix: string): Promise<Response> {
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
@@ -586,31 +628,129 @@ async function handleRevokeSession(request: Request, env: Env, tokenPrefix: stri
 }
 
 // ---- Delete account -------------------------------------------------
-// Permanently deletes the user's account and all associated data.
-// The DB schema uses ON DELETE CASCADE on conversations/messages/leads,
-// so deleting the user row cascades automatically.
+/**
+ * Hard-delete one user and all associated rows. Used after the 7-day grace
+ * period (and for any force-purge path). Cascade covers most children; we
+ * still clean tables that may not cascade on every deployment.
+ */
+async function hardDeleteUser(env: Env, userId: string): Promise<void> {
+  await destroyAllSessionsForUser(env, userId);
+  try {
+    await env.DB.prepare("DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE user_id = ?)").bind(userId).run();
+  } catch { /* older schemas */ }
+  await env.DB.prepare("DELETE FROM conversations WHERE user_id = ?").bind(userId).run();
+  try {
+    await env.DB.prepare("DELETE FROM memories WHERE user_id = ?").bind(userId).run();
+  } catch { /* optional table */ }
+  try {
+    await env.DB.prepare("DELETE FROM leads WHERE user_id = ?").bind(userId).run();
+  } catch { /* optional */ }
+  try {
+    await env.DB.prepare("DELETE FROM password_reset_tokens WHERE user_id = ?").bind(userId).run();
+  } catch { /* optional */ }
+  await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(userId).run();
+}
+
+/** Purge accounts whose soft-delete grace period has elapsed. */
+async function purgeAccountsPastGrace(env: Env): Promise<void> {
+  const cutoff = new Date(Date.now() - ACCOUNT_DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT id FROM users WHERE deletion_requested_at IS NOT NULL AND deletion_requested_at <= ? LIMIT 25`
+    )
+      .bind(cutoff)
+      .all<{ id: string }>();
+    for (const row of results || []) {
+      try {
+        await hardDeleteUser(env, row.id);
+      } catch (e) {
+        console.error("purgeAccountsPastGrace failed for", row.id, e);
+      }
+    }
+  } catch {
+    // Column may not exist until migration 0008 is applied.
+  }
+}
+
+/**
+ * Soft-delete: mark the account for removal in 7 days, keep the session so
+ * the user can still use the app and cancel. Emails a Resend notice when an
+ * address is on file.
+ */
 async function handleDeleteAccount(request: Request, env: Env): Promise<Response> {
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
 
-  // Destroy all sessions first (including the current one)
-  await destroyAllSessionsForUser(env, user.id);
+  await purgeAccountsPastGrace(env).catch(() => {});
 
-  // Delete all conversations and messages (cascade handles messages/leads)
-  await env.DB.prepare("DELETE FROM conversations WHERE user_id = ?").bind(user.id).run();
+  if (user.deletion_requested_at) {
+    const purgeAt = new Date(
+      new Date(user.deletion_requested_at).getTime() + ACCOUNT_DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000
+    ).toISOString();
+    return json({
+      ok: true,
+      soft: true,
+      already_pending: true,
+      deletion_requested_at: user.deletion_requested_at,
+      purge_at: purgeAt,
+      email_sent: false,
+    });
+  }
 
-  // Delete any leads associated with this user
-  await env.DB.prepare("DELETE FROM leads WHERE user_id = ?").bind(user.id).run();
+  const now = nowIso();
+  try {
+    await env.DB.prepare("UPDATE users SET deletion_requested_at = ? WHERE id = ?").bind(now, user.id).run();
+  } catch {
+    return err(
+      "Account deletion requires a database update (run migration 0008_account_deletion). Contact the admin.",
+      500
+    );
+  }
 
-  // Delete password reset tokens
-  await env.DB.prepare("DELETE FROM password_reset_tokens WHERE user_id = ?").bind(user.id).run();
+  const purgeAt = new Date(
+    Date.now() + ACCOUNT_DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000
+  ).toISOString();
+  let emailSent = false;
+  if (user.email && env.RESEND_API_KEY) {
+    const settingsUrl = `${(env.FRONTEND_URL || "https://ai.afmarbre.com").replace(/\/$/, "")}/#settings=account`;
+    try {
+      await sendAccountDeletionEmail(env, user.email, {
+        username: user.display_name || user.username,
+        purgeAt,
+        settingsUrl,
+      });
+      emailSent = true;
+    } catch (e) {
+      console.error("Failed to send account deletion email", e);
+    }
+  }
 
-  // Finally delete the user row itself
-  await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id).run();
+  // Session stays alive — user can keep using the app and cancel.
+  const refreshed = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(user.id).first<any>();
+  return json({
+    ok: true,
+    soft: true,
+    deletion_requested_at: now,
+    purge_at: purgeAt,
+    email_sent: emailSent,
+    user: refreshed ? toPublicUser(refreshed) : toPublicUser({ ...user, deletion_requested_at: now } as any),
+  });
+}
 
-  const resp = json({ ok: true });
-  resp.headers.set("Set-Cookie", clearSessionCookieHeader(env.COOKIE_DOMAIN));
-  return resp;
+/** Cancel a pending soft-delete during the grace period. */
+async function handleCancelDeletion(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  if (!user.deletion_requested_at) {
+    return json({ ok: true, user: toPublicUser(user), cancelled: false });
+  }
+  try {
+    await env.DB.prepare("UPDATE users SET deletion_requested_at = NULL WHERE id = ?").bind(user.id).run();
+  } catch {
+    return err("Could not cancel deletion.", 500);
+  }
+  const refreshed = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(user.id).first<any>();
+  return json({ ok: true, cancelled: true, user: refreshed ? toPublicUser(refreshed) : toPublicUser({ ...user, deletion_requested_at: null } as any) });
 }
 
 // ---- Memory ---------------------------------------------------------
@@ -698,6 +838,101 @@ async function handleDeleteMemory(request: Request, env: Env, id: string): Promi
   if (!user) return err("Not authenticated.", 401);
   await env.DB.prepare("DELETE FROM memories WHERE id = ? AND user_id = ?").bind(id, user.id).run();
   return json({ memories: await listMemoryRows(env, user.id) });
+}
+
+/**
+ * POST /api/memory/revise  { id, instruction }
+ * Paul rewrites (or deletes) one memory entry from a natural-language request,
+ * so the settings UI can offer "tell Paul what to change" instead of a form.
+ */
+async function handleReviseMemory(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  if (!env.MISTRAL_API_KEY) return err("Memory is not configured on this deployment.", 501);
+
+  const body = (await request.json().catch(() => ({}))) as { id?: string; instruction?: string };
+  const id = (body.id || "").trim();
+  const instruction = (body.instruction || "").trim();
+  if (!id) return err("Missing memory id.", 400);
+  if (!instruction) return err("Tell Paul what to change or remove.", 400);
+
+  const row = await env.DB.prepare(
+    "SELECT id, title, content FROM memories WHERE id = ? AND user_id = ?"
+  )
+    .bind(id, user.id)
+    .first<{ id: string; title: string; content: string }>();
+  if (!row) return err("Memory entry not found.", 404);
+
+  const prompt = `You maintain long-term memory entries for an assistant app.
+Apply the user's instruction to the memory entry below.
+
+Current title: ${row.title}
+Current content:
+${row.content}
+
+User instruction:
+${instruction.slice(0, 800)}
+
+Reply with JSON only, one of:
+{"action":"update","title":"Short topic","content":"Revised content, 1-4 sentences."}
+{"action":"delete"}
+
+Rules:
+- If the user asks to forget / remove / delete this memory, use action delete.
+- Otherwise return a clear updated title (max 60 chars) and content (max 600 chars).
+- Keep durable facts; drop one-off or time-bound details the user asked to remove.
+- Do not invent new facts the user did not imply.`;
+
+  try {
+    const resp = await fetch("https://api.mistral.ai/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.MISTRAL_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "mistral-small-latest",
+        response_format: { type: "json_object" },
+        temperature: 0.2,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    if (!resp.ok) {
+      const detail = (await resp.text().catch(() => "")).slice(0, 200);
+      return err(`Could not revise memory (${resp.status}): ${detail}`, 502);
+    }
+    const data: any = await resp.json();
+    const raw = data?.choices?.[0]?.message?.content;
+    const text = typeof raw === "string" ? raw : "";
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return err("Could not parse memory revision.", 502);
+    }
+
+    if (parsed?.action === "delete") {
+      await env.DB.prepare("DELETE FROM memories WHERE id = ? AND user_id = ?").bind(id, user.id).run();
+      return json({ deleted: true, memories: await listMemoryRows(env, user.id) });
+    }
+
+    const newTitle = String(parsed?.title || row.title).trim().slice(0, 60) || row.title;
+    const newContent = String(parsed?.content || row.content).trim().slice(0, 600);
+    if (!newContent) return err("Revised content was empty.", 400);
+
+    const now = new Date().toISOString();
+    // If the title changed, avoid unique(user,title) conflicts by deleting old then upserting.
+    if (newTitle !== row.title) {
+      await env.DB.prepare("DELETE FROM memories WHERE id = ? AND user_id = ?").bind(id, user.id).run();
+      await upsertMemory(env, user.id, { title: newTitle, content: newContent }, "manual");
+    } else {
+      await env.DB.prepare(
+        "UPDATE memories SET content = ?, updated_at = ? WHERE id = ? AND user_id = ?"
+      )
+        .bind(newContent, now, id, user.id)
+        .run();
+    }
+    return json({ deleted: false, memories: await listMemoryRows(env, user.id) });
+  } catch (e: any) {
+    return err("Memory revision failed: " + (e?.message || "Unknown error."), 500);
+  }
 }
 
 // "Manage memory" replaced the old download-a-txt-file behaviour: this now reads
@@ -1496,7 +1731,7 @@ export default {
       } else if (path === "/api/auth/me" && request.method === "GET") {
         resp = await handleMe(request, env);
       } else if (path === "/api/auth/guest" && request.method === "POST") {
-        resp = await handleGuestLogin(env);
+        resp = await handleGuestLogin(request, env);
       } else if (path === "/api/auth/claim" && request.method === "POST") {
         resp = await handleClaimAccount(request, env);
       } else if (path === "/api/auth/google" && request.method === "GET") {
@@ -1514,12 +1749,17 @@ export default {
       } else if (path === "/api/sessions" && request.method === "GET") {
         // List all active sessions for the current user
         resp = await handleListSessions(request, env);
+      } else if (path === "/api/sessions/logout-all" && request.method === "POST") {
+        // Wipe every session for this user (all devices)
+        resp = await handleLogoutAllSessions(request, env);
       } else if (path.match(/^\/api\/sessions\/[^/]+$/) && request.method === "DELETE") {
         // Revoke a specific session by its token prefix
         resp = await handleRevokeSession(request, env, path.split("/").pop()!);
       } else if (path === "/api/user/delete" && request.method === "DELETE") {
-        // Permanently delete the current user's account and all data
+        // Soft-delete: 7-day grace period, then hard purge
         resp = await handleDeleteAccount(request, env);
+      } else if (path === "/api/user/cancel-deletion" && request.method === "POST") {
+        resp = await handleCancelDeletion(request, env);
       } else if (path === "/api/memory" && request.method === "GET") {
         // Paul's cross-chat memory: list entries + the on/off switch
         resp = await handleListMemory(request, env);
@@ -1529,6 +1769,9 @@ export default {
         resp = await handleMemorySettings(request, env);
       } else if (path.match(/^\/api\/memory\/[^/]+$/) && request.method === "DELETE") {
         resp = await handleDeleteMemory(request, env, path.split("/").pop()!);
+      } else if (path === "/api/memory/revise" && request.method === "POST") {
+        // Natural-language revise / delete of one memory entry
+        resp = await handleReviseMemory(request, env);
       } else if (path === "/api/memory/generate" && request.method === "POST") {
         // Re-read recent chats and store structured memory entries
         resp = await handleGenerateMemory(request, env);

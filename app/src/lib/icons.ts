@@ -107,6 +107,9 @@ export const icons = {
   chevronLeft: svg(`<path d="M12.5 4.5 6.5 10l6 5.5"/>`),
   chevronRight: svg(`<path d="M7.5 4.5 13.5 10l-6 5.5"/>`),
   sparkle: svg(`<path d="M10 2.5 11.8 7.2 16.5 9 11.8 10.8 10 15.5 8.2 10.8 3.5 9 8.2 7.2z"/>`),
+  globe: svg(
+    `<circle cx="10" cy="10" r="7.5"/><path d="M2.5 10h15"/><path d="M10 2.5c2.2 2.4 3.3 5 3.3 7.5S12.2 15.1 10 17.5C7.8 15.1 6.7 12.5 6.7 10S7.8 4.9 10 2.5z"/>`
+  ),
   share: svg(`<path d="M15.5 7.5 18 10l-2.5 2.5"/><path d="M2 15.5a6.5 6.5 0 0 1 12-4.5"/><line x1="18" y1="10" x2="12" y2="10"/>`),
   chart: svg(`<line x1="3" y1="16.5" x2="17" y2="16.5"/><rect x="4.5" y="10" width="3" height="6.5"/><rect x="8.5" y="6" width="3" height="10.5"/><rect x="12.5" y="3" width="3" height="13.5"/>`),
   fileSearch: svg(`<path d="M11 2.5H6a1.5 1.5 0 0 0-1.5 1.5v12a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5v-7.5L11 2.5Z"/><path d="M10.5 2.5V7h4.5"/><circle cx="11.5" cy="13.5" r="2.5"/><line x1="13.2" y1="15.2" x2="15.5" y2="17.5"/>`),
