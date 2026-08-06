@@ -3385,3 +3385,312 @@ html[dir="rtl"] .switch.on .switch-thumb { transform: translateX(-18px); }
   font-size: 13px;
   text-align: center;
 }
+
+
+/* ================================================================
+   v6 REDESIGN — Tools panel, tool interiors, Memory, mobile Settings
+   Appended last so it wins the cascade over the older rules above.
+   ================================================================ */
+
+:root {
+  --uc-control-h: 40px;
+  --tool-tile-radius: 14px;
+}
+
+/* ---------- Tools modal shell ---------- */
+.modal-tools { max-width: 760px; }
+
+.modal-tools .modal-header {
+  gap: 10px;
+  padding-bottom: 14px;
+}
+.modal-tools .modal-header h2 {
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+#tools-back-btn {
+  font-size: 16px;
+  border-radius: 10px;
+}
+
+/* ---------- Tools home: responsive tile grid ---------- */
+.tools-menu {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.tool-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--tool-tile-radius);
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+  text-align: start;
+  transition: transform 0.14s ease, border-color 0.14s ease, background 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.tool-card:hover,
+.tool-card:focus-visible {
+  background: var(--card);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px -12px rgba(0, 0, 0, 0.55);
+}
+.tool-card:active { transform: translateY(0); }
+
+.tool-card-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: 11px;
+  background: var(--accent-bg);
+  font-size: 19px;
+  line-height: 1;
+}
+
+.tool-card-text { gap: 3px; }
+.tool-card-label { font-size: 14px; font-weight: 600; letter-spacing: -0.005em; }
+.tool-card-sub {
+  font-size: 12.5px;
+  line-height: 1.45;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+@media (max-width: 560px) {
+  .tools-menu { grid-template-columns: 1fr; gap: 8px; }
+  .tool-card { align-items: center; padding: 12px; }
+  .tool-card-icon { width: 34px; height: 34px; flex-basis: 34px; font-size: 17px; }
+  .tool-card-sub {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+}
+
+/* ---------- Inside a tool ---------- */
+.tool-pane { gap: 14px; padding-top: 6px; }
+
+.tool-pane .note {
+  font-size: 12.5px;
+  line-height: 1.5;
+  background: var(--accent-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 11px 13px;
+}
+
+.tool-pane .dropzone {
+  border: 1.5px dashed var(--border);
+  border-radius: var(--tool-tile-radius);
+  padding: 2.1rem 1rem;
+  background: var(--bg);
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.tool-pane .dropzone:hover { border-color: var(--accent); color: var(--text); }
+
+.tool-pane .preview img { max-height: 260px; border-radius: 12px; }
+
+.tool-pane .controls { gap: 8px; }
+
+.tool-pane button.primary:not(.calc-btn):not(.swap-btn),
+.tool-pane button:not(.primary):not(.tab):not(.calc-btn):not(.swap-btn) {
+  height: var(--uc-control-h);
+  padding: 0 16px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 550;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Segmented sub-tabs inside the converter/calculator */
+.calc-mode-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-wrap: nowrap;
+  margin-bottom: 1rem;
+}
+.calc-mode-tabs::-webkit-scrollbar { display: none; }
+.calc-mode-tabs .tab {
+  flex: 1 0 auto;
+  white-space: nowrap;
+  border: 0;
+  background: transparent;
+  border-radius: 9px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.calc-mode-tabs .tab:hover { color: var(--text); }
+.calc-mode-tabs .tab.active {
+  background: var(--card);
+  color: var(--accent-strong, var(--accent));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.tool-pane-uconvert .card { border-radius: var(--tool-tile-radius); padding: 1.1rem; }
+
+.tool-pane-uconvert input[type="number"],
+.tool-pane-uconvert input[type="text"],
+.tool-pane-uconvert select {
+  height: var(--uc-control-h);
+  padding: 0 11px;
+  border-radius: 10px;
+}
+
+.calc-btn { border-radius: 10px; padding: 13px 0; font-weight: 500; }
+
+/* ---------- Graph: Plot button aligned on the same baseline row ---------- */
+.graph-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px auto;
+  align-items: end;
+  gap: 10px;
+  margin-bottom: 1rem;
+}
+.graph-controls .field { min-width: 0; flex: initial; }
+.graph-controls .field + .field { flex: initial; }
+.graph-plot-btn {
+  height: var(--uc-control-h);
+  align-self: end;
+  margin: 0;
+  padding: 0 20px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+@media (max-width: 560px) {
+  .graph-controls { grid-template-columns: minmax(0, 1fr) 120px; }
+  .graph-plot-btn { grid-column: 1 / -1; width: 100%; }
+}
+
+/* ---------- Settings: Memory ---------- */
+#memory-browser .settings-card-row { align-items: flex-start; }
+
+.memory-list {
+  margin-top: 14px;
+  gap: 6px;
+  border-radius: var(--tool-tile-radius);
+}
+.memory-empty {
+  padding: 22px 14px;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--tool-tile-radius);
+  background: var(--bg);
+  font-size: 13px;
+}
+.memory-group-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 12px 2px 2px;
+}
+.memory-item {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  padding: 12px 13px;
+  margin-inline: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+.memory-item + .memory-item { box-shadow: none; }
+.memory-item:hover { background: var(--bg); border-color: var(--accent); }
+.memory-item-title { font-size: 13.5px; font-weight: 600; }
+.memory-item-content { margin-top: 3px; white-space: normal; line-height: 1.45; }
+.memory-item-meta {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+
+.memory-add-row {
+  margin-top: 14px;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+}
+.memory-add-row input {
+  border: 0;
+  background: transparent;
+  padding: 8px 8px;
+}
+.memory-add-row input:focus { outline: none; }
+.memory-add-row .secondary-btn { flex: 0 0 auto; height: 36px; border-radius: 9px; }
+
+.memory-detail { border-radius: var(--tool-tile-radius); }
+.memory-detail-body {
+  margin-top: 14px;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--card);
+}
+.memory-detail-body li { padding: 11px 14px 11px 28px; }
+.memory-detail-body li + li { box-shadow: inset 0 1px 0 var(--border); }
+.memory-detail-body li::before { inset-inline-start: 14px; top: 19px; }
+
+@media (max-width: 720px) {
+  .memory-item { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
+  .memory-item-meta { grid-column: 1; justify-self: start; }
+}
+
+/* ---------- Settings on phones: stop buttons eating the screen ---------- */
+@media (max-width: 640px) {
+  .settings-card-actions { flex-direction: row; flex-wrap: wrap; gap: 8px; }
+  .settings-card-actions .secondary-btn { width: auto; }
+  .settings-panels button.primary { align-self: flex-start; }
+  .settings-panels .danger-btn { width: auto; }
+  .settings-panels .secondary-btn,
+  .settings-panels button.primary,
+  .settings-panels .danger-btn {
+    height: 38px;
+    padding: 0 14px;
+    font-size: 13px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .settings-panels select,
+  .settings-panels .segmented { width: auto; max-width: 100%; }
+  .inline-action-row { flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .settings-nav-btn { padding: 8px 10px; font-size: 12.5px; border-radius: 10px; }
+  .memory-add-row { flex-wrap: nowrap; }
+}
