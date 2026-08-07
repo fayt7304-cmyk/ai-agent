@@ -1,5 +1,6 @@
 import type { Env, ConversationRow, MessageRow, AttachmentIn } from "./types";
 export { PresenceHub } from "./presence-do";
+export { CallRoom } from "./call-do";
 import { toPublicUser } from "./types";
 import { withCors, json } from "./cors";
 import {
@@ -31,7 +32,7 @@ import { sendPasswordResetEmail, sendLeadNotificationEmail, sendAccountDeletionE
 /** Grace period before a soft-deleted account is purged for good. */
 const ACCOUNT_DELETION_GRACE_DAYS = 7;
 import { callMistral, extractMemories } from "./mistral";
-import { adminLog, getAdminLogs, formatAdminLogsText, clearAdminLogs, isAdminUser } from "./admin-log";
+import { adminLog, getAdminLogs, formatAdminLogsText, clearAdminLogs, isAdminUser, isOwnerUsername, STAFF_ROLE_MISSIONS, type StaffRole } from "./admin-log";
 
 // ---- Customize your agent defaults here ----------------------------
 const DEFAULT_MODEL = "mistral-medium-latest";
@@ -1358,7 +1359,8 @@ async function handleAdminLogsClear(request: Request, env: Env): Promise<Respons
 async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
   const user = await getUserFromRequest(env, request);
   if (!user) return json({ error: "Not authenticated" }, 401);
-  if (!isAdminUser(user.username)) return json({ error: "Forbidden" }, 403);
+  const staffRole = await getStaffRole(env, user.id, user.username);
+  if (!canManageUsers(staffRole)) return json({ error: "Forbidden" }, 403);
   await ensureConversationColumns(env);
 
   let onlineIds = new Set<string>();
@@ -1417,7 +1419,8 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
 async function handleAdminBanUser(request: Request, env: Env, targetId: string): Promise<Response> {
   const admin = await getUserFromRequest(env, request);
   if (!admin) return err("Not authenticated.", 401);
-  if (!isAdminUser(admin.username)) return err("Forbidden.", 403);
+  const staffRole = await getStaffRole(env, admin.id, admin.username);
+  if (!canManageUsers(staffRole)) return err("Forbidden.", 403);
   await ensureConversationColumns(env);
   if (targetId === admin.id) return err("You can't ban yourself.", 400);
   const body = (await request.json().catch(() => null)) as { ban?: boolean } | null;
@@ -1445,7 +1448,8 @@ async function handleAdminBanUser(request: Request, env: Env, targetId: string):
 async function handleAdminSetPassword(request: Request, env: Env, targetId: string): Promise<Response> {
   const admin = await getUserFromRequest(env, request);
   if (!admin) return err("Not authenticated.", 401);
-  if (!isAdminUser(admin.username)) return err("Forbidden.", 403);
+  const staffRole = await getStaffRole(env, admin.id, admin.username);
+  if (staffRole !== "owner") return err("Forbidden.", 403);
   const body = (await request.json().catch(() => null)) as { password?: string } | null;
   const password = (body?.password || "").trim();
   if (password.length < 8) return err("Password must be at least 8 characters.", 400);
@@ -1464,7 +1468,8 @@ async function handleAdminSetPassword(request: Request, env: Env, targetId: stri
 async function handleAdminDeleteUser(request: Request, env: Env, targetId: string): Promise<Response> {
   const admin = await getUserFromRequest(env, request);
   if (!admin) return err("Not authenticated.", 401);
-  if (!isAdminUser(admin.username)) return err("Forbidden.", 403);
+  const staffRole = await getStaffRole(env, admin.id, admin.username);
+  if (staffRole !== "owner") return err("Forbidden.", 403);
   if (targetId === admin.id) return err("You can't delete yourself.", 400);
   const target = await env.DB.prepare("SELECT id, username FROM users WHERE id = ?")
     .bind(targetId)
@@ -1492,6 +1497,126 @@ async function handleAdminDeleteUser(request: Request, env: Env, targetId: strin
   }
   adminLog("info", "admin", "user deleted", { target: target.username, by: admin.username });
   return json({ ok: true, deleted: true });
+}
+
+
+async function getStaffRole(env: Env, userId: string, username: string): Promise<StaffRole | null> {
+  if (isOwnerUsername(username)) return "owner";
+  try {
+    await ensureConversationColumns(env);
+    const row = await env.DB.prepare("SELECT role FROM admin_staff WHERE user_id = ?")
+      .bind(userId)
+      .first<{ role: string }>();
+    const r = (row?.role || "").toLowerCase();
+    if (r === "owner" || r === "moderator" || r === "catalog") return r as StaffRole;
+  } catch { /* ignore */ }
+  return null;
+}
+
+function canManageUsers(role: StaffRole | null): boolean {
+  return role === "owner" || role === "moderator";
+}
+function canManageCatalog(role: StaffRole | null): boolean {
+  return role === "owner" || role === "catalog";
+}
+function canManageRoles(role: StaffRole | null): boolean {
+  return role === "owner";
+}
+function canViewAdminLogs(role: StaffRole | null): boolean {
+  return role === "owner";
+}
+
+async function handleListStaff(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  const role = await getStaffRole(env, user.id, user.username);
+  if (!role) return err("Forbidden.", 403);
+  await ensureConversationColumns(env);
+  let staff: any[] = [];
+  try {
+    const { results } = await env.DB.prepare(
+      "SELECT user_id, username, role, created_at FROM admin_staff ORDER BY created_at ASC"
+    ).all();
+    staff = results || [];
+  } catch { staff = []; }
+  // Always surface built-in owners
+  for (const uname of ["fayt7304", "fay7304"]) {
+    if (!staff.some((s) => (s.username || "").toLowerCase() === uname)) {
+      staff.unshift({ user_id: null, username: uname, role: "owner", created_at: null, built_in: true });
+    }
+  }
+  return json({
+    staff,
+    me: { role, missions: STAFF_ROLE_MISSIONS },
+    missions: STAFF_ROLE_MISSIONS,
+  });
+}
+
+async function handleAssignStaff(request: Request, env: Env): Promise<Response> {
+  const admin = await getUserFromRequest(env, request);
+  if (!admin) return err("Not authenticated.", 401);
+  const myRole = await getStaffRole(env, admin.id, admin.username);
+  if (!canManageRoles(myRole)) return err("Only owners can assign roles.", 403);
+  await ensureConversationColumns(env);
+  const body = (await request.json().catch(() => null)) as { username?: string; role?: string } | null;
+  const username = (body?.username || "").trim().toLowerCase();
+  const role = (body?.role || "").trim().toLowerCase() as StaffRole;
+  if (!username) return err("Username required.", 400);
+  if (!["owner", "moderator", "catalog"].includes(role)) return err("Role must be owner, moderator, or catalog.", 400);
+  const target = await env.DB.prepare("SELECT id, username FROM users WHERE lower(username) = ?")
+    .bind(username)
+    .first<{ id: string; username: string }>();
+  if (!target) return err("User not found.", 404);
+  await env.DB.prepare(
+    `INSERT INTO admin_staff (user_id, username, role, created_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET role = excluded.role, username = excluded.username`
+  )
+    .bind(target.id, target.username, role, nowIso())
+    .run();
+  adminLog("info", "admin", "role assigned", { target: target.username, role, by: admin.username });
+  return json({ ok: true, user_id: target.id, username: target.username, role });
+}
+
+async function handleRemoveStaff(request: Request, env: Env, userId: string): Promise<Response> {
+  const admin = await getUserFromRequest(env, request);
+  if (!admin) return err("Not authenticated.", 401);
+  const myRole = await getStaffRole(env, admin.id, admin.username);
+  if (!canManageRoles(myRole)) return err("Only owners can remove roles.", 403);
+  if (userId === admin.id) return err("You can't remove your own role here.", 400);
+  await env.DB.prepare("DELETE FROM admin_staff WHERE user_id = ?").bind(userId).run();
+  adminLog("info", "admin", "role removed", { target: userId, by: admin.username });
+  return json({ ok: true });
+}
+
+async function handleCallLive(request: Request, env: Env, conversationId: string): Promise<Response> {
+  if (!env.CALLS) return err("Calls Durable Object not configured.", 501);
+  const url = new URL(request.url);
+  const token = url.searchParams.get("token") || undefined;
+  let user = await getUserFromRequest(env, request);
+  if (!user && token) user = (await getUserFromToken(env, token)) as any;
+  if (!user) return err("Not authenticated.", 401);
+  // Access check: member of conversation
+  const convo = await env.DB.prepare("SELECT id, user_id, visibility FROM conversations WHERE id = ?")
+    .bind(conversationId)
+    .first<{ id: string; user_id: string; visibility: string }>();
+  if (!convo) return err("Conversation not found.", 404);
+  let allowed = convo.user_id === user.id;
+  if (!allowed) {
+    const mem = await env.DB.prepare(
+      "SELECT 1 AS ok FROM conversation_members WHERE conversation_id = ? AND user_id = ?"
+    )
+      .bind(conversationId, user.id)
+      .first();
+    allowed = !!mem;
+  }
+  if (!allowed) return err("Access forbidden.", 403);
+
+  const id = env.CALLS.idFromName(conversationId);
+  const stub = env.CALLS.get(id);
+  const doUrl = new URL("https://call/live");
+  doUrl.searchParams.set("userId", user.id);
+  doUrl.searchParams.set("username", user.username || "user");
+  return stub.fetch(doUrl.toString(), request);
 }
 
 async function handlePresenceLive(request: Request, env: Env): Promise<Response> {
@@ -1592,7 +1717,8 @@ async function handleListKnowledge(request: Request, env: Env): Promise<Response
 async function handleUpsertKnowledge(request: Request, env: Env): Promise<Response> {
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
-  if (!isAdminUser(user.username)) return err("Forbidden.", 403);
+  const staffRole = await getStaffRole(env, user.id, user.username);
+  if (!canManageCatalog(staffRole)) return err("Forbidden.", 403);
   await ensureKnowledgeSeed(env);
   await ensureConversationColumns(env);
   const body = (await request.json().catch(() => null)) as {
@@ -1641,7 +1767,8 @@ async function handleUpsertKnowledge(request: Request, env: Env): Promise<Respon
 async function handleDeleteKnowledge(request: Request, env: Env, id: string): Promise<Response> {
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
-  if (!isAdminUser(user.username)) return err("Forbidden.", 403);
+  const staffRole = await getStaffRole(env, user.id, user.username);
+  if (!canManageCatalog(staffRole)) return err("Forbidden.", 403);
   await env.DB.prepare("DELETE FROM knowledge_docs WHERE id = ?").bind(id).run();
   adminLog("info", "knowledge", "doc deleted", { id, by: user.username });
   return json({ ok: true });
@@ -1651,7 +1778,8 @@ async function handleDeleteKnowledge(request: Request, env: Env, id: string): Pr
 async function handleReindexKnowledge(request: Request, env: Env): Promise<Response> {
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
-  if (!isAdminUser(user.username)) return err("Forbidden.", 403);
+  const staffRole = await getStaffRole(env, user.id, user.username);
+  if (!canManageCatalog(staffRole)) return err("Forbidden.", 403);
   await ensureConversationColumns(env);
   if (!env.AI) return err("Workers AI binding required for vector reindex.", 501);
 
@@ -2083,6 +2211,12 @@ async function ensureConversationColumns(env: Env): Promise<void> {
     "ALTER TABLE messages ADD COLUMN deleted_at TEXT",
     "ALTER TABLE knowledge_docs ADD COLUMN embedding TEXT",
     "ALTER TABLE users ADD COLUMN banned_at TEXT",
+    `CREATE TABLE IF NOT EXISTS admin_staff (
+      user_id TEXT PRIMARY KEY,
+      username TEXT NOT NULL,
+      role TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`,
   ];
   for (const sql of alters) {
     try {
@@ -3952,6 +4086,14 @@ export default {
         resp = await handleAdminSetPassword(request, env, path.split("/")[4]);
       } else if (path.match(/^\/api\/admin\/users\/[^/]+$/) && request.method === "DELETE") {
         resp = await handleAdminDeleteUser(request, env, path.split("/")[4]);
+      } else if (path === "/api/staff" && request.method === "GET") {
+        resp = await handleListStaff(request, env);
+      } else if (path === "/api/staff" && request.method === "POST") {
+        resp = await handleAssignStaff(request, env);
+      } else if (path.match(/^\/api\/staff\/[^/]+$/) && request.method === "DELETE") {
+        resp = await handleRemoveStaff(request, env, path.split("/")[3]);
+      } else if (path.match(/^\/api\/conversations\/[^/]+\/call$/) && request.method === "GET") {
+        return handleCallLive(request, env, path.split("/")[3]);
       } else if (path === "/api/presence/live" && request.method === "GET") {
         return handlePresenceLive(request, env);
       } else if (path === "/api/presence" && request.method === "GET") {

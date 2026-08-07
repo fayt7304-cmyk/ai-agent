@@ -346,6 +346,10 @@
               <span class="attach-menu-icon"></span>
               <span data-i18n="composer.addFiles">Add files or photos</span>
             </button>
+            <button type="button" id="attach-menu-voice" class="attach-menu-item">
+              <span class="attach-menu-icon"></span>
+              <span>Voice note</span>
+            </button>
             <button type="button" id="attach-menu-tools" class="attach-menu-item">
               <span class="attach-menu-icon"></span>
               <span data-i18n="composer.openTools">Tools</span>
@@ -652,6 +656,26 @@
               <div id="knowledge-vector-status" class="catalog-cms-intro">Vector RAG status…</div>
               <div class="catalog-list-head">Saved entries</div>
               <div id="knowledge-list" class="knowledge-list"></div>
+            </div>
+
+            <h3 class="settings-subheading">Staff roles</h3>
+            <div class="settings-card catalog-cms" id="staff-roles-card">
+              <p class="catalog-cms-intro">Three roles — each with one mission. Owners assign roles to existing usernames.</p>
+              <div class="staff-missions">
+                <div class="staff-mission"><strong>Owner</strong> — Full control: users, bans, catalog, logs, roles</div>
+                <div class="staff-mission"><strong>Moderator</strong> — Community safety: ban / unban users, view accounts</div>
+                <div class="staff-mission"><strong>Catalog</strong> — Business catalog: product sheets &amp; price bands (RAG)</div>
+              </div>
+              <div class="catalog-actions" style="margin-top:10px;">
+                <input type="text" id="staff-username" class="catalog-input" placeholder="Username to assign" style="flex:1;min-width:120px;">
+                <select id="staff-role" class="catalog-input" style="width:auto;">
+                  <option value="moderator">Moderator</option>
+                  <option value="catalog">Catalog</option>
+                  <option value="owner">Owner</option>
+                </select>
+                <button type="button" id="staff-assign-btn" class="primary">Assign</button>
+              </div>
+              <div id="staff-list" class="admin-users-list" style="margin-top:12px;"></div>
             </div>
 
             <h3 class="settings-subheading">Users</h3>

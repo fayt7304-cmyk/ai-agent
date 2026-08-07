@@ -317,6 +317,9 @@ function applyPeerRead(peerRead?: { last_read_at: string; last_message_id: strin
 }
 
 function applyDmHeader(peer?: { id: string; username: string; display_name?: string } | null) {
+  const callBtn = document.getElementById("header-call-btn") as HTMLButtonElement | null;
+  if (callBtn) callBtn.style.display = peer ? "inline-flex" : "none";
+
   if (!peer) {
     chatTitle.textContent = "Friend chat";
     chatTitle.removeAttribute("title");
@@ -2768,6 +2771,21 @@ function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: strin
           openMediaLightbox({ type: "image", src: objectUrl, name: a.name, fallback: a.dataUrl });
         });
         chipsWrap.appendChild(img);
+      } else if (a.mime.startsWith("audio/") && a.dataUrl) {
+        const objectUrl = dataUrlToObjectUrl(a.dataUrl);
+        const wrap = document.createElement("div");
+        wrap.className = "msg-audio-wrap";
+        const label = document.createElement("div");
+        label.className = "msg-audio-label";
+        label.textContent = a.name || "Voice note";
+        const audio = document.createElement("audio");
+        audio.className = "msg-audio";
+        audio.controls = true;
+        audio.preload = "metadata";
+        audio.src = objectUrl;
+        wrap.appendChild(label);
+        wrap.appendChild(audio);
+        chipsWrap.appendChild(wrap);
       } else if (a.mime.startsWith("video/") && a.dataUrl) {
         const objectUrl = dataUrlToObjectUrl(a.dataUrl);
         const wrap = document.createElement("div");
@@ -3659,6 +3677,218 @@ const SpeechRecognitionCtor: any =
 let recognizer: any = null;
 let recording = false;
 
+
+/** Voice note via MediaRecorder → pending attachment */
+let voiceNoteRecorder: MediaRecorder | null = null;
+let voiceNoteChunks: BlobPart[] = [];
+let voiceNoteStream: MediaStream | null = null;
+
+async function startVoiceNoteRecording() {
+  if (voiceNoteRecorder && voiceNoteRecorder.state === "recording") {
+    stopVoiceNoteRecording();
+    return;
+  }
+  try {
+    voiceNoteStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    voiceNoteChunks = [];
+    const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : "audio/mp4";
+    voiceNoteRecorder = new MediaRecorder(voiceNoteStream, { mimeType: mime });
+    voiceNoteRecorder.ondataavailable = (e) => {
+      if (e.data.size) voiceNoteChunks.push(e.data);
+    };
+    voiceNoteRecorder.onstop = async () => {
+      const blob = new Blob(voiceNoteChunks, { type: mime });
+      voiceNoteStream?.getTracks().forEach((tr) => tr.stop());
+      voiceNoteStream = null;
+      if (blob.size < 200) {
+        showToast("Voice note too short");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = String(reader.result || "");
+        pendingAttachments.push({
+          name: `voice-${Date.now()}.webm`,
+          mime: blob.type || "audio/webm",
+          size: blob.size,
+          dataUrl,
+        });
+        renderAttachmentChips();
+        showToast("Voice note attached — hit send");
+      };
+      reader.readAsDataURL(blob);
+    };
+    voiceNoteRecorder.start();
+    showToast("Recording voice note… tap Voice note again to stop");
+    document.getElementById("attach-menu-voice")?.classList.add("recording");
+  } catch {
+    showToast("Microphone permission denied");
+  }
+}
+
+function stopVoiceNoteRecording() {
+  document.getElementById("attach-menu-voice")?.classList.remove("recording");
+  if (voiceNoteRecorder && voiceNoteRecorder.state === "recording") {
+    try {
+      voiceNoteRecorder.stop();
+    } catch {
+      /* ignore */
+    }
+  }
+  voiceNoteRecorder = null;
+}
+
+/** WebRTC call over CallRoom DO */
+let callWs: WebSocket | null = null;
+let callPc: RTCPeerConnection | null = null;
+let callLocalStream: MediaStream | null = null;
+
+function ensureCallBar() {
+  let bar = document.getElementById("call-bar") as HTMLDivElement | null;
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "call-bar";
+    bar.className = "call-bar";
+    bar.innerHTML = `<span class="call-bar-status">Call</span>
+      <button type="button" class="secondary-btn" id="call-hangup">Hang up</button>`;
+    const host = document.querySelector(".chat-main") || document.body;
+    host.insertBefore(bar, host.firstChild);
+    bar.querySelector("#call-hangup")!.addEventListener("click", () => endCall());
+  }
+  return bar;
+}
+
+async function startCall() {
+  if (!currentConversationId || !isDmChat) {
+    showToast("Calls work in friend DMs");
+    return;
+  }
+  const sessionTok = getSessionToken();
+  if (!sessionTok) return;
+  try {
+    callLocalStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    showToast("Microphone needed for calls");
+    return;
+  }
+  callPc = new RTCPeerConnection({
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+  });
+  callLocalStream.getTracks().forEach((tr) => callPc!.addTrack(tr, callLocalStream!));
+  callPc.ontrack = (ev) => {
+    let audio = document.getElementById("call-remote-audio") as HTMLAudioElement | null;
+    if (!audio) {
+      audio = document.createElement("audio");
+      audio.id = "call-remote-audio";
+      audio.autoplay = true;
+      document.body.appendChild(audio);
+    }
+    audio.srcObject = ev.streams[0];
+  };
+  callPc.onicecandidate = (ev) => {
+    if (ev.candidate && callWs?.readyState === WebSocket.OPEN) {
+      callWs.send(JSON.stringify({ type: "ice", candidate: ev.candidate }));
+    }
+  };
+
+  const wsBase = API_BASE.replace(/^http/, "ws");
+  const qs = `?token=${encodeURIComponent(sessionTok)}`;
+  callWs = new WebSocket(`${wsBase}/api/conversations/${currentConversationId}/call${qs}`);
+  callWs.onopen = async () => {
+    const offer = await callPc!.createOffer();
+    await callPc!.setLocalDescription(offer);
+    callWs!.send(JSON.stringify({ type: "invite" }));
+    callWs!.send(JSON.stringify({ type: "offer", sdp: offer }));
+    const bar = ensureCallBar();
+    bar.style.display = "flex";
+    bar.querySelector(".call-bar-status")!.textContent = "Calling…";
+  };
+  callWs.onmessage = async (ev) => {
+    try {
+      const data = JSON.parse(String(ev.data));
+      if (data.type === "offer" && data.sdp) {
+        // incoming call
+        if (!callPc) {
+          callLocalStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          callPc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+          callLocalStream.getTracks().forEach((tr) => callPc!.addTrack(tr, callLocalStream!));
+          callPc.ontrack = (e) => {
+            let audio = document.getElementById("call-remote-audio") as HTMLAudioElement | null;
+            if (!audio) {
+              audio = document.createElement("audio");
+              audio.id = "call-remote-audio";
+              audio.autoplay = true;
+              document.body.appendChild(audio);
+            }
+            audio.srcObject = e.streams[0];
+          };
+          callPc.onicecandidate = (e) => {
+            if (e.candidate && callWs?.readyState === WebSocket.OPEN) {
+              callWs.send(JSON.stringify({ type: "ice", candidate: e.candidate }));
+            }
+          };
+        }
+        await callPc.setRemoteDescription(data.sdp);
+        const answer = await callPc.createAnswer();
+        await callPc.setLocalDescription(answer);
+        callWs?.send(JSON.stringify({ type: "answer", sdp: answer }));
+        const bar = ensureCallBar();
+        bar.style.display = "flex";
+        bar.querySelector(".call-bar-status")!.textContent = "In call";
+        showToast(`Call from ${data.from_username || "friend"}`);
+      } else if (data.type === "answer" && data.sdp) {
+        await callPc?.setRemoteDescription(data.sdp);
+        const bar = ensureCallBar();
+        bar.querySelector(".call-bar-status")!.textContent = "In call";
+      } else if (data.type === "ice" && data.candidate) {
+        try {
+          await callPc?.addIceCandidate(data.candidate);
+        } catch {
+          /* ignore */
+        }
+      } else if (data.type === "hangup" || data.type === "peer-left") {
+        endCall(false);
+        showToast("Call ended");
+      } else if (data.type === "invite") {
+        showToast(`${data.from_username || "Friend"} is calling…`);
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+  callWs.onclose = () => {
+    callWs = null;
+  };
+}
+
+function endCall(sendHangup = true) {
+  if (sendHangup && callWs?.readyState === WebSocket.OPEN) {
+    try {
+      callWs.send(JSON.stringify({ type: "hangup" }));
+    } catch {
+      /* ignore */
+    }
+  }
+  try {
+    callWs?.close();
+  } catch {
+    /* ignore */
+  }
+  callWs = null;
+  callPc?.close();
+  callPc = null;
+  callLocalStream?.getTracks().forEach((tr) => tr.stop());
+  callLocalStream = null;
+  document.getElementById("call-remote-audio")?.remove();
+  const bar = document.getElementById("call-bar");
+  if (bar) bar.style.display = "none";
+}
+
+
 function setupMic() {
   if (!SpeechRecognitionCtor) {
     micBtn.style.display = "none";
@@ -3797,6 +4027,18 @@ function startPresenceConnection() {
 export function initChatView(user: User) {
   wireConnectivityToasts();
   startPresenceConnection();
+  // Call button (DM only) — injected once near header actions
+  if (!document.getElementById("header-call-btn")) {
+    const callBtn = document.createElement("button");
+    callBtn.type = "button";
+    callBtn.id = "header-call-btn";
+    callBtn.className = "icon-btn header-call-btn";
+    callBtn.title = "Voice call";
+    callBtn.textContent = "📞";
+    callBtn.style.display = "none";
+    callBtn.addEventListener("click", () => void startCall());
+    chatTitle.parentElement?.appendChild(callBtn);
+  }
 
   currentUser = user;
   mountStaticIcons();
@@ -3879,6 +4121,10 @@ export function initChatView(user: User) {
   attachMenuFiles.addEventListener("click", () => {
     closeAttachMenu();
     fileInput.click();
+  });
+  document.getElementById("attach-menu-voice")?.addEventListener("click", () => {
+    closeAttachMenu();
+    void startVoiceNoteRecording();
   });
   attachMenuTools.addEventListener("click", () => {
     closeAttachMenu();

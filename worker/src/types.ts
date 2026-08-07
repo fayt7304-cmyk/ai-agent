@@ -47,6 +47,7 @@ export interface Env {
   AI?: { run: (model: string, input: Record<string, unknown>) => Promise<unknown> };
   /** v10.2 Durable Object namespace for presence */
   PRESENCE?: DurableObjectNamespace;
+  CALLS?: DurableObjectNamespace;
 
   /**
    * Cloudflare Images binding (`[images] binding = "IMAGES"`).

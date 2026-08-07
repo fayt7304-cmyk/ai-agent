@@ -1,10 +1,19 @@
-# Paul — Your Personal AI Agent (v10.2)
+# Paul — Your Personal AI Agent (v10.3)
 
 A comprehensive chat web application powered by a Mistral AI agent, designed to run entirely on your own Cloudflare account for maximum privacy and control.
 
 ---
 
-## 🚀 What's New in v10.2 — Durable Objects presence + admin user controls
+## 🚀 What's New in v10.3 — Voice notes / calls + staff roles
+
+| Feature | Description |
+| :--- | :--- |
+| **Voice notes** | Attach menu → **Voice note** records audio and attaches it; plays inline in the thread. |
+| **Voice calls** | 📞 in friend DMs — WebRTC audio via **CallRoom** Durable Object signaling (`CALLS` binding). |
+| **Staff roles** | Three missions: **Owner** (full), **Moderator** (ban/view users), **Catalog** (RAG sheets only). Owners assign roles by username. |
+
+### From v10.2 — Presence + admin tools
+
 
 | Feature | Description |
 | :--- | :--- |
@@ -30,7 +39,7 @@ A comprehensive chat web application powered by a Mistral AI agent, designed to 
 | Version | Item |
 | :--- | :--- |
 | **10.2** | ✅ Durable Objects presence + admin user tools |
-| **10.3** | Voice notes / calls |
+| **10.3** | ✅ Voice notes / calls + staff roles |
 | **10.4** | Native apps / PWA shell |
 | **10.5** | Multi-agent marketplace |
 

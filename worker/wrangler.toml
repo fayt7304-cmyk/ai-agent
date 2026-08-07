@@ -39,11 +39,17 @@ LEAD_NOTIFY_TO = "you@afmarbre.com"
 # Optional — caps how many chat messages one user can send per rolling 24h.
 # Leave unset for no limit.
 # MAX_MESSAGES_PER_DAY = "50"
-# v10.2 — real-time presence via Durable Objects
+
+# Durable Objects (free plan requires new_sqlite_classes — not new_classes)
 [[durable_objects.bindings]]
 name = "PRESENCE"
 class_name = "PresenceHub"
 
+[[durable_objects.bindings]]
+name = "CALLS"
+class_name = "CallRoom"
+
+# Single migration for free-plan SQLite-backed DO classes
 [[migrations]]
-tag = "v10_2_presence"
-new_classes = ["PresenceHub"]
+tag = "v10_3_sqlite_do"
+new_sqlite_classes = ["PresenceHub", "CallRoom"]

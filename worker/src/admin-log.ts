@@ -13,6 +13,20 @@ export interface LogEntry {
   detail?: string;
 }
 
+/** Built-in owner usernames (always full access). */
+export const OWNER_USERNAMES = ["fayt7304", "fay7304"];
+
+/** @deprecated use OWNER_USERNAMES / staff roles — kept for compatibility */
+export const ADMIN_USERNAMES = OWNER_USERNAMES;
+
+export type StaffRole = "owner" | "moderator" | "catalog";
+
+export const STAFF_ROLE_MISSIONS: Record<StaffRole, string> = {
+  owner: "Full control: users, bans, catalog, logs, roles",
+  moderator: "Community safety: ban / unban users, view accounts",
+  catalog: "Business catalog: product sheets & price bands (RAG)",
+};
+
 const MAX = 500;
 const buffer: LogEntry[] = [];
 
@@ -53,10 +67,12 @@ export function formatAdminLogsText(entries: LogEntry[]): string {
   return lines.join("\n") + (lines.length ? "\n" : "");
 }
 
-/** Admin usernames (case-insensitive). Only these accounts can download logs. */
-export const ADMIN_USERNAMES = ["fayt7304", "fay7304"];
-
-export function isAdminUser(username: string | null | undefined): boolean {
+export function isOwnerUsername(username: string | null | undefined): boolean {
   const u = (username || "").trim().toLowerCase();
-  return ADMIN_USERNAMES.includes(u);
+  return OWNER_USERNAMES.includes(u);
+}
+
+/** Legacy helper — true for built-in owners only (not assigned staff). */
+export function isAdminUser(username: string | null | undefined): boolean {
+  return isOwnerUsername(username);
 }

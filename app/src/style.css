@@ -6797,3 +6797,40 @@ html[dir="rtl"] .messages.is-collab .msg-row.user .msg {
 }
 .admin-user-menu-item:hover { background: var(--surface-hover, var(--surface)); }
 .admin-user-menu-item.danger { color: #e55; }
+
+/* Voice notes + calls (v10.3) */
+.msg-audio-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  max-width: 280px;
+}
+.msg-audio-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.msg-audio { width: 100%; height: 36px; }
+#attach-menu-voice.recording { color: #e55; font-weight: 700; }
+.call-bar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--accent) 18%, var(--card));
+  border-bottom: 1px solid var(--border);
+  z-index: 6;
+}
+.call-bar-status { font-weight: 650; font-size: 14px; }
+.header-call-btn { font-size: 16px; }
+.staff-missions { display: flex; flex-direction: column; gap: 6px; }
+.staff-mission {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.staff-mission strong { color: var(--text); }

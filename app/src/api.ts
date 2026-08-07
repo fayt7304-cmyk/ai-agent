@@ -442,6 +442,22 @@ export const api = {
   adminDeleteUser: (id: string) =>
     request<{ ok: true; deleted: boolean }>(`/api/admin/users/${id}`, { method: "DELETE" }),
 
+
+  listStaff: () =>
+    request<{
+      staff: { user_id: string | null; username: string; role: string; created_at: string | null; built_in?: boolean }[];
+      me: { role: string; missions: Record<string, string> };
+      missions: Record<string, string>;
+    }>("/api/staff", { method: "GET" }),
+
+  assignStaff: (username: string, role: "owner" | "moderator" | "catalog") =>
+    request<{ ok: true; user_id: string; username: string; role: string }>("/api/staff", {
+      method: "POST",
+      body: JSON.stringify({ username, role }),
+    }),
+
+  removeStaff: (userId: string) =>
+    request<{ ok: true }>(`/api/staff/${userId}`, { method: "DELETE" }),
   presenceSnapshot: () =>
     request<{ online: { user_id: string; username: string; since: string }[]; durable: boolean }>(
       "/api/presence",

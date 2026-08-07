@@ -498,15 +498,38 @@ function isAdminUsername(name: string | null | undefined): boolean {
 
 function refreshAdminLogsVisibility(user: User) {
   if (!adminLogsSection) return;
-  const isAdmin = isAdminUsername(user.username);
-  adminLogsSection.style.display = isAdmin ? "block" : "none";
-  if (isAdmin) {
+  const isOwner = isAdminUsername(user.username);
+  if (isOwner) {
+    adminLogsSection.style.display = "block";
     adminLogsSection.removeAttribute("hidden");
     void loadKnowledgeList();
     void loadAdminUsers();
-  } else {
-    adminLogsSection.setAttribute("hidden", "");
+    void loadStaffList();
+    return;
   }
+  // Assigned staff (moderator / catalog / owner via DB)
+  void (async () => {
+    try {
+      const data = await api.listStaff();
+      const role = data.me?.role;
+      if (!role) {
+        adminLogsSection.style.display = "none";
+        adminLogsSection.setAttribute("hidden", "");
+        return;
+      }
+      adminLogsSection.style.display = "block";
+      adminLogsSection.removeAttribute("hidden");
+      // Show sections by mission
+      const cat = document.querySelector(".settings-subheading")?.parentElement;
+      if (role === "catalog" || role === "owner") void loadKnowledgeList();
+      if (role === "moderator" || role === "owner") void loadAdminUsers();
+      if (role === "owner") void loadStaffList();
+      else void loadStaffList(); // read-only list of missions
+    } catch {
+      adminLogsSection.style.display = "none";
+      adminLogsSection.setAttribute("hidden", "");
+    }
+  })();
 }
 
 adminLogsDownloadBtn?.addEventListener("click", async () => {
@@ -641,6 +664,66 @@ document.getElementById("knowledge-save-btn")?.addEventListener("click", async (
     }, 3000);
   } catch (e: any) {
     settingsError.textContent = e?.message || "Save failed";
+  }
+});
+
+
+async function loadStaffList() {
+  const list = document.getElementById("staff-list");
+  if (!list) return;
+  list.innerHTML = `<p class="settings-muted">Loading…</p>`;
+  try {
+    const data = await api.listStaff();
+    const missions = data.missions || {};
+    list.innerHTML = "";
+    for (const s of data.staff || []) {
+      const row = document.createElement("div");
+      row.className = "admin-user-row";
+      const name = document.createElement("div");
+      name.className = "admin-user-name";
+      name.textContent = `@${s.username} · ${s.role}${s.built_in ? " (built-in)" : ""}`;
+      const meta = document.createElement("div");
+      meta.className = "admin-user-meta";
+      meta.textContent = missions[s.role] || "";
+      row.appendChild(name);
+      row.appendChild(meta);
+      if (s.user_id && !s.built_in && data.me?.role === "owner") {
+        const rm = document.createElement("button");
+        rm.type = "button";
+        rm.className = "secondary-btn";
+        rm.textContent = "Remove";
+        rm.addEventListener("click", async () => {
+          try {
+            await api.removeStaff(s.user_id!);
+            void loadStaffList();
+          } catch (e: any) {
+            settingsError.textContent = e?.message || "Failed";
+          }
+        });
+        row.appendChild(rm);
+      }
+      list.appendChild(row);
+    }
+  } catch (e: any) {
+    list.innerHTML = `<p class="settings-muted">${e?.message || "Forbidden"}</p>`;
+  }
+}
+
+document.getElementById("staff-assign-btn")?.addEventListener("click", async () => {
+  const username = (document.getElementById("staff-username") as HTMLInputElement)?.value.trim();
+  const role = (document.getElementById("staff-role") as HTMLSelectElement)?.value as any;
+  if (!username) {
+    settingsError.textContent = "Username required";
+    return;
+  }
+  try {
+    await api.assignStaff(username, role);
+    settingsSuccess.textContent = `Assigned ${role} to @${username}`;
+    (document.getElementById("staff-username") as HTMLInputElement).value = "";
+    void loadStaffList();
+    setTimeout(() => { settingsSuccess.textContent = ""; }, 2500);
+  } catch (e: any) {
+    settingsError.textContent = e?.message || "Assign failed";
   }
 });
 
