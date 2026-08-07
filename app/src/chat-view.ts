@@ -22,12 +22,16 @@ import { t } from "./lib/i18n";
 import { icons } from "./lib/icons";
 
 /**
- * Every chat is addressable: the URL always carries `#conv=<id>` for the open
- * conversation, so a refresh, a bookmark, or a pasted link reopens that exact chat
- * instead of dropping the user into a blank new one.
+ * Chats are addressable:
+ * - normal / collab → `#conv=<id>`
+ * - friend DM → `#user=<username>` (not a conversation UUID link)
  */
 function conversationUrl(id: string) {
   return `${window.location.origin}${window.location.pathname}#conv=${id}`;
+}
+
+function friendUserUrl(username: string) {
+  return `${window.location.origin}${window.location.pathname}#user=${encodeURIComponent(username)}`;
 }
 
 /**
@@ -37,9 +41,22 @@ function conversationUrl(id: string) {
  */
 let internalHashUpdate = false;
 function syncUrlToConversation(id: string | null) {
+  // Friend DMs use #user=username — never show #conv= for them
+  if (id && isDmChat && currentDmPeer?.username) {
+    const target = `#user=${encodeURIComponent(currentDmPeer.username)}`;
+    if (window.location.hash === target) return;
+    internalHashUpdate = true;
+    history.replaceState(null, "", friendUserUrl(currentDmPeer.username));
+    setTimeout(() => {
+      internalHashUpdate = false;
+    }, 0);
+    return;
+  }
   const target = id ? `#conv=${id}` : "";
   const current = window.location.hash;
   if (current === target || (!id && current === "")) return;
+  // Don't overwrite an existing #user= hash with #conv= while opening a DM
+  if (id && current.startsWith("#user=") && isDmChat) return;
   internalHashUpdate = true;
   if (id) {
     history.replaceState(null, "", conversationUrl(id));
@@ -1074,7 +1091,6 @@ let friendsLoaded = false;
 let knownPendingInIds = new Set<string>();
 let knownPendingOutIds = new Set<string>();
 let knownFriendIds = new Set<string>();
-let friendsPollTimer: ReturnType<typeof setInterval> | null = null;
 let friendsBootstrapped = false;
 
 async function loadFriends() {
@@ -1147,34 +1163,145 @@ async function loadFriends() {
   }
 }
 
-function startFriendsPoll() {
-  if (friendsPollTimer) return;
-  friendsPollTimer = setInterval(() => {
-    void loadFriends().then(() => {
-      // refresh badge on friends sidebar button without full re-list if possible
-      const badge = document.querySelector(".friends-sidebar-btn .friends-badge");
-      const btn = document.querySelector(".friends-sidebar-btn");
-      if (btn && friendsPendingIn.length) {
-        if (badge) badge.textContent = String(friendsPendingIn.length);
-        else {
-          const span = document.createElement("span");
-          span.className = "friends-badge";
-          span.textContent = String(friendsPendingIn.length);
-          btn.appendChild(span);
-        }
-      } else if (badge) {
-        badge.remove();
-      }
-    });
-  }, 8000);
+
+let friendsWs: WebSocket | null = null;
+let friendsWsReconnect: ReturnType<typeof setTimeout> | null = null;
+
+function applyFriendsSnapshot(data: {
+  friends?: Friendship[];
+  pending_in?: Friendship[];
+  pending_out?: Friendship[];
+}) {
+  const prevPendingIn = knownPendingInIds;
+  const prevPendingOut = knownPendingOutIds;
+  const prevFriends = knownFriendIds;
+  friendsList = data.friends || [];
+  friendsPendingIn = data.pending_in || [];
+  friendsPendingOut = data.pending_out || [];
+  friendsLoaded = true;
+
+  if (friendsBootstrapped) {
+    for (const f of friendsPendingIn) {
+      if (prevPendingIn.has(f.id)) continue;
+      showMiniFriendPopup({
+        title: "Friend request",
+        body: `${f.peer.display_name || f.peer.username} wants to be friends.`,
+        primaryLabel: "Accept",
+        onPrimary: async () => {
+          try {
+            await api.acceptFriend(f.id);
+            friendsWs?.send("refresh");
+            await loadFriends();
+            renderConvoList();
+            showMiniFriendPopup({
+              title: "You're friends",
+              body: `You and ${f.peer.display_name || f.peer.username} are now friends.`,
+              primaryLabel: "Message",
+              onPrimary: () => void openFriendChat(f.id),
+              secondaryLabel: "OK",
+            });
+          } catch (e: any) {
+            showToast(e?.message || "Failed");
+          }
+        },
+        secondaryLabel: "Decline",
+        onSecondary: async () => {
+          try {
+            await api.rejectFriend(f.id);
+            friendsWs?.send("refresh");
+            await loadFriends();
+            renderConvoList();
+          } catch (e: any) {
+            showToast(e?.message || "Failed");
+          }
+        },
+      });
+    }
+    for (const f of friendsList) {
+      if (prevFriends.has(f.id)) continue;
+      if (!prevPendingOut.has(f.id)) continue;
+      showMiniFriendPopup({
+        title: "Request accepted",
+        body: `${f.peer.display_name || f.peer.username} accepted your friend request.`,
+        primaryLabel: "Message",
+        onPrimary: () => void openFriendChat(f.id),
+        secondaryLabel: "OK",
+      });
+    }
+  }
+
+  knownPendingInIds = new Set(friendsPendingIn.map((f) => f.id));
+  knownPendingOutIds = new Set(friendsPendingOut.map((f) => f.id));
+  knownFriendIds = new Set(friendsList.map((f) => f.id));
+  friendsBootstrapped = true;
+
+  const badge = document.querySelector(".friends-sidebar-btn .friends-badge");
+  const btn = document.querySelector(".friends-sidebar-btn");
+  if (btn && friendsPendingIn.length) {
+    if (badge) badge.textContent = String(friendsPendingIn.length);
+    else {
+      const span = document.createElement("span");
+      span.className = "friends-badge";
+      span.textContent = String(friendsPendingIn.length);
+      btn.appendChild(span);
+    }
+  } else if (badge) {
+    badge.remove();
+  }
 }
+
+/** Live friend requests via WebSocket (falls back to HTTP loadFriends). */
+function startFriendsPoll() {
+  if (friendsWs && (friendsWs.readyState === WebSocket.OPEN || friendsWs.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+  const sessionTok = getSessionToken();
+  const wsBase = API_BASE.replace(/^http/, "ws");
+  try {
+    const qs = sessionTok ? `?token=${encodeURIComponent(sessionTok)}` : "";
+    const ws = new WebSocket(`${wsBase}/api/friends/live${qs}`);
+    friendsWs = ws;
+    ws.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(String(ev.data));
+        if (data?.type === "friends") applyFriendsSnapshot(data);
+      } catch {
+        /* ignore */
+      }
+    };
+    ws.onclose = () => {
+      friendsWs = null;
+      if (friendsWsReconnect) clearTimeout(friendsWsReconnect);
+      friendsWsReconnect = setTimeout(() => startFriendsPoll(), 4000);
+    };
+    ws.onerror = () => {
+      try {
+        ws.close();
+      } catch {
+        /* ignore */
+      }
+    };
+  } catch {
+    // Fallback: one-shot HTTP
+    void loadFriends();
+  }
+}
+
 
 async function openFriendChat(friendshipId: string) {
   try {
     const dm = await api.openFriendDm(friendshipId);
     await loadConversations();
+    currentDmPeer = dm.peer;
+    isDmChat = true;
     await selectConversation(dm.conversation_id);
-    showToast(`Chat with ${dm.peer.display_name || dm.peer.username}`);
+    // Address bar: #user=username (never #conv=uuid for friend DMs)
+    internalHashUpdate = true;
+    history.replaceState(null, "", friendUserUrl(dm.peer.username));
+    setTimeout(() => {
+      internalHashUpdate = false;
+    }, 0);
+    applyDmHeader(dm.peer);
   } catch (e: any) {
     showToast(e?.message || "Could not open chat");
   }
@@ -1642,13 +1769,52 @@ async function openConversationLink(id: string) {
   if (isMobileLayout()) toggleSidebar(true);
 }
 
-/** Checks the URL for a `#conv=<id>` link and opens it if present. */
+/** Checks the URL for `#conv=<id>` or `#user=<username>` and opens it. */
 function handleConvoLinkFromHash() {
   if (internalHashUpdate) return;
-  const match = window.location.hash.match(/#conv=([^&]+)/);
+  const hash = window.location.hash || "";
+  const userMatch = hash.match(/#user=([^&]+)/);
+  if (userMatch) {
+    const username = decodeURIComponent(userMatch[1]);
+    void openFriendByUsername(username);
+    return;
+  }
+  const match = hash.match(/#conv=([^&]+)/);
   if (match) openConversationLink(decodeURIComponent(match[1]));
 }
 window.addEventListener("hashchange", handleConvoLinkFromHash);
+
+/** Open a friend DM from `#user=username` (or sidebar). */
+async function openFriendByUsername(username: string) {
+  const clean = username.trim().replace(/^@/, "");
+  if (!clean) return;
+  try {
+    await loadFriends();
+    const fr =
+      friendsList.find((f) => f.peer.username.toLowerCase() === clean.toLowerCase()) ||
+      friendsPendingIn.find((f) => f.peer.username.toLowerCase() === clean.toLowerCase()) ||
+      friendsPendingOut.find((f) => f.peer.username.toLowerCase() === clean.toLowerCase());
+    if (fr && fr.status === "accepted") {
+      await openFriendChat(fr.id);
+      return;
+    }
+    // Not friends yet — try server open-by-username (accepted only)
+    const dm = await api.openFriendDmByUsername(clean);
+    await loadConversations();
+    currentDmPeer = dm.peer;
+    isDmChat = true;
+    setCurrentConversation(dm.conversation_id);
+    await selectConversation(dm.conversation_id);
+    // Force #user= in the bar
+    internalHashUpdate = true;
+    history.replaceState(null, "", friendUserUrl(dm.peer.username));
+    setTimeout(() => {
+      internalHashUpdate = false;
+    }, 0);
+  } catch (e: any) {
+    showToast(e?.message || `Could not open chat with @${clean}`);
+  }
+}
 
 function makeIconActionBtn(icon: keyof typeof icons, title: string): HTMLButtonElement {
   const btn = document.createElement("button");
@@ -2149,6 +2315,12 @@ async function selectConversation(id: string) {
   currentDmPeer = data.conversation?.dm_peer || null;
   if (isDmChat) applyDmHeader(currentDmPeer);
   else chatTitle.textContent = data.conversation?.title || convo?.title || t("chat.newChat");
+  if (isDmChat && currentDmPeer?.username) {
+    internalHashUpdate = true;
+    history.replaceState(null, "", friendUserUrl(currentDmPeer.username));
+    setTimeout(() => { internalHashUpdate = false; }, 0);
+  }
+
   // Keep sidebar/local convo in sync with server lock + visibility
   if (data.conversation) {
     const local = conversations.find((c) => c.id === id);

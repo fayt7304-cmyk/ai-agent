@@ -2289,6 +2289,150 @@ async function handleFriendRespond(request: Request, env: Env, friendshipId: str
   return json({ ok: true, status: "removed" });
 }
 
+/** Open DM by username (accepted friends only) — powers `#user=username` links. */
+async function handleOpenDmByUsername(request: Request, env: Env): Promise<Response> {
+  await ensureConversationColumns(env);
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  const body = (await request.json().catch(() => null)) as { username?: string } | null;
+  const username = String(body?.username || "").trim().replace(/^@/, "");
+  if (!username) return err("Username required.", 400);
+
+  const peer = await env.DB.prepare(
+    "SELECT id, username, display_name, avatar FROM users WHERE lower(username) = lower(?)"
+  )
+    .bind(username)
+    .first<{ id: string; username: string; display_name: string | null; avatar: string | null }>();
+  if (!peer) return err("User not found.", 404);
+  if (peer.id === user.id) return err("That's you.", 400);
+
+  const [user_a, user_b] = friendshipPair(user.id, peer.id);
+  const fr = await env.DB.prepare(
+    "SELECT id, status FROM friendships WHERE user_a = ? AND user_b = ?"
+  )
+    .bind(user_a, user_b)
+    .first<{ id: string; status: string }>();
+  if (!fr || fr.status !== "accepted") {
+    return err("You're not friends with this user yet.", 403);
+  }
+  // Reuse the friendship-id open path
+  return handleOpenDm(
+    new Request(request.url, {
+      method: "POST",
+      headers: request.headers,
+    }),
+    env,
+    fr.id
+  );
+}
+
+/** Live friend-request stream (WebSocket). Pushes snapshot every ~2s. */
+async function handleFriendsLive(request: Request, env: Env): Promise<Response> {
+  await ensureConversationColumns(env);
+  if (request.headers.get("Upgrade") !== "websocket") {
+    return err("Expected WebSocket upgrade.", 426);
+  }
+  const url = new URL(request.url);
+  const token = url.searchParams.get("token") || undefined;
+  // Auth via cookie or ?token=
+  let user = await getUserFromRequest(env, request);
+  if (!user && token) {
+    try {
+      const row = await env.DB.prepare(
+        "SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ? AND s.expires_at > ?"
+      )
+        .bind(token, nowIso())
+        .first();
+      if (row) user = row as any;
+    } catch {
+      /* ignore */
+    }
+  }
+  if (!user) return err("Not authenticated.", 401);
+
+  const pair = new WebSocketPair();
+  const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
+  server.accept();
+  let closed = false;
+
+  const push = async () => {
+    if (closed) return;
+    try {
+      // Reuse list logic inline (lightweight)
+      const q = await env.DB.prepare(
+        `SELECT f.id, f.user_a, f.user_b, f.requester_id, f.status, f.created_at, f.updated_at,
+                ua.username AS a_username, ua.display_name AS a_display_name, ua.avatar AS a_avatar,
+                ub.username AS b_username, ub.display_name AS b_display_name, ub.avatar AS b_avatar
+         FROM friendships f
+         JOIN users ua ON ua.id = f.user_a
+         JOIN users ub ON ub.id = f.user_b
+         WHERE f.user_a = ? OR f.user_b = ?
+         ORDER BY f.updated_at DESC`
+      )
+        .bind(user!.id, user!.id)
+        .all();
+      const friends: any[] = [];
+      const pending_in: any[] = [];
+      const pending_out: any[] = [];
+      for (const r of q.results || []) {
+        const row = r as any;
+        const peerIsA = row.user_b === user!.id;
+        const peer = {
+          id: peerIsA ? row.user_a : row.user_b,
+          username: peerIsA ? row.a_username : row.b_username,
+          display_name:
+            (peerIsA ? row.a_display_name : row.b_display_name) ||
+            (peerIsA ? row.a_username : row.b_username),
+          avatar: peerIsA ? row.a_avatar : row.b_avatar,
+        };
+        const item = {
+          id: row.id,
+          status: row.status,
+          peer,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+        };
+        if (row.status === "accepted") friends.push(item);
+        else if (row.status === "pending") {
+          if (row.requester_id === user!.id) pending_out.push(item);
+          else pending_in.push(item);
+        }
+      }
+      server.send(
+        JSON.stringify({
+          type: "friends",
+          friends,
+          pending_in,
+          pending_out,
+        })
+      );
+    } catch {
+      /* ignore transient */
+    }
+  };
+
+  server.addEventListener("close", () => {
+    closed = true;
+  });
+  server.addEventListener("error", () => {
+    closed = true;
+  });
+  server.addEventListener("message", (ev) => {
+    if (String(ev.data) === "refresh") void push();
+  });
+
+  void push();
+  const interval = setInterval(() => {
+    if (closed) {
+      clearInterval(interval);
+      return;
+    }
+    void push();
+  }, 2000);
+
+  return new Response(null, { status: 101, webSocket: client });
+}
+
 /** Open or create a DM conversation with an accepted friend. */
 async function handleOpenDm(request: Request, env: Env, friendshipId: string): Promise<Response> {
   await ensureConversationColumns(env);
@@ -2869,14 +3013,18 @@ export default {
         resp = await handleListFriends(request, env);
       } else if (path === "/api/friends/request" && request.method === "POST") {
         resp = await handleFriendRequest(request, env);
+      } else if (path === "/api/friends/dm" && request.method === "POST") {
+        resp = await handleOpenDmByUsername(request, env);
+      } else if (path === "/api/friends/live" && request.method === "GET") {
+        return handleFriendsLive(request, env);
       } else if (path.match(/^\/api\/friends\/[^/]+\/accept$/) && request.method === "POST") {
         resp = await handleFriendRespond(request, env, path.split("/")[3], "accept");
       } else if (path.match(/^\/api\/friends\/[^/]+\/reject$/) && request.method === "POST") {
         resp = await handleFriendRespond(request, env, path.split("/")[3], "reject");
-      } else if (path.match(/^\/api\/friends\/[^/]+$/) && request.method === "DELETE") {
-        resp = await handleFriendRespond(request, env, path.split("/")[3], "reject");
       } else if (path.match(/^\/api\/friends\/[^/]+\/dm$/) && request.method === "POST") {
         resp = await handleOpenDm(request, env, path.split("/")[3]);
+      } else if (path.match(/^\/api\/friends\/[^/]+$/) && request.method === "DELETE") {
+        resp = await handleFriendRespond(request, env, path.split("/")[3], "reject");
       } else if (path.match(/^\/api\/conversations\/[^/]+\/files$/) && request.method === "GET") {
         resp = await handleGetConversationFiles(request, env, path.split("/")[3]);
       } else if (path.match(/^\/api\/conversations\/[^/]+\/usage$/) && request.method === "GET") {

@@ -402,6 +402,12 @@ export const api = {
       method: "POST",
     }),
 
+  openFriendDmByUsername: (username: string) =>
+    request<{ conversation_id: string; title: string; peer: FriendPeer }>("/api/friends/dm", {
+      method: "POST",
+      body: JSON.stringify({ username }),
+    }),
+
 getMessages: (id: string) =>
     request<{
       messages: Message[];
