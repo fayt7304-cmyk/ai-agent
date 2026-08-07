@@ -1,128 +1,174 @@
-# Paul — Personal AI Agent (v9.0)
+# Paul — Your Personal AI Agent (v9)
 
-Self-hosted chat app powered by a **Mistral AI agent**, running on **Cloudflare Workers + D1**.  
-Frontend is a Vite TypeScript SPA; the Worker owns auth, sessions, chat, tools, memory, and email.
+A comprehensive chat web application powered by a Mistral AI agent, designed to run entirely on your own Cloudflare account for maximum privacy and control.
 
 ---
 
-## What’s new in v9.0
+## 🚀 What's New in v9
 
-- **Agent tools** — time, weather, translate, and stock quotes executed on the Worker (function.call loop)
-- **OCR** — `POST /api/ocr` via Mistral Document AI on `api.afmarbre.com` (no external OCR worker)
-- **Background removal** — `POST /api/bg-remove` via Cloudflare Images (`segment=foreground`), no ~80MB client model
-- **TTS** — Cloudflare `elevenlabs/eleven-multilingual-v2` with fallbacks
-- **Memory** — self-edit section, mobile layout fixes
-- **Tools health** — `GET /api/tools/health` surfaces OCR / bg-remove config issues in the Tools UI
+This version (v9) ships server-side tools, high-quality voice, memory self-edit, and UI polish for mobile + desktop (including Arabic / RTL).
 
+| Feature | Description |
+| :--- | :--- |
+| **Agent tools** | Time, weather, translate, and stock quotes run on the Worker (`function.call` → `function.result` loop). Short 5‑minute cache for weather / stocks. |
+| **OCR** | `POST /api/ocr` via **Mistral Document AI** on your Worker — no separate OCR worker. |
+| **Background removal** | `POST /api/bg-remove` via **Cloudflare Images** (`segment=foreground`) — no ~80 MB model in the browser. |
+| **TTS** | Cloudflare **`elevenlabs/eleven-multilingual-v2`** with fallbacks (ElevenLabs key → MeloTTS → Deepgram Aura → device). |
+| **Tools health** | `GET /api/tools/health` surfaces OCR / bg-remove / TTS config issues in the Tools UI. |
+| **Memory self-edit** | Users can edit title & content in Settings → Memory (dedicated section), not only via “talk to Paul”. |
+| **Language / RTL** | Language & Learn more submenus work after switching to Arabic; attach (+) menu anchors correctly in RTL. |
+| **Settings layout** | Labels and controls side-by-side (not centered); mobile tab spacing; Manage memory stacking fixed. |
+
+### From earlier releases (v8.x → v8.1)
 
 | Area | Change |
-|------|--------|
-| **Memory self-edit** | Users can **edit title & content directly** in Settings → Memory (not only via “talk to Paul”) |
-| **Language / Learn more** | Fixed submenu reopen after switching to Arabic (RTL) or closing the profile menu |
-| **Settings layout** | Less forced centering; labels and controls align cleanly on **mobile and desktop** (General, Account, Privacy, Memory) |
-| **API** | `PATCH /api/memory/:id` for direct memory updates |
-
-### From v8.0
-
-| Area | Change |
-|------|--------|
-| **Profile menu** | Claude-style menu: email header, Settings, **Language ›** submenu, Learn more, Log out, theme row |
-| **General settings** | Profile + Preferences layout (avatar, full name, preferred name, Appearance icons, Motion, Voice) |
-| **Mobile** | Settings full-screen sheet, pill tabs, 768px breakpoint, safe-area, 16px inputs (no iOS zoom) |
-| **Guest sessions** | Hard **30-day** expiry; abandoned guests cleaned up; banner copy updated |
-| **Account deletion** | **Soft-delete** with **7-day** grace; Resend email; **Keep my account** cancel |
-| **Sessions** | **User-Agent** stored and shown (e.g. Chrome on Windows); terminate other devices |
-| **i18n / RTL** | en · fr · es · zh · ar; logical CSS; Arabic font stack |
-| **Voice** | High-quality path + adaptive delay before browser TTS fallback |
+| :--- | :--- |
+| **Profile menu** | Claude-style menu: email header, Settings, Language ›, Learn more, Log out, theme row |
+| **Mobile** | Full-screen settings sheet, pill tabs, 768px breakpoint, safe-area, 16px inputs (no iOS zoom) |
+| **Guest sessions** | Hard **30-day** expiry; abandoned guests cleaned up |
+| **Account deletion** | Soft-delete with **7-day** grace; Resend email; **Keep my account** |
+| **Sessions** | User-Agent shown (e.g. Chrome on Windows); terminate other devices |
+| **i18n** | en · fr · es · zh · ar |
 
 ---
 
-## Stack
+## 🛠️ Comprehensive Setup Guide
 
-- **App** (`app/`): Vite, TypeScript, CSS  
-- **API** (`worker/`): Cloudflare Worker, D1, Mistral Agent API, optional ElevenLabs / Workers AI TTS, Resend, Google OAuth  
+Follow these steps to set up your own instance of Paul from scratch.
 
----
+### 1. Prerequisites & API Keys
 
-## Prerequisites
+Before starting, collect the following:
 
 | Key / account | Required | Used for |
-|---------------|----------|----------|
-| [Mistral](https://console.mistral.ai/) API key + Agent ID | Yes | Chat |
-| Cloudflare account | Yes | Worker + D1 |
-| [Resend](https://resend.com/) API key | Soft-delete email + password reset + leads | Email |
-| Google OAuth client | Optional | Sign in with Google |
-| ElevenLabs API key **or** Workers AI | Optional | High-quality voice (`/api/tts` → **501** until configured; see below) |
+| :--- | :---: | :--- |
+| **[Mistral AI](https://console.mistral.ai/)** API key + **Agent ID** | Yes | Chat + agent tools + OCR |
+| **Cloudflare** account | Yes | Worker, D1, AI, Images |
+| **[Resend](https://resend.com/)** API key | Recommended | Password reset, soft-delete email, leads |
+| **Google Cloud** OAuth client | Optional | Sign in / link Google |
+| **ElevenLabs** API key *or* Workers AI | Optional | High-quality voice (`/api/tts`) |
+
+For Google Login, add your callback to Authorized redirect URIs, e.g.  
+`https://api.yourdomain.com/api/auth/google/callback`.
 
 ---
 
-## Quick start
+### 2. Backend Setup (Cloudflare Worker)
 
-### 1. Worker
+The backend handles auth, database, chat, tools, memory, OCR, TTS, and email.
+
+#### A. Initialize Wrangler
 
 ```bash
+npm install -g wrangler
+wrangler login
 cd worker
 npm install
-npx wrangler login
 ```
 
-Create D1 and put `database_id` in `wrangler.toml`:
+#### B. Create the Database
 
 ```bash
-npx wrangler d1 create mistral-agent-chat-db
+wrangler d1 create mistral-agent-chat-db
 ```
 
-Apply schema + migrations (**use `--remote` for production**):
+Copy the `database_id` into `worker/wrangler.toml`:
+
+```toml
+[[d1_databases]]
+binding = "DB"
+database_name = "mistral-agent-chat-db"
+database_id = "PASTE_YOUR_DATABASE_ID_HERE"
+```
+
+Ensure these bindings exist in `wrangler.toml`:
+
+```toml
+[ai]
+binding = "AI"
+
+[images]
+binding = "IMAGES"
+```
+
+#### C. Run Migrations
+
+Apply schema + versioned migrations (**use `--remote` for production**):
 
 ```bash
-npx wrangler d1 execute mistral-agent-chat-db --remote --file=./schema.sql
+wrangler d1 execute mistral-agent-chat-db --remote --file=./schema.sql
 
-npx wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0002_oauth_and_reset.sql
-npx wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0003_leads.sql
-npx wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0004_profile.sql
-npx wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0005_star_archive.sql
-npx wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0006_conversation_visibility.sql
-npx wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0007_memory.sql
-npx wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0008_account_deletion.sql
-npx wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0009_session_user_agent.sql
+wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0002_oauth_and_reset.sql
+wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0003_leads.sql
+wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0004_profile.sql
+wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0005_star_archive.sql
+wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0006_conversation_visibility.sql
+wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0007_memory.sql
+wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0008_account_deletion.sql
+wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0009_session_user_agent.sql
 ```
 
-Secrets:
+#### D. Configure Secrets & Vars
+
+Secrets (encrypted):
 
 ```bash
-npx wrangler secret put MISTRAL_API_KEY
-npx wrangler secret put RESEND_API_KEY          # optional but recommended
-npx wrangler secret put GOOGLE_CLIENT_ID        # optional
-npx wrangler secret put GOOGLE_CLIENT_SECRET    # optional
+wrangler secret put MISTRAL_API_KEY
+# Optional but recommended
+wrangler secret put RESEND_API_KEY
+wrangler secret put GOOGLE_CLIENT_ID
+wrangler secret put GOOGLE_CLIENT_SECRET
+wrangler secret put ELEVENLABS_API_KEY
+# Optional Workers AI REST fallback
+# wrangler secret put CLOUDFLARE_AI_TOKEN
+# wrangler secret put CLOUDFLARE_ACCOUNT_ID
 ```
 
-Public vars live in `wrangler.toml` `[vars]`:
+Public vars in `wrangler.toml` `[vars]`:
 
-- `MISTRAL_AGENT_ID`
-- `FRONTEND_URL` (e.g. `https://ai.example.com`)
-- `RESEND_FROM`
-- `COOKIE_DOMAIN` (e.g. `.example.com` for shared cookie across app + API host)
-- `GOOGLE_REDIRECT_URI`
-- `LEAD_NOTIFY_TO`
+| Variable | Example | Purpose |
+| :--- | :--- | :--- |
+| `MISTRAL_AGENT_ID` | `ag_…` | Your agent from the Mistral console |
+| `FRONTEND_URL` | `https://ai.example.com` | App origin |
+| `COOKIE_DOMAIN` | `.example.com` | Shared cookie across app + API host |
+| `GOOGLE_REDIRECT_URI` | `https://api.example.com/api/auth/google/callback` | OAuth callback |
+| `RESEND_FROM` | `Agent <noreply@example.com>` | From address |
+| `LEAD_NOTIFY_TO` | `you@example.com` | Lead form inbox |
 
-Deploy:
+#### E. Deploy Backend
 
 ```bash
-npx wrangler deploy
-npx wrangler tail   # optional live logs
+wrangler deploy
+wrangler tail   # optional live logs
 ```
 
-### 2. Frontend
+Note your Worker URL (e.g. `https://mistral-agent-chat.<subdomain>.workers.dev`) or attach a custom domain such as `api.yourdomain.com`.
+
+---
+
+### 3. Frontend Setup (Vite + TypeScript)
+
+#### A. Connect to Backend
+
+Point the SPA at your Worker. Either:
+
+- Set `VITE_API_BASE` in `app/.env` (see `app/.env.example`), or  
+- Ensure `app/src/api.ts` resolves to your API origin (e.g. `https://api.afmarbre.com`).
+
+```bash
+# example
+echo 'VITE_API_BASE=https://api.yourdomain.com' > app/.env
+```
+
+#### B. Build & Deploy
 
 ```bash
 cd app
 npm install
-# Point the SPA at your Worker origin (see vite / API_BASE resolution in src/api.ts)
 npm run build
 ```
 
-Host the `dist/` folder on Cloudflare Pages, any static host, or your own CDN.  
-Set the API base so the browser talks to the Worker (custom domain recommended: `api.example.com` + `COOKIE_DOMAIN=.example.com`).
+Host the `dist/` folder on **Cloudflare Pages**, any static host, or your CDN.
 
 Dev:
 
@@ -132,120 +178,122 @@ npm run dev
 
 ---
 
-## Auth & sessions
+### 4. Custom Domain Configuration
 
-| Mode | Behavior |
-|------|----------|
-| **Guest** | Instant account; session **30 days**; not extended by activity; purge of abandoned guests |
-| **Registered** | Password and/or Google; session **90 days** |
-| **Soft-delete** | `deletion_requested_at` set; still logged in; email via Resend; hard delete after **7 days** unless cancelled |
-| **Sessions UI** | Device from User-Agent; revoke others; log out all devices |
+1. **Frontend** — Cloudflare Dashboard → Workers & Pages → your Pages project → **Custom Domains** (e.g. `ai.yourdomain.com`).
+2. **Backend** — Worker → **Settings → Domains & Routes** → add `api.yourdomain.com`.
+3. Set `COOKIE_DOMAIN=".yourdomain.com"` so login works on mobile (same-site cookie).
+4. Update Google OAuth redirect URI and `API_BASE` / `VITE_API_BASE`, then rebuild the frontend.
 
----
-
-## Settings overview
-
-- **General** — Profile (avatar, names), Appearance, language, font, motion, voice  
-- **Account** — Password, Google link, active sessions + UA, soft-delete  
-- **Privacy** — Cookies / privacy choices  
-- **Memory** — List / detail, **self-edit**, talk-to-Paul revise, import / export  
-
-### Memory editing (v8.1)
-
-1. Open **Settings → Memory**.
-2. Tap a memory entry.
-3. Use **Edit** to change title and content yourself, or type an instruction for Paul to revise.
-4. Save, or cancel to return to the detail view.
-
-API: `PATCH /api/memory/:id` with `{ "title": "...", "content": "..." }`.
+Full operational notes: `DEPLOY_CHECKLIST.md`.
 
 ---
 
-## Tools (in-app)
+## 📂 Project Structure
 
-Converter, weather, calculator, image tools, OCR, PDF/DOCX helpers — labels follow the active UI language where wired.
-
----
-
-## High-quality voice (TTS)
-
-`/api/tts` tries, in order:
-
-1. **ElevenLabs** — set secret `ELEVENLABS_API_KEY` (best quality)
-2. **Workers AI binding** — `[ai] binding = "AI"` in `wrangler.toml` (already present); uses MeloTTS then Deepgram Aura
-3. **Workers AI REST** — secrets `CLOUDFLARE_AI_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`
-
-```bash
-cd worker
-npx wrangler secret put ELEVENLABS_API_KEY   # recommended
-npx wrangler deploy
-```
-
-Templates for local secrets and frontend API base:
-
-- `worker/.dev.vars.example` → copy to `worker/.dev.vars`
-- `app/.env.example` → copy to `app/.env` (`VITE_API_BASE=https://api.afmarbre.com`)
-
-Full steps: `DEPLOY_CHECKLIST.md` → “High-quality TTS (v8.1)”.
-
----
-
-## Known console notes
-
-- **`/api/tts` → 501**: High-quality voice is not configured on that deployment. Browser TTS still works as fallback.
-- Extension noise (adblock, fingerprint scripts) is unrelated to Paul.
-
----
-
-## Wrangler remote cheatsheet
-
-```bash
-# Production D1
-npx wrangler d1 execute mistral-agent-chat-db --remote --file=./migrations/0009_session_user_agent.sql
-
-# Deploy Worker
-npx wrangler deploy
-
-# Logs
-npx wrangler tail
-```
-
-Omit `--remote` only when intentionally using a **local** D1 with `wrangler dev`.
-
----
-
-## Project layout
-
-```
+```text
 repo/
-  app/                 # Vite SPA
+  app/                      # Vite + TypeScript SPA
     src/
-      main.ts
-      settings-view.ts
-      chat-view.ts
-      lib/i18n.ts
-      style.css
+      api.ts                # API client (API_BASE / VITE_API_BASE)
+      main.ts               # Bootstrap, language menu, theme
+      chat-view.ts          # Chat UI, composer, attach menu
+      settings-view.ts      # General / Account / Privacy / Memory
+      tools-view.ts         # Converter, OCR, bg-remove, weather, …
+      lib/
+        i18n.ts             # en · fr · es · zh · ar
+        speech.ts           # TTS client
+        ocr.ts              # OCR → /api/ocr
+        bgRemove.ts         # BG remove → /api/bg-remove
+      style.css             # Core + responsive + settings layout
+      rtl-fixes.css         # Arabic / RTL overrides
   worker/
-    src/index.ts       # API routes
-    src/auth.ts        # sessions, guests, passwords
-    src/email.ts       # Resend
-    migrations/
-    schema.sql
-    wrangler.toml
+    schema.sql              # Base D1 schema
+    migrations/             # 0002 … 0009
+    wrangler.toml           # D1, AI, Images, vars
+    src/
+      index.ts              # Router: chat, auth, OCR, TTS, bg-remove, tools health
+      mistral.ts            # Agent calls + tool runners (time/weather/translate/stock)
+      auth.ts               # Sessions, guests, passwords
+      email.ts              # Resend
   README.md
   DEPLOY_CHECKLIST.md
 ```
 
 ---
 
-## Version
+## 🧠 Core Features
 
-**9.0.0** — Agent tools, server OCR & bg-remove, TTS, tools health.
-**8.1.0** — Memory self-edit, Language/Learn more RTL fix, settings layout polish.  
-Earlier notes for v8.0 / v7 remain in git history.
+- **Privacy-first** — Data stays in your Cloudflare account (D1 + Worker).
+- **Mistral agent** — Model, instructions, and tool *definitions* live on the agent; the Worker **executes** time, weather, translate, and stocks.
+- **Intelligent memory** — Learns from chats; users can list, talk-to-Paul, or **self-edit** entries.
+- **Tools** — OCR, background removal, converter, weather, calculator, PDF/DOCX helpers.
+- **High-quality voice** — ElevenLabs multilingual path with automatic fallbacks.
+- **Full customization** — Themes, typography, motion, voice; languages including Arabic (RTL).
+- **Auth** — Guests (30 days), registered accounts, Google link, soft-delete (7-day grace), multi-device sessions.
+- **PWA ready** — Installable on iOS, Android, and desktop.
+
+---
+
+## 🔌 Important API routes
+
+| Method | Path | Purpose |
+| :--- | :--- | :--- |
+| `POST` | `/api/chat` | Chat + agent tool loop |
+| `POST` | `/api/ocr` | Document / image OCR (Mistral) |
+| `POST` | `/api/bg-remove` | Background removal (Cloudflare Images) |
+| `POST` | `/api/tts` | Text-to-speech |
+| `GET` | `/api/tools/health` | OCR / bg-remove / TTS / agent-tools status |
+| `PATCH` | `/api/memory/:id` | Direct memory title/content update |
+
+---
+
+## 🔊 High-quality voice (TTS)
+
+`/api/tts` tries, in order:
+
+1. **Cloudflare AI binding** — `elevenlabs/eleven-multilingual-v2` (`[ai] binding = "AI"`)
+2. **ElevenLabs API** — secret `ELEVENLABS_API_KEY`
+3. **Workers AI fallbacks** — MeloTTS / Deepgram Aura
+4. **Device** — browser speech synthesis if the API returns 501
+
+```bash
+cd worker
+npx wrangler secret put ELEVENLABS_API_KEY   # optional but recommended
+npx wrangler deploy
+```
+
+Templates: `worker/.dev.vars.example`, `app/.env.example`.
+
+---
+
+## 📝 Memory editing
+
+1. Open **Settings → Memory**.
+2. Open an entry.
+3. Use **Edit** for a dedicated edit section (title + content), or type an instruction for Paul.
+4. Save or go back to the detail view.
+
+API: `PATCH /api/memory/:id` with `{ "title": "...", "content": "..." }`.
+
+---
+
+## ⚠️ Known console notes
+
+- **`/api/tts` → 501** — High-quality voice not configured; browser TTS still works.
+- **OCR / bg-remove 501** — Check `MISTRAL_API_KEY` and the `[images]` binding; Tools UI shows a health note.
+- Browser extension noise (adblock, fingerprint scripts) is unrelated to Paul.
+
+---
+
+## 📌 Version
+
+**9.0.0** — Agent tools, server OCR & bg-remove, TTS, tools health, memory self-edit, RTL / settings polish.
+
+Earlier notes for v8.x / v7 remain in git history.
 
 ---
 
 ## License / use
 
-Deploy on your own Cloudflare account. You are responsible for Mistral, Resend, and Google terms and for protecting user data in your D1 database.
+Self-host for your own use. Respect Mistral, Cloudflare, and any third-party API terms when you deploy.
