@@ -5757,14 +5757,46 @@ html::-webkit-scrollbar-thumb:hover,
   color: var(--text-secondary);
   margin-bottom: 6px;
 }
+.manage-collab-code-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 4px 0 6px;
+}
 .manage-collab-code {
   font-size: 26px;
   font-weight: 700;
   letter-spacing: 0.3em;
   text-align: center;
   color: var(--accent);
-  padding: 8px 0 10px;
+  padding: 4px 0;
   font-variant-numeric: tabular-nums;
+}
+.manage-collab-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.manage-collab-refresh-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-bg) 60%, var(--card));
+}
+.manage-collab-refresh-btn .icon,
+.manage-collab-refresh-btn svg {
+  width: 16px;
+  height: 16px;
 }
 .manage-collab-note {
   font-size: 11.5px;

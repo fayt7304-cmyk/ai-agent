@@ -258,24 +258,44 @@ function wireHeaderActions() {
     void shareCurrentConversation("shared", { copyLink: true });
   });
   document.getElementById("share-collaboration")?.addEventListener("click", () => {
-    void shareCurrentConversation("collab", { copyLink: true, forceNewCode: true });
+    void shareCurrentConversation("collab", { copyLink: false, forceNewCode: true });
   });
-  document.getElementById("manage-collab-copy")?.addEventListener("click", async (e) => {
+  // Copy only the 4-digit code
+  document.getElementById("manage-collab-copy-code")?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const code = currentCollabCode || "";
+    if (!code) {
+      showToast("No invite code yet — generate one first");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(code);
+      showToast("Code copied");
+    } catch {
+      showToast(`Code: ${code}`);
+    }
+  });
+  // Copy only the conversation link
+  document.getElementById("manage-collab-copy-link")?.addEventListener("click", async (e) => {
     e.stopPropagation();
     if (!currentConversationId) return;
     const url = conversationUrl(currentConversationId);
-    const code = currentCollabCode || "";
     try {
-      await navigator.clipboard.writeText(code ? `${url}\nCode: ${code}` : url);
-      showToast(code ? "Link and code copied" : "Link copied");
+      await navigator.clipboard.writeText(url);
+      showToast("Link copied");
     } catch {
-      showToast(code ? `Code: ${code}` : url);
+      showToast(url);
     }
   });
-  document.getElementById("manage-collab-refresh")?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    void shareCurrentConversation("collab", { copyLink: false, forceNewCode: true });
-  });
+  // Regenerate invite code (icon next to the code)
+  const refreshBtn = document.getElementById("manage-collab-refresh") as HTMLButtonElement | null;
+  if (refreshBtn) {
+    refreshBtn.innerHTML = icons.retry;
+    refreshBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      void shareCurrentConversation("collab", { copyLink: false, forceNewCode: true });
+    });
+  }
 
   shareBtn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -894,8 +914,43 @@ async function openConversationLink(id: string) {
   messagesEl.innerHTML = "";
   chatTitle.textContent = "…";
   try {
-    const { messages, conversation } = await api.getMessages(id);
+    const data = await api.getMessages(id);
+    const { messages, conversation } = data;
     chatTitle.textContent = conversation?.title || t("chat.newChat");
+    isCollabChat = conversation?.visibility === "collab" || !!conversation?.is_member;
+    currentVisibility = (conversation?.visibility as Visibility) || "private";
+    currentCollabCode = conversation?.collab_code || null;
+    syncManageChatPanel();
+
+    // Collab link opened by a non-member: can read, but need the 4-digit code to type.
+    // Prompt for the code; declining still leaves the chat readable (read-only).
+    if (
+      conversation?.visibility === "collab" &&
+      !conversation?.owner &&
+      !conversation?.can_write
+    ) {
+      renderMessages(messages);
+      setComposerReadOnly(true, "Enter the invite code to reply — or just read.");
+      showToast("Need the 4-digit code to reply. You can still read without it.");
+      const code = await showCollabJoinModal(id);
+      if (code) {
+        try {
+          await api.joinCollab(id, code);
+          const again = await api.getMessages(id);
+          isCollabChat = true;
+          renderMessages(again.messages);
+          setComposerReadOnly(!again.conversation?.can_write, again.conversation?.can_write ? "" : "Join with the collab code to reply.");
+          await loadConversations();
+          showToast("Joined collaboration — you can reply.");
+        } catch (e: any) {
+          showToast(e?.message || "Could not join collaboration");
+          setComposerReadOnly(true, "Enter the invite code to reply — or just read.");
+        }
+      }
+      if (isMobileLayout()) toggleSidebar(true);
+      return;
+    }
+
     renderMessages(messages);
     const canWrite = conversation ? conversation.can_write !== false : true;
     if (canWrite) {
@@ -951,13 +1006,14 @@ function showCollabShareModal(url: string, code: string) {
   overlay.innerHTML = `
     <div class="sender-popup-card collab-share-card">
       <div class="sender-popup-name">Collaboration invite</div>
-      <p class="collab-share-hint">Share this link and the 4-digit code. The code works once — share again to get a new code.</p>
+      <p class="collab-share-hint">Share the link and the 4-digit code separately. The code works once — regenerate for a new one.</p>
       <label class="collab-share-label">Link</label>
       <input type="text" class="collab-share-input" id="collab-share-url" readonly />
       <label class="collab-share-label">Code</label>
       <div class="collab-share-code" id="collab-share-code"></div>
       <div class="collab-share-actions">
-        <button type="button" class="secondary-btn" id="collab-copy-btn">Copy link + code</button>
+        <button type="button" class="secondary-btn" id="collab-copy-code-btn">Copy code</button>
+        <button type="button" class="secondary-btn" id="collab-copy-link-btn">Copy link</button>
         <button type="button" class="primary" id="collab-close-btn">Done</button>
       </div>
     </div>`;
@@ -969,19 +1025,26 @@ function showCollabShareModal(url: string, code: string) {
   const close = () => overlay.remove();
   overlay.querySelector("#collab-close-btn")!.addEventListener("click", close);
   overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
-  overlay.querySelector("#collab-copy-btn")!.addEventListener("click", async () => {
-    const payload = `${url}\nCode: ${code}`;
+  overlay.querySelector("#collab-copy-code-btn")!.addEventListener("click", async () => {
     try {
-      await navigator.clipboard.writeText(payload);
-      showToast("Link and code copied");
+      await navigator.clipboard.writeText(code);
+      showToast("Code copied");
+    } catch {
+      showToast("Code: " + code);
+    }
+  });
+  overlay.querySelector("#collab-copy-link-btn")!.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast("Link copied");
     } catch {
       urlInput.select();
-      showToast("Copy manually — code is " + code);
+      showToast(url);
     }
   });
 }
 
-function showCollabJoinModal(conversationId: string): Promise<string | null> {
+function showCollabJoinModal(_conversationId: string): Promise<string | null> {
   return new Promise((resolve) => {
     document.getElementById("collab-join-modal")?.remove();
     const overlay = document.createElement("div");
@@ -990,11 +1053,11 @@ function showCollabJoinModal(conversationId: string): Promise<string | null> {
     overlay.innerHTML = `
       <div class="sender-popup-card collab-share-card">
         <div class="sender-popup-name">Join collaboration</div>
-        <p class="collab-share-hint">Enter the 4-digit code from the person who shared this chat.</p>
+        <p class="collab-share-hint">Enter the 4-digit invite code from the owner to reply. You can still read the conversation without it.</p>
         <input type="text" class="collab-share-input" id="collab-join-code" maxlength="4" inputmode="numeric" placeholder="1234" />
         <div class="collab-share-actions">
-          <button type="button" class="secondary-btn" id="collab-join-cancel">Cancel</button>
-          <button type="button" class="primary" id="collab-join-ok">Join</button>
+          <button type="button" class="secondary-btn" id="collab-join-cancel">Just read</button>
+          <button type="button" class="primary" id="collab-join-ok">Join &amp; reply</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
@@ -1008,7 +1071,7 @@ function showCollabJoinModal(conversationId: string): Promise<string | null> {
     overlay.addEventListener("click", (e) => { if (e.target === overlay) finish(null); });
     overlay.querySelector("#collab-join-ok")!.addEventListener("click", () => {
       const c = input.value.trim();
-      if (!/^\\d{4}$/.test(c)) {
+      if (!/^\d{4}$/.test(c)) {
         showToast("Enter a 4-digit code");
         return;
       }
@@ -1264,8 +1327,11 @@ async function selectConversation(id: string) {
   currentVisibility = (data.conversation?.visibility as Visibility) || "private";
   currentCollabCode = data.conversation?.collab_code || null;
   syncManageChatPanel();
-  // Prompt for code if collab, not owner, cannot write yet
+  // Prompt for code if collab, not owner, cannot write yet.
+  // Declining still allows reading; typing requires the invite code.
   if (data.conversation?.visibility === "collab" && !data.conversation?.owner && !data.conversation?.can_write) {
+    renderMessages(messages);
+    setComposerReadOnly(true, "Enter the invite code to reply — or just read.");
     const code = await showCollabJoinModal(id);
     if (code) {
       try {
@@ -1273,18 +1339,21 @@ async function selectConversation(id: string) {
         const again = await api.getMessages(id);
         isCollabChat = true;
         renderMessages(again.messages);
-        setComposerReadOnly(!again.conversation?.can_write, again.conversation?.can_write ? "" : "Join with the collab code to reply.");
+        setComposerReadOnly(!again.conversation?.can_write, again.conversation?.can_write ? "" : "Enter the invite code to reply — or just read.");
         await loadConversations();
-        showToast("Joined collaboration");
+        showToast("Joined collaboration — you can reply.");
+        if (isMobileLayout()) toggleSidebar(true);
         return;
       } catch (e: any) {
         showToast(e?.message || "Could not join collaboration");
       }
     }
+    if (isMobileLayout()) toggleSidebar(true);
+    return;
   }
   renderMessages(messages);
   if (data.conversation && !data.conversation.can_write && !data.conversation.owner) {
-    setComposerReadOnly(true, "Join with the collab code to reply.");
+    setComposerReadOnly(true, "Enter the invite code to reply — or just read.");
   }
   // Use toggleSidebar() rather than touching the class directly: it also syncs
   // the header "open sidebar" button, which otherwise stayed hidden on mobile

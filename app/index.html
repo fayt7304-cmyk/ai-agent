@@ -298,11 +298,14 @@
         </button>
         <div id="manage-collab-box" class="manage-collab-box" style="display:none;">
           <div class="manage-collab-label" data-i18n="share.collabCode">Invite code</div>
-          <div class="manage-collab-code" id="manage-collab-code">————</div>
+          <div class="manage-collab-code-row">
+            <div class="manage-collab-code" id="manage-collab-code">————</div>
+            <button type="button" id="manage-collab-refresh" class="manage-collab-refresh-btn" title="Generate new code" aria-label="Generate new code"></button>
+          </div>
           <p class="manage-collab-note" data-i18n="share.collabCodeNote">Single-use. Share again to generate a new code.</p>
           <div class="manage-collab-actions">
-            <button type="button" id="manage-collab-copy" class="secondary-btn">Copy link + code</button>
-            <button type="button" id="manage-collab-refresh" class="secondary-btn">New code</button>
+            <button type="button" id="manage-collab-copy-code" class="secondary-btn">Copy code</button>
+            <button type="button" id="manage-collab-copy-link" class="secondary-btn">Copy link</button>
           </div>
         </div>
       </div>
