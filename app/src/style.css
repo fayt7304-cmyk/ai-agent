@@ -4530,3 +4530,114 @@ html[dir="rtl"] .hourly-scroll {
     margin: 4px 6px 8px;
   }
 }
+
+/* ---- v8.1: memory self-edit + settings layout polish -------------------- */
+
+.memory-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.memory-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.memory-edit-input,
+.memory-edit-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.45;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.memory-edit-input:focus,
+.memory-edit-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-bg);
+}
+
+.memory-edit-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+/* Settings: left-aligned content, no forced centering on labels/controls */
+.settings-panels {
+  text-align: start;
+}
+
+.settings-panel-title {
+  text-align: start;
+}
+
+.settings-card-title,
+.settings-card-desc,
+.settings-section-title,
+.settings-subheading {
+  text-align: start;
+}
+
+.settings-card-row {
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Desktop: keep controls on the trailing edge, labels on the start edge */
+@media (min-width: 769px) {
+  .settings-card {
+    align-items: stretch;
+  }
+  .settings-card > .settings-inline-input,
+  .settings-card > select,
+  .settings-card > .segmented {
+    justify-self: end;
+    max-width: 280px;
+  }
+  .settings-card-actions {
+    justify-content: flex-start;
+  }
+  .settings-panels button.primary {
+    align-self: flex-start;
+  }
+}
+
+/* Mobile memory detail: stack action buttons cleanly */
+@media (max-width: 768px) {
+  .memory-detail-head {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .memory-detail-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .memory-edit-actions {
+    justify-content: stretch;
+  }
+  .memory-edit-actions .secondary-btn,
+  .memory-edit-actions .primary {
+    flex: 1;
+    min-height: 44px;
+  }
+  .memory-edit-input,
+  .memory-edit-textarea {
+    font-size: 16px; /* no iOS zoom */
+    min-height: 44px;
+  }
+}

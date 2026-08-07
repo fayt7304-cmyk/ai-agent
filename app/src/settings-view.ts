@@ -108,7 +108,14 @@ const memoryDetailTitle = document.getElementById("memory-detail-title") as HTML
 const memoryDetailMeta = document.getElementById("memory-detail-meta") as HTMLDivElement;
 const memoryDetailBody = document.getElementById("memory-detail-body") as HTMLUListElement;
 const memoryDetailDelete = document.getElementById("memory-detail-delete") as HTMLButtonElement;
+const memoryDetailEdit = document.getElementById("memory-detail-edit") as HTMLButtonElement;
 const memoryDetailSummary = document.getElementById("memory-detail-summary") as HTMLDivElement;
+const memoryViewMode = document.getElementById("memory-view-mode") as HTMLDivElement;
+const memoryEditForm = document.getElementById("memory-edit-form") as HTMLFormElement;
+const memoryEditTitle = document.getElementById("memory-edit-title") as HTMLInputElement;
+const memoryEditContent = document.getElementById("memory-edit-content") as HTMLTextAreaElement;
+const memoryEditCancel = document.getElementById("memory-edit-cancel") as HTMLButtonElement;
+const memoryEditSave = document.getElementById("memory-edit-save") as HTMLButtonElement;
 const memoryExportBtn = document.getElementById("memory-export-btn") as HTMLButtonElement;
 const memoryImportBtn = document.getElementById("memory-import-btn") as HTMLButtonElement;
 const memoryImportFile = document.getElementById("memory-import-file") as HTMLInputElement;
@@ -118,6 +125,7 @@ const memoryTalkSend = document.getElementById("memory-talk-send") as HTMLButton
 
 let openMemoryId: string | null = null;
 let allMemories: MemoryEntry[] = [];
+let memoryEditing = false;
 
 function formatMemoryDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -138,14 +146,23 @@ function memorySummary(entry: MemoryEntry): string {
   return first.length > 140 ? first.slice(0, 137) + "…" : first;
 }
 
+function exitMemoryEdit() {
+  memoryEditing = false;
+  if (memoryEditForm) memoryEditForm.style.display = "none";
+  if (memoryViewMode) memoryViewMode.style.display = "";
+  if (memoryDetailEdit) memoryDetailEdit.style.display = "";
+}
+
 function showMemoryList() {
   openMemoryId = null;
+  exitMemoryEdit();
   memoryDetail.style.display = "none";
   memoryBrowser.style.display = "";
 }
 
 function showMemoryDetail(entry: MemoryEntry) {
   openMemoryId = entry.id;
+  exitMemoryEdit();
   memoryDetailTitle.textContent = entry.title;
   memoryDetailMeta.textContent = `${t("settings.memoryUpdated")} ${formatMemoryDate(entry.updated_at)}`;
   memoryDetailSummary.textContent = memorySummary(entry);
@@ -158,6 +175,19 @@ function showMemoryDetail(entry: MemoryEntry) {
   memoryTalkInput.value = "";
   memoryBrowser.style.display = "none";
   memoryDetail.style.display = "";
+}
+
+function enterMemoryEdit() {
+  if (!openMemoryId) return;
+  const entry = allMemories.find((m) => m.id === openMemoryId);
+  if (!entry) return;
+  memoryEditing = true;
+  memoryEditTitle.value = entry.title;
+  memoryEditContent.value = entry.content;
+  memoryViewMode.style.display = "none";
+  memoryEditForm.style.display = "";
+  memoryDetailEdit.style.display = "none";
+  memoryEditTitle.focus();
 }
 
 function renderMemories(memories: MemoryEntry[]) {
@@ -191,6 +221,47 @@ function renderMemories(memories: MemoryEntry[]) {
 }
 
 memoryDetailBack.addEventListener("click", showMemoryList);
+
+memoryDetailEdit?.addEventListener("click", () => enterMemoryEdit());
+
+memoryEditCancel?.addEventListener("click", () => {
+  exitMemoryEdit();
+  if (openMemoryId) {
+    const entry = allMemories.find((m) => m.id === openMemoryId);
+    if (entry) showMemoryDetail(entry);
+  }
+});
+
+memoryEditForm?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!openMemoryId) return;
+  const title = memoryEditTitle.value.trim();
+  const content = memoryEditContent.value.trim();
+  if (!title && !content) {
+    settingsError.textContent = t("settings.memoryEmptyTitle");
+    return;
+  }
+  memoryEditSave.disabled = true;
+  settingsError.textContent = "";
+  try {
+    const { memories: next } = await api.updateMemory(openMemoryId, title, content);
+    allMemories = next;
+    settingsSuccess.textContent = t("settings.memorySaved");
+    setTimeout(() => {
+      settingsSuccess.textContent = "";
+    }, 3000);
+    const updated = next.find((m) => m.id === openMemoryId);
+    if (updated) showMemoryDetail(updated);
+    else {
+      showMemoryList();
+      renderMemories(next);
+    }
+  } catch (err) {
+    settingsError.textContent = err instanceof ApiError ? err.message : t("settings.memoryNotAvailable");
+  } finally {
+    memoryEditSave.disabled = false;
+  }
+});
 
 /** Ask Paul to revise the open memory from a natural-language instruction. */
 memoryTalkForm.addEventListener("submit", async (e) => {

@@ -840,6 +840,27 @@ async function handleDeleteMemory(request: Request, env: Env, id: string): Promi
   return json({ memories: await listMemoryRows(env, user.id) });
 }
 
+/** PATCH /api/memory/:id — user edits title/content directly (no AI). */
+async function handleUpdateMemory(request: Request, env: Env, id: string): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  const body = (await request.json().catch(() => ({}))) as { title?: string; content?: string };
+  const title = (body.title ?? "").trim();
+  const content = (body.content ?? "").trim();
+  if (!title && !content) return err("Title and content cannot both be empty.", 400);
+  const row = await env.DB.prepare("SELECT id FROM memories WHERE id = ? AND user_id = ?")
+    .bind(id, user.id)
+    .first();
+  if (!row) return err("Memory entry not found.", 404);
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    `UPDATE memories SET title = ?, content = ?, source = 'manual', updated_at = ? WHERE id = ? AND user_id = ?`
+  )
+    .bind((title || content.slice(0, 40)).slice(0, 60), content.slice(0, 600) || title, now, id, user.id)
+    .run();
+  return json({ memories: await listMemoryRows(env, user.id) });
+}
+
 /**
  * POST /api/memory/revise  { id, instruction }
  * Paul rewrites (or deletes) one memory entry from a natural-language request,
@@ -1759,6 +1780,8 @@ export default {
         resp = await handleMemorySettings(request, env);
       } else if (path.match(/^\/api\/memory\/[^/]+$/) && request.method === "DELETE") {
         resp = await handleDeleteMemory(request, env, path.split("/").pop()!);
+      } else if (path.match(/^\/api\/memory\/[^/]+$/) && request.method === "PATCH") {
+        resp = await handleUpdateMemory(request, env, path.split("/").pop()!);
       } else if (path === "/api/memory/revise" && request.method === "POST") {
         // Natural-language revise / delete of one memory entry
         resp = await handleReviseMemory(request, env);

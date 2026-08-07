@@ -287,6 +287,13 @@ export const api = {
 
   deleteMemory: (id: string) => request<{ memories: MemoryEntry[] }>(`/api/memory/${id}`, { method: "DELETE" }),
 
+  /** Direct edit of title/content by the user (no AI). */
+  updateMemory: (id: string, title: string, content: string) =>
+    request<{ memories: MemoryEntry[] }>(`/api/memory/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ title, content }),
+    }),
+
   /** Ask Paul to revise one memory entry from a natural-language instruction. */
   reviseMemory: (id: string, instruction: string) =>
     request<{ memories: MemoryEntry[]; deleted?: boolean }>("/api/memory/revise", {

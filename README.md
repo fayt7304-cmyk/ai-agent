@@ -1,11 +1,20 @@
-# Paul — Personal AI Agent (v8)
+# Paul — Personal AI Agent (v8.1)
 
 Self-hosted chat app powered by a **Mistral AI agent**, running on **Cloudflare Workers + D1**.  
 Frontend is a Vite TypeScript SPA; the Worker owns auth, sessions, chat, tools, memory, and email.
 
 ---
 
-## What’s new in v8
+## What’s new in v8.1
+
+| Area | Change |
+|------|--------|
+| **Memory self-edit** | Users can **edit title & content directly** in Settings → Memory (not only via “talk to Paul”) |
+| **Language / Learn more** | Fixed submenu reopen after switching to Arabic (RTL) or closing the profile menu |
+| **Settings layout** | Less forced centering; labels and controls align cleanly on **mobile and desktop** (General, Account, Privacy, Memory) |
+| **API** | `PATCH /api/memory/:id` for direct memory updates |
+
+### From v8.0
 
 | Area | Change |
 |------|--------|
@@ -35,7 +44,7 @@ Frontend is a Vite TypeScript SPA; the Worker owns auth, sessions, chat, tools, 
 | Cloudflare account | Yes | Worker + D1 |
 | [Resend](https://resend.com/) API key | Soft-delete email + password reset + leads | Email |
 | Google OAuth client | Optional | Sign in with Google |
-| ElevenLabs or Workers AI TTS | Optional | High-quality voice |
+| ElevenLabs or Workers AI TTS | Optional | High-quality voice (`/api/tts` returns **501** if not configured) |
 
 ---
 
@@ -131,13 +140,29 @@ npm run dev
 - **General** — Profile (avatar, names), Appearance, language, font, motion, voice  
 - **Account** — Password, Google link, active sessions + UA, soft-delete  
 - **Privacy** — Cookies / privacy choices  
-- **Memory** — List / detail, talk-to-Paul revise, import / export  
+- **Memory** — List / detail, **self-edit**, talk-to-Paul revise, import / export  
+
+### Memory editing (v8.1)
+
+1. Open **Settings → Memory**.
+2. Tap a memory entry.
+3. Use **Edit** to change title and content yourself, or type an instruction for Paul to revise.
+4. Save, or cancel to return to the detail view.
+
+API: `PATCH /api/memory/:id` with `{ "title": "...", "content": "..." }`.
 
 ---
 
 ## Tools (in-app)
 
 Converter, weather, calculator, image tools, OCR, PDF/DOCX helpers — labels follow the active UI language where wired.
+
+---
+
+## Known console notes
+
+- **`/api/tts` → 501**: High-quality voice is not configured on that deployment. Browser TTS still works as fallback.
+- Extension noise (adblock, fingerprint scripts) is unrelated to Paul.
 
 ---
 
@@ -184,7 +209,8 @@ repo/
 
 ## Version
 
-**8.0.0** — see “What’s new in v8” above. Earlier notes for v7 remain in git history.
+**8.1.0** — Memory self-edit, Language/Learn more RTL fix, settings layout polish.  
+Earlier notes for v8.0 / v7 remain in git history.
 
 ---
 

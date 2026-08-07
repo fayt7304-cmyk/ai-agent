@@ -219,8 +219,20 @@ function setUserMenuOpen(open: boolean) {
   // the clip only while the menu is actually open.
   sidebar.classList.toggle("menu-open", open);
   if (!open) {
+    // Reset both flyouts so Language / Learn more work again after close
+    // (including after switching to Arabic / RTL).
     learnMorePinned = false;
+    languagePinned = false;
+    if (learnMoreCloseTimer) {
+      clearTimeout(learnMoreCloseTimer);
+      learnMoreCloseTimer = null;
+    }
+    if (languageCloseTimer) {
+      clearTimeout(languageCloseTimer);
+      languageCloseTimer = null;
+    }
     learnMoreSubmenu.style.display = "none";
+    languageSubmenu.style.display = "none";
   }
 }
 
@@ -290,8 +302,10 @@ learnMoreSubmenu.addEventListener("mouseenter", openLearnMore);
 learnMoreSubmenu.addEventListener("mouseleave", () => closeLearnMore(150));
 
 learnMoreBtn.addEventListener("click", (e) => {
+  e.preventDefault();
   e.stopPropagation();
-  if (learnMorePinned) {
+  const isOpen = learnMoreSubmenu.style.display !== "none" && learnMoreSubmenu.style.display !== "";
+  if (learnMorePinned || isOpen) {
     learnMorePinned = false;
     closeLearnMore(0, true);
   } else {
@@ -308,7 +322,8 @@ languageSubmenu.addEventListener("mouseleave", () => closeLanguage(150));
 languageMenuBtn.addEventListener("click", (e) => {
   e.preventDefault();
   e.stopPropagation();
-  if (languagePinned && languageSubmenu.style.display !== "none") {
+  const isOpen = languageSubmenu.style.display !== "none" && languageSubmenu.style.display !== "";
+  if (languagePinned || isOpen) {
     languagePinned = false;
     closeLanguage(0, true);
   } else {
@@ -318,8 +333,9 @@ languageMenuBtn.addEventListener("click", (e) => {
 });
 
 // Prevent the document-level "click outside menu" handler from treating
-// a language pick as outside (submenu can paint outside the menu box).
+// a language / learn-more pick as outside (submenu can paint outside the menu box).
 languageSubmenu.addEventListener("click", (e) => e.stopPropagation());
+learnMoreSubmenu.addEventListener("click", (e) => e.stopPropagation());
 
 languageSubmenu.querySelectorAll<HTMLButtonElement>(".lang-option").forEach((btn) => {
   btn.addEventListener("click", (e) => {
@@ -329,8 +345,13 @@ languageSubmenu.querySelectorAll<HTMLButtonElement>(".lang-option").forEach((btn
     if (!lang) return;
     setLang(lang);
     syncLanguageMenuChecks();
+    // Fully reset flyout state so the menu works again after RTL/LTR flip
     languagePinned = false;
-    closeLanguage(0, true);
+    if (languageCloseTimer) {
+      clearTimeout(languageCloseTimer);
+      languageCloseTimer = null;
+    }
+    languageSubmenu.style.display = "none";
     const sel = document.getElementById("language-select") as HTMLSelectElement | null;
     if (sel) sel.value = lang;
   });

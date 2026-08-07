@@ -658,7 +658,7 @@
             <div id="memory-list" class="memory-list"></div>
           </div>
 
-          <!-- Claude-style detail: summary, details, talk-to-Paul composer -->
+          <!-- Detail: view, self-edit, or talk-to-Paul -->
           <div class="settings-card memory-detail" id="memory-detail" style="display:none;">
             <div class="memory-detail-head">
               <button type="button" id="memory-detail-back" class="icon-btn memory-back-btn" data-i18n-aria-label="settings.memoryBack" aria-label="Back">
@@ -668,26 +668,42 @@
                 <div class="memory-detail-title" id="memory-detail-title"></div>
                 <div class="memory-detail-meta" id="memory-detail-meta"></div>
               </div>
-              <button type="button" id="memory-detail-delete" class="secondary-btn memory-detail-delete" data-i18n="settings.memoryRemove">Delete</button>
+              <div class="memory-detail-actions">
+                <button type="button" id="memory-detail-edit" class="secondary-btn" data-i18n="settings.memoryEdit">Edit</button>
+                <button type="button" id="memory-detail-delete" class="secondary-btn memory-detail-delete" data-i18n="settings.memoryRemove">Delete</button>
+              </div>
             </div>
 
-            <div class="memory-section">
-              <div class="memory-section-label" data-i18n="settings.memorySummary">Summary</div>
-              <div class="memory-summary" id="memory-detail-summary"></div>
+            <div id="memory-view-mode">
+              <div class="memory-section">
+                <div class="memory-section-label" data-i18n="settings.memorySummary">Summary</div>
+                <div class="memory-summary" id="memory-detail-summary"></div>
+              </div>
+
+              <div class="memory-section">
+                <div class="memory-section-label" data-i18n="settings.memoryDetails">Details</div>
+                <ul class="memory-detail-body" id="memory-detail-body"></ul>
+              </div>
+
+              <form class="memory-talk-row" id="memory-talk-form">
+                <input type="text" id="memory-talk-input" maxlength="500" data-i18n-placeholder="settings.memoryTalkPh" placeholder="Tell Paul what to change or remove">
+                <button type="submit" class="icon-btn memory-talk-send" id="memory-talk-send" data-i18n-aria-label="settings.memoryTalkSend" aria-label="Send">
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="10" x2="16" y2="10"/><polyline points="11 5 16 10 11 15"/></svg>
+                </button>
+              </form>
+              <p class="memory-talk-hint" data-i18n="settings.memoryTalkHint">Paul will update this memory from what you type — or edit it yourself.</p>
             </div>
 
-            <div class="memory-section">
-              <div class="memory-section-label" data-i18n="settings.memoryDetails">Details</div>
-              <ul class="memory-detail-body" id="memory-detail-body"></ul>
-            </div>
-
-            <form class="memory-talk-row" id="memory-talk-form">
-              <input type="text" id="memory-talk-input" maxlength="500" data-i18n-placeholder="settings.memoryTalkPh" placeholder="Tell Paul what to change or remove">
-              <button type="submit" class="icon-btn memory-talk-send" id="memory-talk-send" data-i18n-aria-label="settings.memoryTalkSend" aria-label="Send">
-                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="10" x2="16" y2="10"/><polyline points="11 5 16 10 11 15"/></svg>
-              </button>
+            <form id="memory-edit-form" class="memory-edit-form" style="display:none;">
+              <label class="memory-section-label" for="memory-edit-title" data-i18n="settings.memoryTitle">Title</label>
+              <input type="text" id="memory-edit-title" maxlength="60" class="memory-edit-input">
+              <label class="memory-section-label" for="memory-edit-content" data-i18n="settings.memoryContent">Content</label>
+              <textarea id="memory-edit-content" maxlength="600" rows="6" class="memory-edit-textarea"></textarea>
+              <div class="memory-edit-actions">
+                <button type="button" id="memory-edit-cancel" class="secondary-btn" data-i18n="settings.cancel">Cancel</button>
+                <button type="submit" id="memory-edit-save" class="primary" data-i18n="settings.save">Save</button>
+              </div>
             </form>
-            <p class="memory-talk-hint" data-i18n="settings.memoryTalkHint">Paul will update this memory from what you type — no manual form needed.</p>
           </div>
 
         </section>
