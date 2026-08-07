@@ -373,7 +373,14 @@ getMessages: (id: string) =>
     }>(`/api/conversations/${id}/messages`, { method: "GET" }),
 
   sendMessage: (payload: { conversation_id?: string; message: string; attachments?: Attachment[] }) =>
-    request<{ conversation_id: string; title: string; reply: string; attachments?: Attachment[] }>("/api/chat", {
+    request<{
+      conversation_id: string;
+      title: string;
+      reply: string | null;
+      attachments?: Attachment[];
+      /** Collab: message saved but Paul was not tagged with @paul */
+      paul_skipped?: boolean;
+    }>("/api/chat", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

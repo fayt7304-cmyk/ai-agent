@@ -5551,6 +5551,13 @@ html::-webkit-scrollbar-thumb:hover,
 .messages.is-collab .msg-row.agent {
   align-items: flex-start;
 }
+/* Other participants: left side, neutral bubble (not the gold "mine" style) */
+.messages.is-collab .msg-row.collab-peer .msg.collab-peer-msg {
+  background: color-mix(in srgb, var(--card) 88%, var(--text-secondary));
+  color: var(--text);
+  border: 1px solid var(--border);
+  white-space: pre-wrap;
+}
 .msg-sender-head {
   display: inline-flex;
   align-items: center;

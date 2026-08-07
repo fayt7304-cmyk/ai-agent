@@ -1,4 +1,14 @@
-import { api, ApiError, type Conversation, type Message, type Attachment, type User, type Visibility } from "./api";
+import {
+  api,
+  ApiError,
+  API_BASE,
+  getSessionToken,
+  type Conversation,
+  type Message,
+  type Attachment,
+  type User,
+  type Visibility,
+} from "./api";
 import { readFileAsDataUrl, formatBytes, fileIcon, MAX_FILE_BYTES } from "./files";
 import { showConfirm, showPrompt } from "./lib/dialog";
 import { renderFileList, downloadAllFiles } from "./lib/file-downloads";
@@ -151,8 +161,151 @@ function mountStaticIcons() {
 
 
 let isCollabChat = false;
+/** True when the current user owns the open conversation (for null-sender fallback). */
+let isConversationOwner = false;
 let currentVisibility: Visibility = "private";
 let currentCollabCode: string | null = null;
+
+/** Live collab: message ids we already rendered (avoids dupes while polling). */
+let knownMessageIds = new Set<string>();
+let collabPollTimer: ReturnType<typeof setInterval> | null = null;
+let collabPollInFlight = false;
+let collabWs: WebSocket | null = null;
+let collabWsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+const COLLAB_POLL_MS = 2500;
+
+function stopCollabLive() {
+  if (collabPollTimer) {
+    clearInterval(collabPollTimer);
+    collabPollTimer = null;
+  }
+  collabPollInFlight = false;
+  if (collabWsReconnectTimer) {
+    clearTimeout(collabWsReconnectTimer);
+    collabWsReconnectTimer = null;
+  }
+  if (collabWs) {
+    try {
+      collabWs.onclose = null;
+      collabWs.onmessage = null;
+      collabWs.onerror = null;
+      collabWs.close();
+    } catch {
+      /* ignore */
+    }
+    collabWs = null;
+  }
+}
+
+function applyLiveMessages(
+  messages: Message[],
+  conversation?: {
+    visibility?: Visibility;
+    collab_locked?: boolean;
+    is_member?: boolean;
+    owner?: boolean;
+    can_write?: boolean;
+  } | null
+) {
+  if (!currentConversationId || !isCollabChat) return;
+  if (conversation) {
+    isConversationOwner = !!conversation.owner;
+    const local = conversations.find((c) => c.id === currentConversationId);
+    if (local) {
+      if (conversation.visibility) local.visibility = conversation.visibility;
+      local.collab_locked = !!conversation.collab_locked;
+      local.is_collab_member = !!conversation.is_member && !conversation.owner;
+    }
+  }
+  const incomingIds = messages.map((m) => m.id).filter(Boolean) as string[];
+  const hasNew = incomingIds.some((mid) => !knownMessageIds.has(mid));
+  if (!hasNew && incomingIds.length === knownMessageIds.size) return;
+  if (isReplying) return;
+
+  const nearBottom =
+    messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 120;
+  isCollabChat = true;
+  renderMessages(messages);
+  if (nearBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+/** Prefer WebSocket; fall back to HTTP polling. */
+function startCollabLive() {
+  stopCollabLive();
+  syncCollabComposerHint();
+  if (!isCollabChat || !currentConversationId) return;
+
+  const id = currentConversationId;
+  const sessionTok = getSessionToken();
+  const wsBase = API_BASE.replace(/^http/, "ws");
+
+  try {
+    const qs = sessionTok ? `?token=${encodeURIComponent(sessionTok)}` : "";
+    const url = `${wsBase}/api/conversations/${id}/live${qs}`;
+    const ws = new WebSocket(url);
+    collabWs = ws;
+    ws.onmessage = (ev) => {
+      if (currentConversationId !== id || !isCollabChat) return;
+      try {
+        const data = JSON.parse(String(ev.data));
+        if (data?.type === "messages" && Array.isArray(data.messages)) {
+          applyLiveMessages(data.messages, data.conversation || null);
+        }
+      } catch {
+        /* ignore bad frames */
+      }
+    };
+    ws.onclose = () => {
+      collabWs = null;
+      if (isCollabChat && currentConversationId === id) {
+        // Fall back to polling after disconnect
+        if (!collabPollTimer) {
+          collabPollTimer = setInterval(() => {
+            void pollCollabMessages();
+          }, COLLAB_POLL_MS);
+        }
+        collabWsReconnectTimer = setTimeout(() => {
+          if (isCollabChat && currentConversationId === id) startCollabLive();
+        }, 4000);
+      }
+    };
+    ws.onerror = () => {
+      try {
+        ws.close();
+      } catch {
+        /* ignore */
+      }
+    };
+  } catch {
+    collabPollTimer = setInterval(() => {
+      void pollCollabMessages();
+    }, COLLAB_POLL_MS);
+  }
+}
+
+async function pollCollabMessages() {
+  if (!isCollabChat || !currentConversationId || isReplying || collabPollInFlight) return;
+  if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+  const id = currentConversationId;
+  collabPollInFlight = true;
+  try {
+    const data = await api.getMessages(id);
+    if (currentConversationId !== id || !isCollabChat) return;
+    applyLiveMessages(data.messages || [], data.conversation || null);
+  } catch {
+    /* next tick */
+  } finally {
+    collabPollInFlight = false;
+  }
+}
+
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && isCollabChat && currentConversationId) {
+      void pollCollabMessages();
+    }
+  });
+}
 
 function syncManageChatPanel() {
   const box = document.getElementById("manage-collab-box") as HTMLDivElement | null;
@@ -239,6 +392,9 @@ function wireHeaderActions() {
       isCollabChat = visibility === "collab";
       syncManageChatPanel();
       renderConvoList();
+      messagesEl.classList.toggle("is-collab", isCollabChat);
+      if (visibility === "collab") startCollabLive();
+      else stopCollabLive();
     } catch (e: any) {
       showToast(e?.message || t("share.failed"));
       return;
@@ -919,6 +1075,20 @@ function setComposerReadOnly(readOnly: boolean, reason = "") {
   } else if (notice) {
     notice.style.display = "none";
   }
+  syncCollabComposerHint();
+}
+
+/** Collab composer: remind people to @paul if they want the AI. */
+function syncCollabComposerHint() {
+  if (currentChatReadOnly) return;
+  if (isCollabChat) {
+    chatInput.placeholder = "Message the group… Tag @paul to ask Paul";
+    setHint("Collab: chat with the group. Tag @paul when you want Paul to reply.");
+  } else {
+    chatInput.placeholder = t("chat.placeholder") || "Message the agent…";
+    // Don't clear error hints
+    if (!composerHint.classList.contains("error")) setHint("");
+  }
 }
 
 /**
@@ -928,6 +1098,7 @@ function setComposerReadOnly(readOnly: boolean, reason = "") {
  * (collab links stay writable) and shows a clear access state on 403/404.
  */
 async function openConversationLink(id: string) {
+  stopCollabLive();
   setCurrentConversation(id);
   renderConvoList();
   messagesEl.innerHTML = "";
@@ -937,6 +1108,7 @@ async function openConversationLink(id: string) {
     const { messages, conversation } = data;
     chatTitle.textContent = conversation?.title || t("chat.newChat");
     isCollabChat = conversation?.visibility === "collab" || !!conversation?.is_member;
+    isConversationOwner = !!conversation?.owner;
     currentVisibility = (conversation?.visibility as Visibility) || "private";
     currentCollabCode = conversation?.collab_code || null;
     if (conversation) {
@@ -974,6 +1146,7 @@ async function openConversationLink(id: string) {
           setComposerReadOnly(true, "Enter the invite code to reply — or just read.");
         }
       }
+      startCollabLive();
       if (isMobileLayout()) toggleSidebar(true);
       return;
     }
@@ -989,7 +1162,9 @@ async function openConversationLink(id: string) {
       setComposerReadOnly(true, "Read-only: the owner shared this chat for viewing.");
       showToast("Viewing a conversation shared with you — read access only.");
     }
+    startCollabLive();
   } catch (e) {
+    stopCollabLive();
     setCurrentConversation(null);
     chatTitle.textContent = t("chat.newChat");
     setComposerReadOnly(false);
@@ -1134,11 +1309,37 @@ function showSenderPopup(sender: import("./api").MessageSender) {
   pop.addEventListener("click", (e) => { if (e.target === pop) close(); });
 }
 
+/**
+ * In collab group chats:
+ * - My messages → right side, no sender label (like WhatsApp "me")
+ * - Other people's messages → left side, with their avatar + name
+ * - Paul → left side, favicon + "Paul"
+ */
+function isMyUserMessage(kind: string, sender?: import("./api").MessageSender | null): boolean {
+  if (kind !== "user") return false;
+  if (sender?.id && currentUser?.id && sender.id === currentUser.id) return true;
+  // Legacy messages without sender_user_id: treat as mine only if I own the chat
+  if (!sender?.id && isConversationOwner) return true;
+  return false;
+}
+
 function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: string, attachments: Attachment[] = [], sender?: import("./api").MessageSender | null) {
   emptyState.style.display = "none";
   const row = document.createElement("div");
-  row.className = `msg-row ${kind === "thinking" ? "agent thinking" : kind}`;
-  if (isCollabChat && (kind === "user" || kind === "agent")) {
+
+  const mine = isCollabChat && isMyUserMessage(kind, sender);
+  const otherUser = isCollabChat && kind === "user" && !mine;
+  // Other users' messages use the left-side (agent) layout so they don't look like "I typed this"
+  if (kind === "thinking") {
+    row.className = "msg-row agent thinking";
+  } else if (otherUser) {
+    row.className = "msg-row agent collab-peer";
+  } else {
+    row.className = `msg-row ${kind}`;
+  }
+
+  // Sender head: Paul + other people only — never on my own bubbles
+  if (isCollabChat && (kind === "agent" || otherUser)) {
     const head = document.createElement("button");
     head.type = "button";
     head.className = "msg-sender-head";
@@ -1172,9 +1373,9 @@ function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: strin
     row.appendChild(head);
   }
 
-
   const bubble = document.createElement("div");
-  bubble.className = "msg";
+  // Peer text is plain; Paul still gets markdown
+  bubble.className = "msg" + (otherUser ? " collab-peer-msg" : "");
   if (kind === "agent") {
     bubble.innerHTML = renderMarkdown(content);
   } else {
@@ -1325,6 +1526,7 @@ function renderMessages(messages: Message[]) {
   // (visibility / is_member). Clearing it hid WhatsApp-style sender heads.
   replyVersions = [];
   replyVersionIndex = 0;
+  knownMessageIds = new Set(messages.map((m) => m.id).filter(Boolean) as string[]);
   messagesEl.classList.toggle("is-collab", isCollabChat);
   if (messages.length === 0) {
     messagesEl.appendChild(emptyState);
@@ -1345,6 +1547,7 @@ function renderMessages(messages: Message[]) {
 }
 
 async function selectConversation(id: string) {
+  stopCollabLive();
   setCurrentConversation(id);
   setComposerReadOnly(false);
   const convo = conversations.find((c) => c.id === id);
@@ -1354,6 +1557,7 @@ async function selectConversation(id: string) {
   const data = await api.getMessages(id);
   const messages = data.messages;
   isCollabChat = data.conversation?.visibility === "collab" || !!data.conversation?.is_member;
+  isConversationOwner = !!data.conversation?.owner;
   currentVisibility = (data.conversation?.visibility as Visibility) || "private";
   currentCollabCode = data.conversation?.collab_code || null;
   // Keep sidebar/local convo in sync with server lock + visibility
@@ -1381,12 +1585,14 @@ async function selectConversation(id: string) {
         setComposerReadOnly(!again.conversation?.can_write, again.conversation?.can_write ? "" : "Enter the invite code to reply — or just read.");
         await loadConversations();
         showToast("Joined collaboration — you can reply.");
+        startCollabLive();
         if (isMobileLayout()) toggleSidebar(true);
         return;
       } catch (e: any) {
         showToast(e?.message || "Could not join collaboration");
       }
     }
+    startCollabLive();
     if (isMobileLayout()) toggleSidebar(true);
     return;
   }
@@ -1394,6 +1600,7 @@ async function selectConversation(id: string) {
   if (data.conversation && !data.conversation.can_write && !data.conversation.owner) {
     setComposerReadOnly(true, "Enter the invite code to reply — or just read.");
   }
+  startCollabLive();
   // Use toggleSidebar() rather than touching the class directly: it also syncs
   // the header "open sidebar" button, which otherwise stayed hidden on mobile
   // after switching chats, leaving no way to reopen the sidebar.
@@ -1401,9 +1608,11 @@ async function selectConversation(id: string) {
 }
 
 function startNewConversation() {
+  stopCollabLive();
   setCurrentConversation(null);
   setComposerReadOnly(false);
   isCollabChat = false;
+  isConversationOwner = true;
   currentVisibility = "private";
   currentCollabCode = null;
   chatTitle.textContent = t("chat.newChat");
@@ -1598,6 +1807,11 @@ function removeTrailingAssistantRows() {
   lastAgentRow = null;
 }
 
+/** In collab, Paul only answers when tagged with @paul (case-insensitive). */
+function messageMentionsPaul(text: string): boolean {
+  return /(^|[^\w])@paul\b/i.test(text || "");
+}
+
 async function performSend(
   text: string,
   attachments: (Attachment & { dataUrl: string })[],
@@ -1628,10 +1842,13 @@ async function performSend(
     removeTrailingAssistantRows();
   }
 
+  // Collab human-to-human message: still save to server, but don't wait on Paul
+  const expectPaul = !isCollabChat || opts?.regenerate || messageMentionsPaul(text);
+
   setReplying(true);
   setHint("");
 
-  const thinking = addMsgRow("thinking", "…");
+  const thinking = expectPaul ? addMsgRow("thinking", "…") : null;
 
   try {
     const result = await api.sendMessage({
@@ -1639,39 +1856,63 @@ async function performSend(
       message: text,
       attachments,
     });
-    thinking.remove();
-    const replyText = result.reply || "(empty response)";
-    const replyAtt = result.attachments || [];
-
-    if (opts?.regenerate) {
-      replyVersions.push({ content: replyText, attachments: replyAtt });
-      replyVersionIndex = replyVersions.length - 1;
-    } else {
-      replyVersions = [{ content: replyText, attachments: replyAtt }];
-      replyVersionIndex = 0;
-    }
-
-    const agentRow = addMsgRow("agent", replyText, replyAtt, { id: "paul", username: "Paul", display_name: "Paul", email: null, avatar: null, is_paul: true });
-    attachRegenerateButton(agentRow);
-    updateReplyVersionNav(agentRow);
+    thinking?.remove();
 
     const isNewConvo = !currentConversationId;
     setCurrentConversation(result.conversation_id);
-    chatTitle.textContent = result.title;
+    if (result.title) chatTitle.textContent = result.title;
+
+    // Paul replied (or non-collab chat)
+    const replyText = result.reply;
+    if (replyText != null && replyText !== "" && !(result as any).paul_skipped) {
+      const replyAtt = result.attachments || [];
+      if (opts?.regenerate) {
+        replyVersions.push({ content: replyText, attachments: replyAtt });
+        replyVersionIndex = replyVersions.length - 1;
+      } else {
+        replyVersions = [{ content: replyText, attachments: replyAtt }];
+        replyVersionIndex = 0;
+      }
+      const agentRow = addMsgRow("agent", replyText, replyAtt, {
+        id: "paul",
+        username: "Paul",
+        display_name: "Paul",
+        email: null,
+        avatar: null,
+        is_paul: true,
+      });
+      attachRegenerateButton(agentRow);
+      updateReplyVersionNav(agentRow);
+    }
 
     if (isNewConvo) {
       await loadConversations();
     } else {
       const convo = conversations.find((c) => c.id === currentConversationId);
       if (convo) {
-        convo.title = result.title;
+        if (result.title) convo.title = result.title;
         convo.updated_at = new Date().toISOString();
         conversations = [convo, ...conversations.filter((c) => c.id !== convo.id)];
       }
     }
     renderConvoList();
+
+    // Sync message ids so collab live poll doesn't treat our own send as "new"
+    if (isCollabChat && currentConversationId) {
+      try {
+        const fresh = await api.getMessages(currentConversationId);
+        knownMessageIds = new Set((fresh.messages || []).map((m) => m.id).filter(Boolean) as string[]);
+        if (fresh.conversation?.collab_locked) {
+          const local = conversations.find((c) => c.id === currentConversationId);
+          if (local) local.collab_locked = true;
+          syncManageChatPanel();
+        }
+      } catch {
+        /* next poll will catch up */
+      }
+    }
   } catch (err) {
-    thinking.remove();
+    thinking?.remove();
     const message = err instanceof ApiError ? err.message : "Network error. Please try again.";
     addMsgRow("error", message);
   } finally {

@@ -1926,6 +1926,156 @@ async function handleSetConversationVisibility(request: Request, env: Env, id: s
   return json({ ok: true, visibility, collab_code });
 }
 
+/**
+ * WebSocket live updates for a collab conversation.
+ * Auth via Bearer cookie OR ?token= (browsers can't set Authorization on WS).
+ * Each connection polls D1 and pushes snapshots when messages change.
+ */
+async function handleCollabLive(request: Request, env: Env, id: string): Promise<Response> {
+  if (request.headers.get("Upgrade") !== "websocket") {
+    return err("Expected WebSocket upgrade", 426);
+  }
+
+  const url = new URL(request.url);
+  const user =
+    (await getUserFromRequest(env, request)) ||
+    (await getUserFromToken(env, url.searchParams.get("token")));
+  if (!user) return err("Not authenticated.", 401);
+
+  await ensureConversationColumns(env);
+  const convo = await env.DB.prepare(
+    "SELECT id, user_id, visibility FROM conversations WHERE id = ?"
+  )
+    .bind(id)
+    .first<{ id: string; user_id: string; visibility: string }>();
+  if (!convo) return err("Conversation not found.", 404);
+
+  const isOwner = convo.user_id === user.id;
+  const isShared = convo.visibility === "shared" || convo.visibility === "collab";
+  if (!isOwner && !isShared) return err("Access forbidden.", 403);
+
+  const pair = new WebSocketPair();
+  const client = pair[0];
+  const server = pair[1];
+  server.accept();
+
+  let lastFingerprint = "";
+  let closed = false;
+
+  const push = async () => {
+    if (closed) return;
+    try {
+      // Reuse the same message assembly as GET /messages
+      const fakeReq = new Request(request.url, {
+        method: "GET",
+        headers: request.headers,
+      });
+      // Build messages inline to avoid Response parsing overhead
+      let results: any[] = [];
+      try {
+        const q = await env.DB.prepare(
+          `SELECT m.id, m.role, m.content, m.attachments, m.created_at, m.sender_user_id,
+                  u.username AS sender_username, u.display_name AS sender_display_name,
+                  u.email AS sender_email, u.avatar AS sender_avatar
+           FROM messages m
+           LEFT JOIN users u ON u.id = m.sender_user_id
+           WHERE m.conversation_id = ?
+           ORDER BY m.created_at ASC`
+        )
+          .bind(id)
+          .all();
+        results = q.results || [];
+      } catch {
+        const q = await env.DB.prepare(
+          "SELECT id, role, content, attachments, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at ASC"
+        )
+          .bind(id)
+          .all();
+        results = q.results || [];
+      }
+
+      const messages = results.map((m: any) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        attachments: m.attachments ? JSON.parse(m.attachments) : [],
+        created_at: m.created_at,
+        sender:
+          m.role === "agent"
+            ? { id: "paul", username: "Paul", display_name: "Paul", email: null, avatar: null, is_paul: true }
+            : m.sender_user_id
+              ? {
+                  id: m.sender_user_id,
+                  username: m.sender_username || "user",
+                  display_name: m.sender_display_name || m.sender_username || "user",
+                  email: m.sender_email || null,
+                  avatar: m.sender_avatar || null,
+                  is_paul: false,
+                }
+              : null,
+      }));
+
+      const fingerprint = messages.map((m: any) => m.id).join(",");
+      if (fingerprint === lastFingerprint) return;
+      lastFingerprint = fingerprint;
+
+      const mem = isOwner
+        ? true
+        : !!(await env.DB.prepare(
+            "SELECT 1 AS ok FROM conversation_members WHERE conversation_id = ? AND user_id = ?"
+          )
+            .bind(id, user.id)
+            .first());
+
+      const full = await env.DB.prepare(
+        "SELECT visibility, collab_locked FROM conversations WHERE id = ?"
+      )
+        .bind(id)
+        .first<{ visibility: string; collab_locked: number }>();
+
+      server.send(
+        JSON.stringify({
+          type: "messages",
+          messages,
+          conversation: {
+            id,
+            owner: isOwner,
+            visibility: full?.visibility || convo.visibility,
+            collab_locked: !!full?.collab_locked,
+            is_member: isOwner || mem,
+            can_write: isOwner || (full?.visibility === "collab" && mem),
+          },
+        })
+      );
+    } catch {
+      /* ignore transient DB errors */
+    }
+  };
+
+  server.addEventListener("close", () => {
+    closed = true;
+  });
+  server.addEventListener("error", () => {
+    closed = true;
+  });
+  server.addEventListener("message", (ev) => {
+    // Client can send "ping" or "refresh"
+    if (String(ev.data) === "refresh") void push();
+  });
+
+  // Initial snapshot + interval push
+  void push();
+  const interval = setInterval(() => {
+    if (closed) {
+      clearInterval(interval);
+      return;
+    }
+    void push();
+  }, 1500);
+
+  return new Response(null, { status: 101, webSocket: client });
+}
+
 /** POST /api/conversations/:id/join  { code: "1234" } — accept collab invite */
 async function handleJoinCollab(request: Request, env: Env, id: string): Promise<Response> {
   await ensureConversationColumns(env);
@@ -2077,12 +2227,31 @@ async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): P
     }
   }
 
+  // Collab group chat: Paul only replies when explicitly tagged with @paul
+  // (case-insensitive). Plain messages stay human-to-human.
+  const isCollab = (convo as any).visibility === "collab";
+  const mentionsPaul = /(^|[^\w])@paul\b/i.test(body.message || "");
+  if (isCollab && !mentionsPaul) {
+    await env.DB.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?")
+      .bind(nowIso(), convo.id)
+      .run();
+    return json({
+      conversation_id: convo.id,
+      title: convo.title,
+      reply: null,
+      attachments: [],
+      paul_skipped: true,
+    });
+  }
+
   // Cross-chat memory: hand Paul what he knows about the user on every turn.
   // Injecting only on the first turn meant a question asked later in the same
   // chat ("who am I?") had no memory in context at all.
   const useMemory = memoryEnabled(user);
   const memoryRows = useMemory ? await listMemoryRows(env, user.id) : [];
-  const outgoingMessage = buildMemoryPreamble(memoryRows) + (body.message || "");
+  // Strip the @paul tag from what Paul sees so it doesn't pollute the prompt
+  const cleanMessage = (body.message || "").replace(/(^|[^\w])@paul\b/gi, "$1").replace(/\s{2,}/g, " ").trim();
+  const outgoingMessage = buildMemoryPreamble(memoryRows) + (cleanMessage || body.message || "");
 
   try {
     const result = await callMistral({
@@ -2329,6 +2498,9 @@ export default {
         resp = await handleGetConversationUsage(request, env, path.split("/")[3]);
       } else if (path.match(/^\/api\/conversations\/[^/]+\/messages$/) && request.method === "GET") {
         resp = await handleGetMessages(request, env, path.split("/")[3]);
+      } else if (path.match(/^\/api\/conversations\/[^/]+\/live$/) && request.method === "GET") {
+        // WebSocket live feed for collab chats (token via ?token= for cross-origin WS)
+        return handleCollabLive(request, env, path.split("/")[3]);
       } else if (path === "/api/chat" && request.method === "POST") {
         resp = await handleChat(request, env, ctx);
       } else if (path === "/api/leads" && request.method === "POST") {
