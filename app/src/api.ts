@@ -65,6 +65,8 @@ export interface Conversation {
   /** Friend 1:1 direct message. */
   is_dm?: boolean | number;
   dm_peer_id?: string | null;
+  /** True when the current user owns this conversation. */
+  is_owner?: boolean | number;
   created_at: string;
   updated_at: string;
 }

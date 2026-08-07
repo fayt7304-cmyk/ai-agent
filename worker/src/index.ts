@@ -1539,7 +1539,8 @@ async function handleListConversations(request: Request, env: Env): Promise<Resp
   await ensureConversationColumns(env);
 
   const { results: owned } = await env.DB.prepare(
-    `SELECT id, title, starred, archived, visibility, collab_locked, created_at, updated_at, 0 AS is_collab_member
+    `SELECT id, title, starred, archived, visibility, collab_locked, created_at, updated_at,
+            0 AS is_collab_member, 1 AS is_owner
      FROM conversations WHERE user_id = ?
      ORDER BY starred DESC, updated_at DESC`
   )
@@ -1552,7 +1553,8 @@ async function handleListConversations(request: Request, env: Env): Promise<Resp
     const { results } = await env.DB.prepare(
       `SELECT c.id, c.title, c.starred, c.archived, c.visibility, c.collab_locked, c.dm_peer_id, c.created_at, c.updated_at,
               CASE WHEN c.visibility = 'collab' THEN 1 ELSE 0 END AS is_collab_member,
-              CASE WHEN c.visibility = 'dm' THEN 1 ELSE 0 END AS is_dm
+              CASE WHEN c.visibility = 'dm' THEN 1 ELSE 0 END AS is_dm,
+              0 AS is_owner
        FROM conversation_members m
        JOIN conversations c ON c.id = m.conversation_id
        WHERE m.user_id = ? AND c.user_id != ?
@@ -1569,6 +1571,7 @@ async function handleListConversations(request: Request, env: Env): Promise<Resp
   const conversations = [...(owned || [])].map((c: any) => ({
     ...c,
     is_dm: c.visibility === "dm" ? 1 : 0,
+    is_owner: 1,
   }));
   for (const c of joined) {
     if (!seen.has(c.id)) conversations.push(c);
@@ -2547,12 +2550,13 @@ async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): P
     }
   }
 
-  // Collab group chat: parse all @mentions. Paul only replies when @paul is
-  // among them (case-insensitive). Other @username tags are for humans only.
-  const isCollab = (convo as any).visibility === "collab";
+  // Collab + friend DM: Paul only replies when @paul is among the mentions.
+  // Plain messages stay human-to-human. (Private 1:1 with Paul always answers.)
+  const vis = String((convo as any).visibility || "private");
+  const needsPaulTag = vis === "collab" || vis === "dm";
   const mentionHandles = parseMentionHandles(body.message || "");
   const mentionsPaul = mentionHandles.some((h) => h === "paul");
-  if (isCollab && !mentionsPaul) {
+  if (needsPaulTag && !mentionsPaul) {
     await env.DB.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?")
       .bind(nowIso(), convo.id)
       .run();

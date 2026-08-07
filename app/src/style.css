@@ -5971,3 +5971,77 @@ html::-webkit-scrollbar-thumb:hover,
 .friends-reject:hover { color: var(--danger, #e0554f); }
 .friends-pending-label { font-size: 11px; color: var(--text-secondary); margin-inline-start: auto; }
 .convo-dm-item { border-inline-start: 2px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+
+
+/* Friends panel + mini popups + sidebar entry */
+.friends-sidebar-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--card) 80%, var(--accent-bg));
+  color: var(--text);
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin: 4px 0 10px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+.friends-sidebar-btn .menu-icon,
+.friends-sidebar-btn svg { width: 16px; height: 16px; }
+.friends-badge {
+  margin-inline-start: auto;
+  background: var(--accent);
+  color: #111;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+}
+.friends-panel-card { min-width: min(360px, 100%); max-height: min(70vh, 520px); overflow: hidden; display: flex; flex-direction: column; gap: 12px; }
+.friends-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.friends-panel-body { overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.friends-panel-section { font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); margin-top: 8px; }
+.friends-panel-row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-radius: 8px;
+}
+.friends-panel-friend { width: 100%; border: none; background: transparent; color: inherit; font: inherit; cursor: pointer; text-align: start; }
+.friends-panel-friend:hover { background: color-mix(in srgb, var(--accent-bg) 50%, transparent); }
+.friends-msg-label { margin-inline-start: auto; font-size: 12px; color: var(--accent); font-weight: 600; }
+.friends-accept-sm, .friends-reject-sm, .friends-cancel-sm { font-size: 12px; padding: 4px 10px; min-height: 30px; }
+.sender-popup-friend-actions {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; margin-bottom: 4px; align-items: center;
+}
+.sp-friend-status { font-size: 12px; color: var(--text-secondary); font-weight: 600; }
+.friend-mini-popup {
+  position: fixed; inset: 0; z-index: 10070;
+  display: flex; align-items: flex-end; justify-content: center;
+  padding: 16px; pointer-events: none;
+  background: transparent;
+}
+.friend-mini-card {
+  pointer-events: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  width: min(360px, 100%);
+  box-shadow: var(--shadow);
+  margin-bottom: 72px;
+  display: flex; flex-direction: column; gap: 8px;
+  animation: friend-mini-in 0.2s ease-out;
+}
+@keyframes friend-mini-in {
+  from { transform: translateY(12px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.friend-mini-title { font-weight: 650; font-size: 15px; }
+.friend-mini-body { margin: 0; font-size: 13px; color: var(--text-secondary); line-height: 1.4; }
+.friend-mini-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }

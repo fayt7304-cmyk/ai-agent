@@ -312,16 +312,46 @@ if (typeof document !== "undefined") {
   });
 }
 
+/**
+ * Owner-only controls: Share / Manage chat / Rename / Star / Archive / Delete.
+ * Non-owners (collab members, DM peers) only see Files / Usage etc.
+ */
+function syncOwnerControls() {
+  const owner = isConversationOwner || !currentConversationId;
+  const shareBtn = document.getElementById("header-share-btn") as HTMLButtonElement | null;
+  const shareMenu = document.getElementById("share-menu") as HTMLDivElement | null;
+  if (shareBtn) {
+    shareBtn.style.display = owner ? "" : "none";
+    if (!owner) shareBtn.classList.remove("open");
+  }
+  if (shareMenu && !owner) shareMenu.style.display = "none";
+
+  // More menu owner-only rows
+  for (const id of ["more-rename", "more-star", "more-archive", "more-delete"]) {
+    const el = document.getElementById(id) as HTMLElement | null;
+    if (el) el.style.display = owner ? "" : "none";
+  }
+}
+
 function syncManageChatPanel() {
+  syncOwnerControls();
   const box = document.getElementById("manage-collab-box") as HTMLDivElement | null;
   const codeEl = document.getElementById("manage-collab-code") as HTMLElement | null;
   const convo = conversations.find((c) => c.id === currentConversationId);
   const locked = !!convo?.collab_locked;
+  const owner = isConversationOwner || !currentConversationId;
   document.querySelectorAll<HTMLButtonElement>(".manage-chat-option").forEach((btn) => {
     const v = btn.dataset.visibility as Visibility;
     btn.classList.toggle("is-active", v === currentVisibility);
     const check = btn.querySelector(".manage-chat-check");
     if (check) check.textContent = v === currentVisibility ? "✓" : "";
+    // Non-owners never change visibility
+    if (!owner) {
+      btn.disabled = true;
+      btn.classList.add("is-locked");
+      btn.title = "Only the chat owner can change sharing.";
+      return;
+    }
     // After a third party has messaged, cannot go back to Only me
     if (v === "private") {
       btn.disabled = locked;
@@ -336,7 +366,8 @@ function syncManageChatPanel() {
     }
   });
   if (box) {
-    box.style.display = currentVisibility === "collab" ? "block" : "none";
+    // Collab code box only for the owner
+    box.style.display = owner && currentVisibility === "collab" ? "block" : "none";
     if (codeEl) codeEl.textContent = currentCollabCode || "————";
   }
 }
@@ -479,6 +510,10 @@ function wireHeaderActions() {
 
   shareBtn.addEventListener("click", (e) => {
     e.stopPropagation();
+    if (!isConversationOwner && currentConversationId) {
+      showToast("Only the chat owner can manage sharing.");
+      return;
+    }
     const open = shareMenu.style.display === "none" || shareMenu.style.display === "";
     // refresh panel state from known convo
     const convo = conversations.find((c) => c.id === currentConversationId);
@@ -498,6 +533,10 @@ function wireHeaderActions() {
 
   document.getElementById("more-rename")?.addEventListener("click", async () => {
     moreMenu.style.display = "none";
+    if (!isConversationOwner) {
+      showToast("Only the chat owner can rename.");
+      return;
+    }
     if (!currentConversationId) {
       showToast(t("convo.needsChat"));
       return;
@@ -814,17 +853,21 @@ function openConvoMenu(anchor: HTMLElement, c: Conversation, startRename: () => 
     menu.appendChild(btn);
   };
 
-  addItem(t("convo.rename"), icons.pencil, () => startRename());
-  addItem(c.starred ? "Unstar" : "Star", c.starred ? icons.starFilled : icons.star, async () => {
-    try {
-      const result = await api.starConversation(c.id);
-      c.starred = result.starred;
-      renderConvoList();
-      showToast(result.starred ? "⭐ Conversation starred" : "Conversation unstarred");
-    } catch {
-      showToast("Could not update star status.");
-    }
-  });
+  // Owner-only manage actions (rename / star / archive / delete). Members & DM peers only get Copy link.
+  const isOwner = c.is_owner !== false && c.is_owner !== 0 && !c.is_collab_member;
+  if (isOwner) {
+    addItem(t("convo.rename"), icons.pencil, () => startRename());
+    addItem(c.starred ? "Unstar" : "Star", c.starred ? icons.starFilled : icons.star, async () => {
+      try {
+        const result = await api.starConversation(c.id);
+        c.starred = result.starred;
+        renderConvoList();
+        showToast(result.starred ? "⭐ Conversation starred" : "Conversation unstarred");
+      } catch {
+        showToast("Could not update star status.");
+      }
+    });
+  }
   addItem("Copy Link", icons.link, async () => {
     const url = conversationUrl(c.id);
     try {
@@ -834,6 +877,7 @@ function openConvoMenu(anchor: HTMLElement, c: Conversation, startRename: () => 
       showToast("Could not copy link. URL: " + url);
     }
   });
+  if (isOwner) {
   addItem(c.archived ? "Unarchive" : "Archive", icons.archive, async () => {
     try {
       const result = await api.archiveConversation(c.id);
@@ -881,6 +925,7 @@ function openConvoMenu(anchor: HTMLElement, c: Conversation, startRename: () => 
     },
     true
   );
+  } // end owner-only actions
 
   // Position after the menu has real dimensions, anchored to the dots button,
   // flipped to stay inside the viewport on narrow / mobile screens. Direction-aware:
@@ -988,18 +1033,102 @@ let friendsPendingIn: Friendship[] = [];
 let friendsPendingOut: Friendship[] = [];
 let friendsLoaded = false;
 
+let knownPendingInIds = new Set<string>();
+let knownPendingOutIds = new Set<string>();
+let knownFriendIds = new Set<string>();
+let friendsPollTimer: ReturnType<typeof setInterval> | null = null;
+let friendsBootstrapped = false;
+
 async function loadFriends() {
   try {
     const data = await api.listFriends();
+    const prevPendingIn = knownPendingInIds;
+    const prevPendingOut = knownPendingOutIds;
+    const prevFriends = knownFriendIds;
     friendsList = data.friends || [];
     friendsPendingIn = data.pending_in || [];
     friendsPendingOut = data.pending_out || [];
     friendsLoaded = true;
+
+    if (friendsBootstrapped) {
+      for (const f of friendsPendingIn) {
+        if (prevPendingIn.has(f.id)) continue;
+        showMiniFriendPopup({
+          title: "Friend request",
+          body: `${f.peer.display_name || f.peer.username} wants to be friends.`,
+          primaryLabel: "Accept",
+          onPrimary: async () => {
+            try {
+              await api.acceptFriend(f.id);
+              await loadFriends();
+              renderConvoList();
+              showMiniFriendPopup({
+                title: "You're friends",
+                body: `You and ${f.peer.display_name || f.peer.username} are now friends.`,
+                primaryLabel: "Message",
+                onPrimary: () => void openFriendChat(f.id),
+                secondaryLabel: "OK",
+              });
+            } catch (e: any) {
+              showToast(e?.message || "Failed");
+            }
+          },
+          secondaryLabel: "Decline",
+          onSecondary: async () => {
+            try {
+              await api.rejectFriend(f.id);
+              await loadFriends();
+              renderConvoList();
+            } catch (e: any) {
+              showToast(e?.message || "Failed");
+            }
+          },
+        });
+      }
+      for (const f of friendsList) {
+        if (prevFriends.has(f.id)) continue;
+        if (!prevPendingOut.has(f.id)) continue;
+        showMiniFriendPopup({
+          title: "Request accepted",
+          body: `${f.peer.display_name || f.peer.username} accepted your friend request.`,
+          primaryLabel: "Message",
+          onPrimary: () => void openFriendChat(f.id),
+          secondaryLabel: "OK",
+        });
+      }
+    }
+
+    knownPendingInIds = new Set(friendsPendingIn.map((f) => f.id));
+    knownPendingOutIds = new Set(friendsPendingOut.map((f) => f.id));
+    knownFriendIds = new Set(friendsList.map((f) => f.id));
+    friendsBootstrapped = true;
   } catch {
     friendsList = [];
     friendsPendingIn = [];
     friendsPendingOut = [];
   }
+}
+
+function startFriendsPoll() {
+  if (friendsPollTimer) return;
+  friendsPollTimer = setInterval(() => {
+    void loadFriends().then(() => {
+      // refresh badge on friends sidebar button without full re-list if possible
+      const badge = document.querySelector(".friends-sidebar-btn .friends-badge");
+      const btn = document.querySelector(".friends-sidebar-btn");
+      if (btn && friendsPendingIn.length) {
+        if (badge) badge.textContent = String(friendsPendingIn.length);
+        else {
+          const span = document.createElement("span");
+          span.className = "friends-badge";
+          span.textContent = String(friendsPendingIn.length);
+          btn.appendChild(span);
+        }
+      } else if (badge) {
+        badge.remove();
+      }
+    });
+  }, 8000);
 }
 
 async function openFriendChat(friendshipId: string) {
@@ -1058,91 +1187,209 @@ function showAddFriendModal() {
   });
 }
 
-function renderFriendsSection(parent: HTMLElement) {
-  const header = document.createElement("div");
-  header.className = "convo-group-header convo-friends-header";
-  header.innerHTML = `<span class="menu-icon">${icons.people || ""}</span><span>Friends</span>`;
-  parent.appendChild(header);
+/** Friend status relative to a peer user id. */
+function friendStatusFor(userId: string): {
+  status: "none" | "friends" | "pending_out" | "pending_in";
+  friendship?: Friendship;
+} {
+  if (!userId || userId === "paul" || userId === "?") return { status: "none" };
+  const fr = friendsList.find((f) => f.peer.id === userId);
+  if (fr) return { status: "friends", friendship: fr };
+  const out = friendsPendingOut.find((f) => f.peer.id === userId);
+  if (out) return { status: "pending_out", friendship: out };
+  const inn = friendsPendingIn.find((f) => f.peer.id === userId);
+  if (inn) return { status: "pending_in", friendship: inn };
+  return { status: "none" };
+}
 
-  const addBtn = document.createElement("button");
-  addBtn.type = "button";
-  addBtn.className = "convo-item friends-add-btn";
-  addBtn.innerHTML = `<span class="menu-icon">${icons.plus}</span><span>Add friend</span>`;
-  addBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
+function showMiniFriendPopup(opts: {
+  title: string;
+  body: string;
+  primaryLabel?: string;
+  onPrimary?: () => void;
+  secondaryLabel?: string;
+  onSecondary?: () => void;
+}) {
+  document.getElementById("friend-mini-popup")?.remove();
+  const overlay = document.createElement("div");
+  overlay.id = "friend-mini-popup";
+  overlay.className = "friend-mini-popup";
+  const actions: string[] = [];
+  if (opts.secondaryLabel) {
+    actions.push(`<button type="button" class="secondary-btn" id="friend-mini-sec">${opts.secondaryLabel}</button>`);
+  }
+  actions.push(
+    `<button type="button" class="primary" id="friend-mini-pri">${opts.primaryLabel || "OK"}</button>`
+  );
+  overlay.innerHTML = `
+    <div class="friend-mini-card">
+      <div class="friend-mini-title"></div>
+      <p class="friend-mini-body"></p>
+      <div class="friend-mini-actions">${actions.join("")}</div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector(".friend-mini-title")!.textContent = opts.title;
+  overlay.querySelector(".friend-mini-body")!.textContent = opts.body;
+  const close = () => overlay.remove();
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) close();
+  });
+  overlay.querySelector("#friend-mini-pri")!.addEventListener("click", () => {
+    close();
+    opts.onPrimary?.();
+  });
+  const sec = overlay.querySelector("#friend-mini-sec");
+  if (sec) {
+    sec.addEventListener("click", () => {
+      close();
+      opts.onSecondary?.();
+    });
+  }
+}
+
+/** Full friends panel (popup) — keeps sidebar free for Recents / chats. */
+function showFriendsPanel() {
+  document.getElementById("friends-panel")?.remove();
+  const overlay = document.createElement("div");
+  overlay.id = "friends-panel";
+  overlay.className = "sender-popup";
+  overlay.innerHTML = `
+    <div class="sender-popup-card friends-panel-card">
+      <div class="friends-panel-head">
+        <div class="sender-popup-name">Friends</div>
+        <button type="button" class="secondary-btn" id="friends-panel-add">Add friend</button>
+      </div>
+      <div class="friends-panel-body" id="friends-panel-body"></div>
+      <button type="button" class="secondary-btn sender-popup-close" id="friends-panel-close">Close</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  const body = overlay.querySelector("#friends-panel-body") as HTMLDivElement;
+  const close = () => overlay.remove();
+  overlay.querySelector("#friends-panel-close")!.addEventListener("click", close);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) close();
+  });
+  overlay.querySelector("#friends-panel-add")!.addEventListener("click", () => {
     showAddFriendModal();
   });
-  parent.appendChild(addBtn);
 
-  for (const f of friendsPendingIn) {
-    const row = document.createElement("div");
-    row.className = "convo-item friends-pending-item";
-    row.innerHTML = `<span class="friends-peer-name">${f.peer.display_name || f.peer.username}</span>
-      <span class="friends-pending-actions">
-        <button type="button" class="friends-accept" title="Accept">✓</button>
-        <button type="button" class="friends-reject" title="Decline">✕</button>
-      </span>`;
-    row.querySelector(".friends-accept")!.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      try {
-        await api.acceptFriend(f.id);
-        await loadFriends();
-        renderConvoList();
-        showToast("Friend request accepted");
-      } catch (err: any) {
-        showToast(err?.message || "Failed");
+  const renderBody = () => {
+    body.innerHTML = "";
+    if (friendsPendingIn.length) {
+      const h = document.createElement("div");
+      h.className = "friends-panel-section";
+      h.textContent = "Requests";
+      body.appendChild(h);
+      for (const f of friendsPendingIn) {
+        const row = document.createElement("div");
+        row.className = "friends-panel-row";
+        row.innerHTML = `<span class="friends-peer-name">${f.peer.display_name || f.peer.username}</span>
+          <span class="friends-pending-actions">
+            <button type="button" class="primary friends-accept-sm">Accept</button>
+            <button type="button" class="secondary-btn friends-reject-sm">Decline</button>
+          </span>`;
+        row.querySelector(".friends-accept-sm")!.addEventListener("click", async () => {
+          try {
+            await api.acceptFriend(f.id);
+            await loadFriends();
+            renderBody();
+            showMiniFriendPopup({
+              title: "You're friends",
+              body: `You and ${f.peer.display_name || f.peer.username} are now friends. You can message each other anytime.`,
+              primaryLabel: "Message",
+              onPrimary: () => void openFriendChat(f.id),
+              secondaryLabel: "OK",
+            });
+          } catch (err: any) {
+            showToast(err?.message || "Failed");
+          }
+        });
+        row.querySelector(".friends-reject-sm")!.addEventListener("click", async () => {
+          try {
+            await api.rejectFriend(f.id);
+            await loadFriends();
+            renderBody();
+          } catch (err: any) {
+            showToast(err?.message || "Failed");
+          }
+        });
+        body.appendChild(row);
       }
-    });
-    row.querySelector(".friends-reject")!.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      try {
-        await api.rejectFriend(f.id);
-        await loadFriends();
-        renderConvoList();
-      } catch (err: any) {
-        showToast(err?.message || "Failed");
+    }
+    if (friendsPendingOut.length) {
+      const h = document.createElement("div");
+      h.className = "friends-panel-section";
+      h.textContent = "Pending";
+      body.appendChild(h);
+      for (const f of friendsPendingOut) {
+        const row = document.createElement("div");
+        row.className = "friends-panel-row";
+        row.innerHTML = `<span class="friends-peer-name">${f.peer.display_name || f.peer.username}</span>
+          <button type="button" class="secondary-btn friends-cancel-sm">Cancel</button>`;
+        row.querySelector(".friends-cancel-sm")!.addEventListener("click", async () => {
+          try {
+            await api.rejectFriend(f.id);
+            await loadFriends();
+            renderBody();
+            showToast("Request cancelled");
+          } catch (err: any) {
+            showToast(err?.message || "Failed");
+          }
+        });
+        body.appendChild(row);
       }
-    });
-    parent.appendChild(row);
-  }
-
-  for (const f of friendsPendingOut) {
-    const row = document.createElement("div");
-    row.className = "convo-item friends-pending-item is-outgoing";
-    row.innerHTML = `<span class="friends-peer-name">${f.peer.display_name || f.peer.username}</span>
-      <span class="friends-pending-label">Pending</span>`;
-    parent.appendChild(row);
-  }
-
-  for (const f of friendsList) {
-    const row = document.createElement("button");
-    row.type = "button";
-    row.className = "convo-item friends-friend-item";
-    const initial = (f.peer.display_name || f.peer.username || "?").slice(0, 1).toUpperCase();
-    row.innerHTML = `<span class="friends-avatar">${
-      f.peer.avatar ? `<img src="${f.peer.avatar}" alt="" />` : initial
-    }</span><span class="friends-peer-name">${f.peer.display_name || f.peer.username}</span>`;
-    row.addEventListener("click", () => void openFriendChat(f.id));
-    parent.appendChild(row);
-  }
+    }
+    const h = document.createElement("div");
+    h.className = "friends-panel-section";
+    h.textContent = friendsList.length ? "Your friends" : "No friends yet";
+    body.appendChild(h);
+    for (const f of friendsList) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "friends-panel-row friends-panel-friend";
+      const initial = (f.peer.display_name || f.peer.username || "?").slice(0, 1).toUpperCase();
+      row.innerHTML = `<span class="friends-avatar">${
+        f.peer.avatar ? `<img src="${f.peer.avatar}" alt="" />` : initial
+      }</span><span class="friends-peer-name">${f.peer.display_name || f.peer.username}</span>
+        <span class="friends-msg-label">Message</span>`;
+      row.addEventListener("click", () => {
+        close();
+        void openFriendChat(f.id);
+      });
+      body.appendChild(row);
+    }
+  };
+  renderBody();
 }
 
 function renderConvoList() {
   convoList.innerHTML = "";
   const isCollab = (c: Conversation) =>
-    (!!c.is_collab_member || c.visibility === "collab") && c.visibility !== "dm";
+    (c.visibility === "collab" || !!c.is_collab_member) && c.visibility !== "dm";
   const isDm = (c: Conversation) => !!c.is_dm || c.visibility === "dm";
+  // Recents = normal chats (not collab group, not DM)
   const active = conversations.filter((c) => !c.archived && !isCollab(c) && !isDm(c));
   const dms = conversations.filter((c) => !c.archived && isDm(c));
   const collab = conversations.filter((c) => !c.archived && isCollab(c));
   const archived = conversations.filter((c) => c.archived);
 
+  // Friends entry opens the popup — does not replace Recents
+  const friendsBtn = document.createElement("button");
+  friendsBtn.type = "button";
+  friendsBtn.className = "convo-item friends-sidebar-btn";
+  const pendingBadge = friendsPendingIn.length
+    ? `<span class="friends-badge">${friendsPendingIn.length}</span>`
+    : "";
+  friendsBtn.innerHTML = `<span class="menu-icon">${icons.people || ""}</span><span>Friends</span>${pendingBadge}`;
+  friendsBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    void loadFriends().then(() => showFriendsPanel());
+  });
+  convoList.appendChild(friendsBtn);
+
   for (const c of active) {
     convoList.appendChild(createConvoItem(c));
   }
-
-  // Friends section: accepted friends + pending requests + DM threads
-  renderFriendsSection(convoList);
 
   if (dms.length > 0) {
     const header = document.createElement("div");
@@ -1201,6 +1448,7 @@ async function loadConversations() {
     is_collab_member: !!c.is_collab_member,
     collab_locked: !!c.collab_locked,
     is_dm: !!c.is_dm || c.visibility === "dm",
+    is_owner: c.is_owner === undefined ? !c.is_collab_member : !!c.is_owner,
   }));
   await loadFriends();
   renderConvoList();
@@ -1251,7 +1499,10 @@ function syncCollabComposerHint() {
   if (currentChatReadOnly) return;
   if (isCollabChat) {
     chatInput.placeholder = "Message the group… @paul or @username";
-    setHint("Collab: type @ to mention. Tag @paul when you want Paul to reply — you can mix multiple mentions.");
+    setHint("Collab: type @ to mention. Tag @paul when you want Paul to reply.");
+  } else if (isDmChat) {
+    chatInput.placeholder = "Message your friend… Tag @paul to ask Paul";
+    setHint("Friend chat: talk freely. Tag @paul only when you want Paul to reply.");
   } else {
     chatInput.placeholder = t("chat.placeholder") || "Message the agent…";
     hideMentionMenu();
@@ -1462,12 +1713,16 @@ function showSenderPopup(sender: import("./api").MessageSender) {
   pop.id = "sender-popup";
   pop.className = "sender-popup";
   const title = sender.is_paul ? "Paul" : (sender.display_name || sender.username);
+  const isSelf = !!(currentUser?.id && sender.id === currentUser.id);
+  const showFriendActions = !sender.is_paul && !isSelf && !!sender.id && sender.id !== "?";
+
   pop.innerHTML = `
     <div class="sender-popup-card">
       <div class="sender-popup-name"></div>
       <div class="sender-popup-row"><span>Username</span><strong class="sp-user"></strong></div>
       <div class="sender-popup-row"><span>Email</span><strong class="sp-email"></strong></div>
       <div class="sender-popup-row"><span>User ID</span><strong class="sp-id"></strong></div>
+      <div class="sender-popup-friend-actions" id="sp-friend-actions" style="display:none;"></div>
       <button type="button" class="secondary-btn sender-popup-close">Close</button>
     </div>`;
   document.body.appendChild(pop);
@@ -1477,7 +1732,121 @@ function showSenderPopup(sender: import("./api").MessageSender) {
   pop.querySelector(".sp-id")!.textContent = sender.id || "—";
   const close = () => pop.remove();
   pop.querySelector(".sender-popup-close")!.addEventListener("click", close);
-  pop.addEventListener("click", (e) => { if (e.target === pop) close(); });
+  pop.addEventListener("click", (e) => {
+    if (e.target === pop) close();
+  });
+
+  if (showFriendActions) {
+    const actions = pop.querySelector("#sp-friend-actions") as HTMLDivElement;
+    actions.style.display = "flex";
+
+    const paint = () => {
+      const st = friendStatusFor(sender.id);
+      actions.innerHTML = "";
+      if (st.status === "friends") {
+        const msg = document.createElement("button");
+        msg.type = "button";
+        msg.className = "primary";
+        msg.textContent = "Message";
+        msg.addEventListener("click", () => {
+          close();
+          if (st.friendship) void openFriendChat(st.friendship.id);
+        });
+        actions.appendChild(msg);
+        const label = document.createElement("span");
+        label.className = "sp-friend-status";
+        label.textContent = "Friends";
+        actions.appendChild(label);
+      } else if (st.status === "pending_out") {
+        const pending = document.createElement("button");
+        pending.type = "button";
+        pending.className = "secondary-btn";
+        pending.textContent = "Pending";
+        pending.disabled = true;
+        actions.appendChild(pending);
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.className = "secondary-btn";
+        cancel.textContent = "Cancel";
+        cancel.addEventListener("click", async () => {
+          try {
+            await api.rejectFriend(st.friendship!.id);
+            await loadFriends();
+            paint();
+            showToast("Request cancelled");
+          } catch (e: any) {
+            showToast(e?.message || "Failed");
+          }
+        });
+        actions.appendChild(cancel);
+      } else if (st.status === "pending_in") {
+        const accept = document.createElement("button");
+        accept.type = "button";
+        accept.className = "primary";
+        accept.textContent = "Accept";
+        accept.addEventListener("click", async () => {
+          try {
+            await api.acceptFriend(st.friendship!.id);
+            await loadFriends();
+            close();
+            showMiniFriendPopup({
+              title: "You're friends",
+              body: `You and ${title} are now friends.`,
+              primaryLabel: "Message",
+              onPrimary: () => void openFriendChat(st.friendship!.id),
+              secondaryLabel: "OK",
+            });
+            renderConvoList();
+          } catch (e: any) {
+            showToast(e?.message || "Failed");
+          }
+        });
+        actions.appendChild(accept);
+        const decline = document.createElement("button");
+        decline.type = "button";
+        decline.className = "secondary-btn";
+        decline.textContent = "Decline";
+        decline.addEventListener("click", async () => {
+          try {
+            await api.rejectFriend(st.friendship!.id);
+            await loadFriends();
+            paint();
+          } catch (e: any) {
+            showToast(e?.message || "Failed");
+          }
+        });
+        actions.appendChild(decline);
+      } else {
+        const add = document.createElement("button");
+        add.type = "button";
+        add.className = "primary";
+        add.textContent = "Add friend";
+        add.addEventListener("click", async () => {
+          try {
+            const res = await api.requestFriend(sender.username);
+            await loadFriends();
+            if (res.status === "accepted") {
+              close();
+              showMiniFriendPopup({
+                title: "You're friends",
+                body: `You and ${title} are now friends.`,
+                primaryLabel: "OK",
+              });
+            } else {
+              paint();
+              showToast("Friend request sent — pending");
+            }
+            renderConvoList();
+          } catch (e: any) {
+            showToast(e?.message || "Could not send request");
+          }
+        });
+        actions.appendChild(add);
+      }
+    };
+
+    void loadFriends().then(paint);
+  }
 }
 
 /**
@@ -2036,10 +2405,13 @@ function hideMentionMenu() {
 function mentionCandidates(query: string): { handle: string; label: string }[] {
   const q = query.toLowerCase();
   const items: { handle: string; label: string }[] = [{ handle: "paul", label: "Paul (AI)" }];
-  for (const m of collabMembers) {
-    if (!m.username) continue;
-    if (currentUser?.id && m.id === currentUser.id) continue;
-    items.push({ handle: m.username.toLowerCase(), label: m.display_name || m.username });
+  // Member @tags only in collab groups (not 1:1 friend DMs)
+  if (isCollabChat) {
+    for (const m of collabMembers) {
+      if (!m.username) continue;
+      if (currentUser?.id && m.id === currentUser.id) continue;
+      items.push({ handle: m.username.toLowerCase(), label: m.display_name || m.username });
+    }
   }
   const seen = new Set<string>();
   return items
@@ -2099,7 +2471,8 @@ function insertMention(handle: string) {
 }
 
 function onComposerMentionInput() {
-  if (!isCollabChat) {
+  // @ autocomplete in collab (members + Paul) and friend DM (Paul only)
+  if (!isCollabChat && !isDmChat) {
     hideMentionMenu();
     return;
   }
@@ -2167,7 +2540,9 @@ async function performSend(
   }
 
   // Collab human-to-human message: still save to server, but don't wait on Paul
-  const expectPaul = !isCollabChat || opts?.regenerate || messageMentionsPaul(text);
+  // Collab + friend DM: Paul only when tagged with @paul
+  const expectPaul =
+    !(isCollabChat || isDmChat) || opts?.regenerate || messageMentionsPaul(text);
 
   setReplying(true);
   setHint("");
@@ -2568,6 +2943,7 @@ export function initChatView(user: User) {
 
   renderQuickActions();
   loadConversations();
+  startFriendsPoll();
   renderMessages([]);
   handleConvoLinkFromHash();
 }
