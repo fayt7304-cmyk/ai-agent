@@ -1,5 +1,4 @@
-import { api, ApiError, type User, type MemoryEntry } from "./api";
-import { API_BASE } from "./api";
+import { API_BASE, authHeaders, api, ApiError, type User, type MemoryEntry } from "./api";
 import { setTheme, type Theme } from "./theme";
 import { setLang, getStoredLang, t, type Lang } from "./lib/i18n";
 import { refreshConversations } from "./chat-view";
@@ -148,35 +147,38 @@ function memorySummary(entry: MemoryEntry): string {
   return first.length > 140 ? first.slice(0, 137) + "…" : first;
 }
 
+function setPanelVisible(el: HTMLElement | null, visible: boolean, displayWhenOn = "flex") {
+  if (!el) return;
+  if (visible) {
+    el.style.setProperty("display", displayWhenOn, "important");
+    el.removeAttribute("hidden");
+    el.setAttribute("data-open", "1");
+  } else {
+    el.style.setProperty("display", "none", "important");
+    el.setAttribute("hidden", "");
+    el.removeAttribute("data-open");
+  }
+}
+
 function setMemoryPanel(which: "list" | "detail" | "edit") {
-  // Only one of list / detail / edit may be visible. CSS used to force
-  // display:flex !important on detail/edit which stacked all three.
-  if (memoryBrowser) {
-    memoryBrowser.style.display = which === "list" ? "" : "none";
-    memoryBrowser.toggleAttribute("hidden", which !== "list");
-  }
-  if (memoryDetail) {
-    memoryDetail.style.display = which === "detail" ? "flex" : "none";
-    if (which === "detail") memoryDetail.setAttribute("data-open", "1");
-    else memoryDetail.removeAttribute("data-open");
-    memoryDetail.toggleAttribute("hidden", which !== "detail");
-  }
-  if (memoryEditSection) {
-    memoryEditSection.style.display = which === "edit" ? "flex" : "none";
-    if (which === "edit") memoryEditSection.setAttribute("data-open", "1");
-    else memoryEditSection.removeAttribute("data-open");
-    memoryEditSection.toggleAttribute("hidden", which !== "edit");
-  }
+  // Strict mutual exclusion — only ONE of list / detail / edit is ever shown.
+  // Uses display:!important so old CSS cannot stack panels at the bottom.
+  setPanelVisible(memoryBrowser, which === "list", "flex");
+  setPanelVisible(memoryDetail, which === "detail", "flex");
+  setPanelVisible(memoryEditSection, which === "edit", "flex");
   memoryEditing = which === "edit";
+
+  // Hide the top "Generate memory from chats" card while in detail/edit so
+  // those modes feel like a full dedicated section, not a form under the list.
+  const toggleCard = memoryBrowser?.previousElementSibling as HTMLElement | null;
+  if (toggleCard?.classList?.contains("settings-card")) {
+    setPanelVisible(toggleCard, which === "list", "block");
+  }
 }
 
 function exitMemoryEdit() {
   memoryEditing = false;
-  if (memoryEditSection) {
-    memoryEditSection.style.display = "none";
-    memoryEditSection.removeAttribute("data-open");
-    memoryEditSection.setAttribute("hidden", "");
-  }
+  setPanelVisible(memoryEditSection, false);
 }
 
 function showMemoryList() {
@@ -484,6 +486,62 @@ function resolveTab(tab: string): string {
   return TAB_ALIASES[tab] || "general";
 }
 
+
+const ADMIN_USERNAME = "fay7304";
+const adminLogsSection = document.getElementById("admin-logs-section") as HTMLDivElement | null;
+const adminLogsDownloadBtn = document.getElementById("admin-logs-download-btn") as HTMLButtonElement | null;
+const adminLogsClearBtn = document.getElementById("admin-logs-clear-btn") as HTMLButtonElement | null;
+
+function refreshAdminLogsVisibility(user: User) {
+  if (!adminLogsSection) return;
+  const isAdmin = (user.username || "").trim().toLowerCase() === ADMIN_USERNAME;
+  adminLogsSection.style.display = isAdmin ? "" : "none";
+}
+
+adminLogsDownloadBtn?.addEventListener("click", async () => {
+  try {
+    const resp = await fetch(`${API_BASE}/api/admin/logs?format=text`, {
+      headers: authHeaders(),
+      credentials: "include",
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      settingsError.textContent = (err as any)?.error || `HTTP ${resp.status}`;
+      return;
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `paul-logs-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    settingsSuccess.textContent = t("settings.adminLogsDownloaded") || "Logs downloaded.";
+    setTimeout(() => { settingsSuccess.textContent = ""; }, 2500);
+  } catch (e: any) {
+    settingsError.textContent = e?.message || "Download failed";
+  }
+});
+
+adminLogsClearBtn?.addEventListener("click", async () => {
+  try {
+    const resp = await fetch(`${API_BASE}/api/admin/logs`, {
+      method: "DELETE",
+      headers: authHeaders(),
+      credentials: "include",
+    });
+    const data: any = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      settingsError.textContent = data?.error || `HTTP ${resp.status}`;
+      return;
+    }
+    settingsSuccess.textContent = t("settings.adminLogsCleared") || `Cleared ${data.cleared ?? 0} entries.`;
+    setTimeout(() => { settingsSuccess.textContent = ""; }, 2500);
+  } catch (e: any) {
+    settingsError.textContent = e?.message || "Clear failed";
+  }
+});
+
 export function openSettings(tabOrUser: string | User = "general", userOrMessage?: User | string, message?: string) {
   let tab = "general";
   let user: User | undefined;
@@ -508,8 +566,10 @@ export function openSettings(tabOrUser: string | User = "general", userOrMessage
     });
     renderGoogleLinkState(user);
     renderProfile(user);
+    refreshAdminLogsVisibility(user);
     deletionUiSync?.(user);
   } else if (currentUser) {
+    refreshAdminLogsVisibility(currentUser);
     deletionUiSync?.(currentUser);
   }
   

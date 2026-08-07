@@ -5448,3 +5448,52 @@ html[dir="rtl"] .learn-more-submenu {
   margin-inline-start: 0;
 }
 /* language-menu fix v9 */
+
+
+/* MEMORY PANEL EXCLUSIVITY v9.1 — never stack list/detail/edit */
+#memory-detail:not([data-open="1"]),
+#memory-edit-section:not([data-open="1"]) {
+  display: none !important;
+}
+#memory-detail[data-open="1"],
+#memory-edit-section[data-open="1"] {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+}
+#memory-browser[hidden] {
+  display: none !important;
+}
+
+
+/* REPLY VERSION NAV + BUSY QUICK ACTIONS v9.1 */
+.msg-action-version-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-inline-end: 4px;
+}
+.msg-action-version-nav .msg-action-btn {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  font-size: 16px;
+  line-height: 1;
+  border-radius: 8px;
+}
+.msg-action-version-nav .msg-version-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  min-width: 2.4em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.quick-actions.is-busy,
+.quick-actions.is-busy .quick-action-btn {
+  pointer-events: none;
+}
+.quick-action-btn:disabled,
+.quick-action-btn.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

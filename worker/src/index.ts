@@ -30,6 +30,7 @@ import { sendPasswordResetEmail, sendLeadNotificationEmail, sendAccountDeletionE
 /** Grace period before a soft-deleted account is purged for good. */
 const ACCOUNT_DELETION_GRACE_DAYS = 7;
 import { callMistral, extractMemories } from "./mistral";
+import { adminLog, getAdminLogs, formatAdminLogsText, clearAdminLogs, isAdminUser } from "./admin-log";
 
 // ---- Customize your agent defaults here ----------------------------
 const DEFAULT_MODEL = "mistral-medium-latest";
@@ -1315,6 +1316,39 @@ async function handleTts(request: Request, env: Env): Promise<Response> {
 }
 
 /**
+ * GET /api/admin/logs — download recent Worker logs (admin username only).
+ * DELETE /api/admin/logs — clear the in-memory buffer.
+ */
+async function handleAdminLogsGet(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return json({ error: "Not authenticated" }, 401);
+  if (!isAdminUser(user.username)) return json({ error: "Forbidden" }, 403);
+  const format = new URL(request.url).searchParams.get("format") || "text";
+  const entries = getAdminLogs();
+  adminLog("info", "admin", "logs downloaded", { count: entries.length, by: user.username });
+  if (format === "json") {
+    return json({ count: entries.length, logs: entries });
+  }
+  const body = formatAdminLogsText(entries) || "(no log entries yet)\n";
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Content-Disposition": `attachment; filename="paul-logs-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.txt"`,
+    },
+  });
+}
+
+async function handleAdminLogsClear(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return json({ error: "Not authenticated" }, 401);
+  if (!isAdminUser(user.username)) return json({ error: "Forbidden" }, 403);
+  const cleared = clearAdminLogs();
+  adminLog("info", "admin", "logs cleared", { cleared, by: user.username });
+  return json({ ok: true, cleared });
+}
+
+/**
  * GET /api/tools/health — lightweight status for OCR / bg-remove / TTS / chat tools.
  * Used by the Tools UI to show a note when a feature isn't configured (501-class).
  */
@@ -1888,6 +1922,7 @@ async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): P
           for (const item of items) await upsertMemory(env, user.id, item, "chat");
         } catch (e) {
           console.log("memory: extraction skipped", e);
+          adminLog("warn", "memory", "extraction skipped", e);
         }
       })();
       if (ctx?.waitUntil) ctx.waitUntil(learn);
@@ -1922,6 +1957,7 @@ async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): P
   } catch (e: any) {
     const errorMsgId = crypto.randomUUID();
     const message = e?.message || "Something went wrong talking to the model.";
+    adminLog("error", "chat", message, { conversation_id: convo.id });
     await env.DB.prepare(
       "INSERT INTO messages (id, conversation_id, role, content, attachments, created_at) VALUES (?, ?, 'error', ?, NULL, ?)"
     )
@@ -2080,6 +2116,10 @@ export default {
         resp = await handleBgRemove(request, env);
       } else if (path === "/api/tools/health" && request.method === "GET") {
         resp = await handleToolsHealth(request, env);
+      } else if (path === "/api/admin/logs" && request.method === "GET") {
+        resp = await handleAdminLogsGet(request, env);
+      } else if (path === "/api/admin/logs" && request.method === "DELETE") {
+        resp = await handleAdminLogsClear(request, env);
       } else if (path === "/api/uploads" && request.method === "GET") {
         // List uploads/attachments for the current user
         resp = await handleListUploads(request, env);
@@ -2111,6 +2151,7 @@ export default {
         resp = json({ error: "Not found" }, { status: 404 });
       }
     } catch (e: any) {
+      adminLog("error", "worker", e?.message || "Unknown server error", { path });
       resp = json({ error: e?.message || "Unknown server error" }, { status: 500 });
     }
 

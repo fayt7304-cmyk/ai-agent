@@ -1030,6 +1030,8 @@ function attachRegenerateButton(row: HTMLDivElement) {
 function renderMessages(messages: Message[]) {
   messagesEl.innerHTML = "";
   lastAgentRow = null;
+  replyVersions = [];
+  replyVersionIndex = 0;
   if (messages.length === 0) {
     messagesEl.appendChild(emptyState);
     emptyState.style.display = "flex";
@@ -1070,6 +1072,8 @@ function startNewConversation() {
   lastUserText = "";
   lastUserAttachments = [];
   lastAgentRow = null;
+  replyVersions = [];
+  replyVersionIndex = 0;
   renderConvoList();
   renderMessages([]);
   chatInput.focus();
@@ -1086,7 +1090,15 @@ function renderQuickActions() {
     btn.type = "button";
     btn.className = "quick-action-btn";
     btn.textContent = t(qa.labelKey);
-    btn.addEventListener("click", () => {
+    btn.disabled = isReplying;
+    btn.setAttribute("aria-disabled", isReplying ? "true" : "false");
+    btn.classList.toggle("is-disabled", isReplying);
+    btn.addEventListener("click", (e) => {
+      if (isReplying) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       if (qa.openLead) {
         openLeadModal(currentConversationId);
       } else if (qa.promptKey) {
@@ -1096,6 +1108,7 @@ function renderQuickActions() {
     });
     quickActionsEl.appendChild(btn);
   }
+  quickActionsEl.classList.toggle("is-busy", isReplying);
 }
 
 document.addEventListener("langchange", renderQuickActions);
@@ -1137,16 +1150,141 @@ async function handleFiles(files: FileList | File[]) {
   renderAttachmentChips();
 }
 
-async function performSend(text: string, attachments: (Attachment & { dataUrl: string })[], showUserBubble: boolean) {
+/** True while waiting for Paul's reply — blocks quick actions and double-send. */
+let isReplying = false;
+
+/** Alternate replies for the latest agent message (regenerate versions). */
+let replyVersions: { content: string; attachments: Attachment[] }[] = [];
+let replyVersionIndex = 0;
+
+function setReplying(busy: boolean) {
+  isReplying = busy;
+  sendBtn.disabled = busy;
+  chatInput.disabled = busy;
+  // Quick prompts like "Where are you located?" must not fire mid-reply
+  quickActionsEl.querySelectorAll<HTMLButtonElement>(".quick-action-btn").forEach((btn) => {
+    btn.disabled = busy;
+    btn.setAttribute("aria-disabled", busy ? "true" : "false");
+    btn.classList.toggle("is-disabled", busy);
+  });
+  quickActionsEl.classList.toggle("is-busy", busy);
+}
+
+function updateReplyVersionNav(row: HTMLDivElement) {
+  const actions = row.querySelector(".msg-actions");
+  if (!actions) return;
+  actions.querySelector(".msg-action-version-nav")?.remove();
+  if (replyVersions.length < 2) return;
+
+  const nav = document.createElement("div");
+  nav.className = "msg-action-version-nav";
+  nav.setAttribute("role", "group");
+  nav.setAttribute("aria-label", "Reply versions");
+
+  const prev = document.createElement("button");
+  prev.type = "button";
+  prev.className = "msg-action-btn msg-action-version-prev";
+  prev.textContent = "‹";
+  prev.title = "Previous reply";
+  prev.disabled = replyVersionIndex <= 0;
+  prev.addEventListener("click", () => {
+    if (replyVersionIndex <= 0) return;
+    replyVersionIndex -= 1;
+    applyReplyVersion(row);
+  });
+
+  const label = document.createElement("span");
+  label.className = "msg-version-label";
+  label.textContent = `${replyVersionIndex + 1}/${replyVersions.length}`;
+
+  const next = document.createElement("button");
+  next.type = "button";
+  next.className = "msg-action-btn msg-action-version-next";
+  next.textContent = "›";
+  next.title = "Next reply";
+  next.disabled = replyVersionIndex >= replyVersions.length - 1;
+  next.addEventListener("click", () => {
+    if (replyVersionIndex >= replyVersions.length - 1) return;
+    replyVersionIndex += 1;
+    applyReplyVersion(row);
+  });
+
+  nav.appendChild(prev);
+  nav.appendChild(label);
+  nav.appendChild(next);
+  // Put version nav before regenerate
+  const regen = actions.querySelector(".msg-action-regenerate");
+  if (regen) actions.insertBefore(nav, regen);
+  else actions.appendChild(nav);
+}
+
+function applyReplyVersion(row: HTMLDivElement) {
+  const v = replyVersions[replyVersionIndex];
+  if (!v) return;
+  const bubble = row.querySelector(".msg") as HTMLElement | null;
+  if (bubble) {
+    bubble.innerHTML = renderMarkdown(v.content);
+  }
+  // Keep Copy in sync with the visible version
+  const copyBtn = row.querySelector(".msg-actions button");
+  if (copyBtn) {
+    copyBtn.replaceWith(copyBtn.cloneNode(true));
+    const fresh = row.querySelector(".msg-actions button") as HTMLButtonElement | null;
+    fresh?.addEventListener("click", () => {
+      navigator.clipboard.writeText(v.content).then(() => {
+        if (!fresh) return;
+        fresh.innerHTML = icons.check;
+        fresh.classList.add("done");
+        setTimeout(() => {
+          fresh.innerHTML = icons.copy;
+          fresh.classList.remove("done");
+        }, 1200);
+      });
+    });
+  }
+  updateReplyVersionNav(row);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+/** Remove trailing agent / error / thinking bubbles so regenerate replaces the reply. */
+function removeTrailingAssistantRows() {
+  const rows = [...messagesEl.querySelectorAll<HTMLDivElement>(".msg-row")];
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i];
+    if (r.classList.contains("agent") || r.classList.contains("error") || r.classList.contains("thinking")) {
+      r.remove();
+    } else {
+      break;
+    }
+  }
+  lastAgentRow = null;
+}
+
+async function performSend(
+  text: string,
+  attachments: (Attachment & { dataUrl: string })[],
+  showUserBubble: boolean,
+  opts?: { regenerate?: boolean }
+) {
+  if (isReplying) return;
+
   if (showUserBubble) {
     const attachmentsForDisplay: Attachment[] = attachments.map((a) => ({ name: a.name, mime: a.mime, size: a.size }));
     addMsgRow("user", text, attachmentsForDisplay);
+    // New user turn → reset version history
+    replyVersions = [];
+    replyVersionIndex = 0;
   }
 
   lastUserText = text;
   lastUserAttachments = attachments;
 
-  sendBtn.disabled = true;
+  if (opts?.regenerate) {
+    // Drop the old reply so only the new one (or thinking) is visible
+    removeTrailingAssistantRows();
+  }
+
+  setReplying(true);
   setHint("");
 
   const thinking = addMsgRow("thinking", "…");
@@ -1158,8 +1296,20 @@ async function performSend(text: string, attachments: (Attachment & { dataUrl: s
       attachments,
     });
     thinking.remove();
-    const agentRow = addMsgRow("agent", result.reply || "(empty response)", result.attachments || []);
+    const replyText = result.reply || "(empty response)";
+    const replyAtt = result.attachments || [];
+
+    if (opts?.regenerate) {
+      replyVersions.push({ content: replyText, attachments: replyAtt });
+      replyVersionIndex = replyVersions.length - 1;
+    } else {
+      replyVersions = [{ content: replyText, attachments: replyAtt }];
+      replyVersionIndex = 0;
+    }
+
+    const agentRow = addMsgRow("agent", replyText, replyAtt);
     attachRegenerateButton(agentRow);
+    updateReplyVersionNav(agentRow);
 
     const isNewConvo = !currentConversationId;
     setCurrentConversation(result.conversation_id);
@@ -1181,12 +1331,13 @@ async function performSend(text: string, attachments: (Attachment & { dataUrl: s
     const message = err instanceof ApiError ? err.message : "Network error. Please try again.";
     addMsgRow("error", message);
   } finally {
-    sendBtn.disabled = false;
+    setReplying(false);
     chatInput.focus();
   }
 }
 
 async function sendMessage() {
+  if (isReplying) return;
   const text = chatInput.value.trim();
   if (!text && pendingAttachments.length === 0) return;
 
@@ -1200,8 +1351,15 @@ async function sendMessage() {
 }
 
 async function regenerateLast() {
+  if (isReplying) return;
   if (!lastUserText && lastUserAttachments.length === 0) return;
-  await performSend(lastUserText, lastUserAttachments, false);
+  // Keep existing versions; new reply is appended and shown (‹ › to switch)
+  if (replyVersions.length === 0 && lastAgentRow) {
+    const body = lastAgentRow.querySelector(".msg-body, .msg-markdown, .msg-content, .msg-text");
+    const prev = body?.textContent?.trim();
+    if (prev) replyVersions = [{ content: prev, attachments: [] }];
+  }
+  await performSend(lastUserText, lastUserAttachments, false, { regenerate: true });
 }
 
 const sidebarBackdrop = document.createElement("div");
