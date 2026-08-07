@@ -5685,3 +5685,100 @@ html::-webkit-scrollbar-thumb:hover,
 .collab-share-actions .secondary-btn {
   min-height: 40px;
 }
+
+
+/* Manage chat panel (share header) */
+.manage-chat-panel {
+  min-width: min(320px, calc(100vw - 24px));
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.manage-chat-title {
+  font-size: 15px;
+  font-weight: 650;
+  padding: 4px 6px 0;
+}
+.manage-chat-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 6px 8px;
+  line-height: 1.35;
+}
+.manage-chat-option {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  text-align: start;
+  padding: 10px 12px !important;
+  border-radius: 10px;
+  border: 1px solid transparent;
+}
+.manage-chat-option.is-active {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--accent-bg);
+}
+.manage-chat-option-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.manage-chat-option-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.manage-chat-option-hint {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.manage-chat-check {
+  color: var(--accent);
+  font-weight: 700;
+  min-width: 1.2em;
+  text-align: center;
+}
+.manage-collab-box {
+  margin-top: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--card) 90%, var(--accent-bg));
+}
+.manage-collab-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.manage-collab-code {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-align: center;
+  color: var(--accent);
+  padding: 8px 0 10px;
+  font-variant-numeric: tabular-nums;
+}
+.manage-collab-note {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  margin: 0 0 10px;
+  line-height: 1.35;
+}
+.manage-collab-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.manage-collab-actions .secondary-btn {
+  flex: 1 1 auto;
+  min-height: 36px;
+  font-size: 12.5px;
+}

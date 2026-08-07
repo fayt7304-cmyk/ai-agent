@@ -368,6 +368,7 @@ getMessages: (id: string) =>
         can_write?: boolean;
         collab_locked?: boolean;
         is_member?: boolean;
+        collab_code?: string | null;
       };
     }>(`/api/conversations/${id}/messages`, { method: "GET" }),
 

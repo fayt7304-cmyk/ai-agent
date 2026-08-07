@@ -1799,10 +1799,10 @@ async function handleGetMessages(request: Request, env: Env, id: string): Promis
   await ensureConversationColumns(env);
 
   const convo = await env.DB.prepare(
-    "SELECT id, user_id, title, visibility, collab_locked FROM conversations WHERE id = ?"
+    "SELECT id, user_id, title, visibility, collab_locked, collab_code, collab_code_used FROM conversations WHERE id = ?"
   )
     .bind(id)
-    .first<{ id: string; user_id: string; title: string; visibility: string; collab_locked: number }>();
+    .first<{ id: string; user_id: string; title: string; visibility: string; collab_locked: number; collab_code: string | null; collab_code_used: number }>();
 
   if (!convo) return err("Conversation not found.", 404);
   const isOwner = convo.user_id === user.id;
@@ -1880,6 +1880,8 @@ async function handleGetMessages(request: Request, env: Env, id: string): Promis
       collab_locked: !!convo.collab_locked,
       is_member: isOwner || isMember,
       can_write: isOwner || (convo.visibility === "collab" && isMember),
+      collab_code: isOwner && convo.visibility === "collab" && !convo.collab_code_used ? convo.collab_code : null,
+      collab_locked: !!convo.collab_locked,
     },
   });
 }

@@ -271,11 +271,40 @@
         </div>
       </div>
       
-      <!-- Share Menu -->
-      <div id="share-menu" class="header-dropdown" style="display:none;">
-        <button id="share-only-me" class="share-option">Only Me</button>
-        <button id="share-with-people" class="share-option">Everyone</button>
-        <button id="share-collaboration" class="share-option">Collab</button>
+      <!-- Manage chat (share / visibility) -->
+      <div id="share-menu" class="header-dropdown manage-chat-panel" style="display:none;">
+        <div class="manage-chat-title" data-i18n="share.manageTitle">Manage chat</div>
+        <p class="manage-chat-desc" data-i18n="share.manageDesc">Choose who can open this conversation.</p>
+        <button type="button" id="share-only-me" class="share-option manage-chat-option" data-visibility="private">
+          <span class="manage-chat-option-main">
+            <span class="manage-chat-option-label" data-i18n="share.onlyMe">Only me</span>
+            <span class="manage-chat-option-hint" data-i18n="share.onlyMeHint">Private — only you</span>
+          </span>
+          <span class="manage-chat-check" aria-hidden="true"></span>
+        </button>
+        <button type="button" id="share-with-people" class="share-option manage-chat-option" data-visibility="shared">
+          <span class="manage-chat-option-main">
+            <span class="manage-chat-option-label" data-i18n="share.everyone">Everyone</span>
+            <span class="manage-chat-option-hint" data-i18n="share.everyoneHint">Anyone with the link can view</span>
+          </span>
+          <span class="manage-chat-check" aria-hidden="true"></span>
+        </button>
+        <button type="button" id="share-collaboration" class="share-option manage-chat-option" data-visibility="collab">
+          <span class="manage-chat-option-main">
+            <span class="manage-chat-option-label" data-i18n="share.collab">Collaboration</span>
+            <span class="manage-chat-option-hint" data-i18n="share.collabHint">Invite with link + 4-digit code</span>
+          </span>
+          <span class="manage-chat-check" aria-hidden="true"></span>
+        </button>
+        <div id="manage-collab-box" class="manage-collab-box" style="display:none;">
+          <div class="manage-collab-label" data-i18n="share.collabCode">Invite code</div>
+          <div class="manage-collab-code" id="manage-collab-code">————</div>
+          <p class="manage-collab-note" data-i18n="share.collabCodeNote">Single-use. Share again to generate a new code.</p>
+          <div class="manage-collab-actions">
+            <button type="button" id="manage-collab-copy" class="secondary-btn">Copy link + code</button>
+            <button type="button" id="manage-collab-refresh" class="secondary-btn">New code</button>
+          </div>
+        </div>
       </div>
       
       <!-- More Menu -->

@@ -142,18 +142,32 @@ function mountStaticIcons() {
   if (moreArchiveBtn) moreArchiveBtn.innerHTML = menuItemHtml(icons.archive, t("convo.archive"));
   if (moreDeleteBtn) moreDeleteBtn.innerHTML = menuItemHtml(icons.close, t("convo.delete"));
 
-  // Add icons to Share menu items
-  const shareOnlyMe = document.getElementById("share-only-me");
-  const shareWithPeople = document.getElementById("share-with-people");
-  const shareCollab = document.getElementById("share-collaboration");
-  if (shareOnlyMe) shareOnlyMe.innerHTML = menuItemHtml(icons.lock, t("share.onlyMe"));
-  if (shareWithPeople) shareWithPeople.innerHTML = menuItemHtml(icons.people, t("share.everyone"));
-  if (shareCollab) shareCollab.innerHTML = menuItemHtml(icons.link, t("share.collab"));
+  // Share / Manage chat panel uses structured option rows (not simple menuItemHtml)
 
   wireHeaderActions();
 }
 
 // ---- Header action wiring ----
+
+
+let isCollabChat = false;
+let currentVisibility: Visibility = "private";
+let currentCollabCode: string | null = null;
+
+function syncManageChatPanel() {
+  const box = document.getElementById("manage-collab-box") as HTMLDivElement | null;
+  const codeEl = document.getElementById("manage-collab-code") as HTMLElement | null;
+  document.querySelectorAll<HTMLButtonElement>(".manage-chat-option").forEach((btn) => {
+    const v = btn.dataset.visibility as Visibility;
+    btn.classList.toggle("is-active", v === currentVisibility);
+    const check = btn.querySelector(".manage-chat-check");
+    if (check) check.textContent = v === currentVisibility ? "✓" : "";
+  });
+  if (box) {
+    box.style.display = currentVisibility === "collab" ? "block" : "none";
+    if (codeEl) codeEl.textContent = currentCollabCode || "————";
+  }
+}
 
 function wireHeaderActions() {
   // Usage modal — loads real stats when opened
@@ -192,7 +206,9 @@ function wireHeaderActions() {
   //   private -> only the owner
   //   shared  -> anyone signed in with the link can read
   //   collab  -> anyone signed in with the link can read AND reply
-  async function shareCurrentConversation(visibility: Visibility, copyLink: boolean) {
+
+  // syncManageChatPanel is module-level
+  async function shareCurrentConversation(visibility: Visibility, opts?: { copyLink?: boolean; forceNewCode?: boolean }) {
     if (!currentConversationId) {
       showToast(t("share.needsChat"));
       return;
@@ -204,47 +220,71 @@ function wireHeaderActions() {
       const convo = conversations.find((c) => c.id === id);
       if (convo) convo.visibility = visibility;
       collabCode = result.collab_code || null;
+      currentVisibility = visibility;
+      currentCollabCode = collabCode;
+      isCollabChat = visibility === "collab";
+      syncManageChatPanel();
+      renderConvoList();
     } catch (e: any) {
       showToast(e?.message || t("share.failed"));
       return;
     }
     const url = conversationUrl(id);
     if (visibility === "collab") {
-      showCollabShareModal(url, collabCode || "????");
+      if (opts?.copyLink !== false && collabCode) {
+        try {
+          await navigator.clipboard.writeText(`${url}\nCode: ${collabCode}`);
+        } catch { /* ignore */ }
+      }
+      showToast(collabCode ? `Collaboration on — code ${collabCode}` : "Collaboration enabled");
       return;
     }
-    const done =
+    if (opts?.copyLink) {
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch { /* ignore */ }
+    }
+    showToast(
       visibility === "private"
-        ? t("share.private")
-        : t("share.shared");
-    if (!copyLink) {
-      showToast(done);
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(url);
-      showToast(done);
-    } catch {
-      showToast("Could not copy link. URL: " + url);
-    }
+        ? (t("share.private") || "Only you can access this chat")
+        : (t("share.shared") || "Anyone with the link can view")
+    );
   }
 
   document.getElementById("share-only-me")?.addEventListener("click", () => {
-    shareMenu.style.display = "none";
-    shareCurrentConversation("private", true);
+    void shareCurrentConversation("private", { copyLink: false });
   });
   document.getElementById("share-with-people")?.addEventListener("click", () => {
-    shareMenu.style.display = "none";
-    shareCurrentConversation("shared", true);
+    void shareCurrentConversation("shared", { copyLink: true });
   });
   document.getElementById("share-collaboration")?.addEventListener("click", () => {
-    shareMenu.style.display = "none";
-    shareCurrentConversation("collab", true);
+    void shareCurrentConversation("collab", { copyLink: true, forceNewCode: true });
+  });
+  document.getElementById("manage-collab-copy")?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    if (!currentConversationId) return;
+    const url = conversationUrl(currentConversationId);
+    const code = currentCollabCode || "";
+    try {
+      await navigator.clipboard.writeText(code ? `${url}\nCode: ${code}` : url);
+      showToast(code ? "Link and code copied" : "Link copied");
+    } catch {
+      showToast(code ? `Code: ${code}` : url);
+    }
+  });
+  document.getElementById("manage-collab-refresh")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    void shareCurrentConversation("collab", { copyLink: false, forceNewCode: true });
   });
 
   shareBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    shareMenu.style.display = shareMenu.style.display === "none" ? "block" : "none";
+    const open = shareMenu.style.display === "none" || shareMenu.style.display === "";
+    // refresh panel state from known convo
+    const convo = conversations.find((c) => c.id === currentConversationId);
+    if (convo?.visibility) currentVisibility = convo.visibility;
+    syncManageChatPanel();
+    shareMenu.style.display = open ? "block" : "none";
   });
   document.addEventListener("click", (e) => {
     if (!shareBtn.contains(e.target as Node) && !shareMenu.contains(e.target as Node)) {
@@ -513,7 +553,7 @@ let lastUserText = "";
 let lastUserAttachments: (Attachment & { dataUrl: string })[] = [];
 let lastAgentRow: HTMLDivElement | null = null;
 /** Group-style avatars when this chat is collab. */
-let isCollabChat = false;
+
 
 
 function setHint(text: string, isError = false) {
@@ -1221,6 +1261,9 @@ async function selectConversation(id: string) {
   const data = await api.getMessages(id);
   const messages = data.messages;
   isCollabChat = data.conversation?.visibility === "collab" || !!data.conversation?.is_member;
+  currentVisibility = (data.conversation?.visibility as Visibility) || "private";
+  currentCollabCode = data.conversation?.collab_code || null;
+  syncManageChatPanel();
   // Prompt for code if collab, not owner, cannot write yet
   if (data.conversation?.visibility === "collab" && !data.conversation?.owner && !data.conversation?.can_write) {
     const code = await showCollabJoinModal(id);
