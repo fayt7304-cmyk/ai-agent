@@ -111,11 +111,13 @@ const memoryDetailDelete = document.getElementById("memory-detail-delete") as HT
 const memoryDetailEdit = document.getElementById("memory-detail-edit") as HTMLButtonElement;
 const memoryDetailSummary = document.getElementById("memory-detail-summary") as HTMLDivElement;
 const memoryViewMode = document.getElementById("memory-view-mode") as HTMLDivElement;
+const memoryEditSection = document.getElementById("memory-edit-section") as HTMLDivElement;
 const memoryEditForm = document.getElementById("memory-edit-form") as HTMLFormElement;
 const memoryEditTitle = document.getElementById("memory-edit-title") as HTMLInputElement;
 const memoryEditContent = document.getElementById("memory-edit-content") as HTMLTextAreaElement;
 const memoryEditCancel = document.getElementById("memory-edit-cancel") as HTMLButtonElement;
 const memoryEditSave = document.getElementById("memory-edit-save") as HTMLButtonElement;
+const memoryEditBack = document.getElementById("memory-edit-back") as HTMLButtonElement;
 const memoryExportBtn = document.getElementById("memory-export-btn") as HTMLButtonElement;
 const memoryImportBtn = document.getElementById("memory-import-btn") as HTMLButtonElement;
 const memoryImportFile = document.getElementById("memory-import-file") as HTMLInputElement;
@@ -148,15 +150,14 @@ function memorySummary(entry: MemoryEntry): string {
 
 function exitMemoryEdit() {
   memoryEditing = false;
-  if (memoryEditForm) memoryEditForm.style.display = "none";
-  if (memoryViewMode) memoryViewMode.style.display = "";
-  if (memoryDetailEdit) memoryDetailEdit.style.display = "";
+  if (memoryEditSection) memoryEditSection.style.display = "none";
 }
 
 function showMemoryList() {
   openMemoryId = null;
   exitMemoryEdit();
   memoryDetail.style.display = "none";
+  if (memoryEditSection) memoryEditSection.style.display = "none";
   memoryBrowser.style.display = "";
 }
 
@@ -174,7 +175,9 @@ function showMemoryDetail(entry: MemoryEntry) {
   }
   memoryTalkInput.value = "";
   memoryBrowser.style.display = "none";
+  if (memoryEditSection) memoryEditSection.style.display = "none";
   memoryDetail.style.display = "";
+  if (memoryViewMode) memoryViewMode.style.display = "";
 }
 
 function enterMemoryEdit() {
@@ -184,9 +187,10 @@ function enterMemoryEdit() {
   memoryEditing = true;
   memoryEditTitle.value = entry.title;
   memoryEditContent.value = entry.content;
-  memoryViewMode.style.display = "none";
-  memoryEditForm.style.display = "";
-  memoryDetailEdit.style.display = "none";
+  // Open a dedicated edit section — hide list + detail
+  memoryBrowser.style.display = "none";
+  memoryDetail.style.display = "none";
+  if (memoryEditSection) memoryEditSection.style.display = "";
   memoryEditTitle.focus();
 }
 
@@ -224,13 +228,19 @@ memoryDetailBack.addEventListener("click", showMemoryList);
 
 memoryDetailEdit?.addEventListener("click", () => enterMemoryEdit());
 
-memoryEditCancel?.addEventListener("click", () => {
+function leaveMemoryEditToDetail() {
   exitMemoryEdit();
   if (openMemoryId) {
     const entry = allMemories.find((m) => m.id === openMemoryId);
     if (entry) showMemoryDetail(entry);
+    else showMemoryList();
+  } else {
+    showMemoryList();
   }
-});
+}
+
+memoryEditCancel?.addEventListener("click", leaveMemoryEditToDetail);
+memoryEditBack?.addEventListener("click", leaveMemoryEditToDetail);
 
 memoryEditForm?.addEventListener("submit", async (e) => {
   e.preventDefault();

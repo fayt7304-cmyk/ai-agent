@@ -2,9 +2,13 @@ name = "mistral-agent-chat"
 main = "src/index.ts"
 compatibility_date = "2026-07-31"
 
-# Workers AI binding — MeloTTS / Deepgram Aura for high-quality TTS when no ElevenLabs key
+# AI binding — Cloudflare elevenlabs/eleven-multilingual-v2 (and MeloTTS/Aura fallbacks)
 [ai]
 binding = "AI"
+
+# Cloudflare Images — server-side background removal (segment=foreground)
+[images]
+binding = "IMAGES"
 
 # Created with: wrangler d1 create mistral-agent-chat-db
 # Then paste the printed database_id below.

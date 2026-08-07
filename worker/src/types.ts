@@ -36,15 +36,20 @@ export interface Env {
    *  (no trailing spaces/newlines on ACCOUNT_ID) */
   CLOUDFLARE_AI_TOKEN?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
-  /** Optional: override Workers AI TTS model. Default tries:
-   *  @cf/myshell-ai/melotts → @cf/deepgram/aura-2-en|es → @cf/deepgram/aura-1
-   *  There is no ElevenLabs model on Workers AI — do not use @cf/elevenlabs/... */
+  /** Optional: override Cloudflare AI TTS model.
+   *  Default: elevenlabs/eleven-multilingual-v2
+   *  https://developers.cloudflare.com/ai/models/elevenlabs/eleven-multilingual-v2/ */
   TTS_MODEL?: string;
   /**
-   * Workers AI binding (`[ai] binding = "AI"` in wrangler.toml).
-   * Used for MeloTTS / Deepgram Aura when ElevenLabs key is absent.
+   * AI binding (`[ai] binding = "AI"` in wrangler.toml).
+   * Primary: elevenlabs/eleven-multilingual-v2; then MeloTTS / Aura fallbacks.
    */
   AI?: { run: (model: string, input: Record<string, unknown>) => Promise<unknown> };
+  /**
+   * Cloudflare Images binding (`[images] binding = "IMAGES"`).
+   * Background removal via transform({ segment: "foreground" }).
+   */
+  IMAGES?: any;
 }
 
 export interface UserRow {

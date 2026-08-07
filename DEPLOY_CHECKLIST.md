@@ -173,3 +173,38 @@ npx wrangler tail
 ```
 
 If you still see 501 with Option B, open the Cloudflare dashboard → Workers AI and confirm the account has Workers AI enabled and usage is allowed.
+
+---
+
+# TTS: Cloudflare elevenlabs/eleven-multilingual-v2 (v8.1)
+
+Primary path matches the official docs:
+
+https://developers.cloudflare.com/ai/models/elevenlabs/eleven-multilingual-v2/
+
+```js
+await env.AI.run("elevenlabs/eleven-multilingual-v2", {
+  text: "...",
+  voice_id: "JBFqnCBsd6RMkjVDRZzb",
+  language_code: "en",
+  output_format: "mp3_44100_128",
+});
+```
+
+Requirements:
+1. `wrangler.toml` has `[ai] binding = "AI"` (already set)
+2. Cloudflare dashboard: enable AI / the ElevenLabs model for your account (billing may apply — check dashboard pricing)
+3. Deploy Worker: `cd worker && npx wrangler deploy`
+4. App: Settings → High-quality voice **ON**
+
+Optional secrets if the binding alone is not enough:
+```bash
+npx wrangler secret put CLOUDFLARE_AI_TOKEN
+npx wrangler secret put CLOUDFLARE_ACCOUNT_ID
+```
+
+Optional override:
+```bash
+npx wrangler secret put TTS_MODEL
+# value: elevenlabs/eleven-multilingual-v2
+```

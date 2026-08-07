@@ -16,7 +16,6 @@
     "esbuild@0.21.5": true
   },
   "dependencies": {
-    "@imgly/background-removal": "^1.7.0",
     "docx": "^9.7.1"
   }
 }

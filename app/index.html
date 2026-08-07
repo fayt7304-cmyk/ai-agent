@@ -660,7 +660,7 @@
             <div id="memory-list" class="memory-list"></div>
           </div>
 
-          <!-- Detail: view, self-edit, or talk-to-Paul -->
+          <!-- Detail view (read + talk-to-Paul) -->
           <div class="settings-card memory-detail" id="memory-detail" style="display:none;">
             <div class="memory-detail-head">
               <button type="button" id="memory-detail-back" class="icon-btn memory-back-btn" data-i18n-aria-label="settings.memoryBack" aria-label="Back">
@@ -670,7 +670,7 @@
                 <div class="memory-detail-title" id="memory-detail-title"></div>
                 <div class="memory-detail-meta" id="memory-detail-meta"></div>
               </div>
-              <div class="memory-detail-actions">
+              <div class="memory-detail-actions settings-control-col">
                 <button type="button" id="memory-detail-edit" class="secondary-btn" data-i18n="settings.memoryEdit">Edit</button>
                 <button type="button" id="memory-detail-delete" class="secondary-btn memory-detail-delete" data-i18n="settings.memoryRemove">Delete</button>
               </div>
@@ -693,14 +693,26 @@
                   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="10" x2="16" y2="10"/><polyline points="11 5 16 10 11 15"/></svg>
                 </button>
               </form>
-              <p class="memory-talk-hint" data-i18n="settings.memoryTalkHint">Paul will update this memory from what you type — or edit it yourself.</p>
+              <p class="memory-talk-hint" data-i18n="settings.memoryTalkHint">Paul will update this memory from what you type — or open Edit to change it yourself.</p>
             </div>
+          </div>
 
-            <form id="memory-edit-form" class="memory-edit-form" style="display:none;">
+          <!-- Separate edit section (replaces list + detail while editing) -->
+          <div class="settings-card memory-edit-section" id="memory-edit-section" style="display:none;">
+            <div class="memory-detail-head">
+              <button type="button" id="memory-edit-back" class="icon-btn memory-back-btn" data-i18n-aria-label="settings.memoryBack" aria-label="Back">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="12 4 6 10 12 16"/></svg>
+              </button>
+              <div class="memory-detail-titles">
+                <div class="memory-detail-title" data-i18n="settings.editMemory">Edit Memory</div>
+                <div class="memory-detail-meta" data-i18n="settings.memoryEditHint">Change the title and content, then save.</div>
+              </div>
+            </div>
+            <form id="memory-edit-form" class="memory-edit-form">
               <label class="memory-section-label" for="memory-edit-title" data-i18n="settings.memoryTitle">Title</label>
               <input type="text" id="memory-edit-title" maxlength="60" class="memory-edit-input">
               <label class="memory-section-label" for="memory-edit-content" data-i18n="settings.memoryContent">Content</label>
-              <textarea id="memory-edit-content" maxlength="600" rows="6" class="memory-edit-textarea"></textarea>
+              <textarea id="memory-edit-content" maxlength="600" rows="8" class="memory-edit-textarea"></textarea>
               <div class="memory-edit-actions">
                 <button type="button" id="memory-edit-cancel" class="secondary-btn" data-i18n="settings.cancel">Cancel</button>
                 <button type="submit" id="memory-edit-save" class="primary" data-i18n="settings.save">Save</button>
@@ -863,7 +875,7 @@
 
       <!-- Background remover -->
       <div class="tool-pane" id="tool-bgremove" style="display:none;">
-        <div class="note" data-i18n="tool.bg.note">Runs entirely in your browser using a public, freely-licensed AI model. First run downloads the model (~80MB) and can take 15-30 seconds; cached after that.</div>
+        <div class="note" data-i18n="tool.bg.note">Processed on the server (Cloudflare Images) — no large model download in your browser. Requires sign-in.</div>
         <div class="dropzone" id="bg-drop">
           <div id="bg-drop-text" data-i18n="tool.dropImage">Drop an image here, or click to choose a file</div>
           <input type="file" id="bg-file" accept="image/*">

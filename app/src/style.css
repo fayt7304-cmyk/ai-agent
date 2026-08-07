@@ -5051,3 +5051,345 @@ html[dir="rtl"] .switch.on .switch-thumb {
     row-gap: 8px;
   }
 }
+
+/* ---- Mobile: Manage memory row must not crush text or overlap button ---- */
+@media (max-width: 768px) {
+  /* Stack label above control on narrow screens for multi-line rows */
+  #memory-browser > .settings-card-row,
+  .settings-card#memory-browser > .settings-card-row {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+  }
+
+  #memory-browser > .settings-card-row > div:first-child,
+  .settings-card#memory-browser > .settings-card-row > div:first-child {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: none !important;
+    min-width: 0 !important;
+  }
+
+  #memory-browser .settings-card-title,
+  #memory-browser .settings-card-desc {
+    white-space: normal !important;
+    word-break: normal !important;
+    overflow-wrap: break-word;
+    width: 100%;
+  }
+
+  #memory-browser .settings-card-actions {
+    width: 100% !important;
+    justify-content: stretch !important;
+  }
+
+  #memory-browser .settings-card-actions .secondary-btn,
+  #generate-memory-btn {
+    width: 100% !important;
+    min-height: 44px;
+    box-sizing: border-box;
+  }
+
+  /* Same pattern for Privacy rows that have long descriptions */
+  .settings-panel[data-settings-panel="privacy"] .settings-card-row {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+  }
+
+  .settings-panel[data-settings-panel="privacy"] .settings-card-row > div:first-child {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: none !important;
+  }
+
+  .settings-panel[data-settings-panel="privacy"] .settings-card-row > button,
+  .settings-panel[data-settings-panel="privacy"] .settings-card-row > .settings-card-actions,
+  .settings-panel[data-settings-panel="privacy"] .settings-card-row > .danger-btn,
+  .settings-panel[data-settings-panel="privacy"] .settings-card-row > .secondary-btn {
+    width: 100% !important;
+    align-self: stretch !important;
+    justify-content: center;
+    min-height: 44px;
+    box-sizing: border-box;
+  }
+
+  .settings-panel[data-settings-panel="privacy"] .settings-card-actions {
+    width: 100% !important;
+  }
+
+  .settings-panel[data-settings-panel="privacy"] .settings-card-actions .secondary-btn {
+    width: 100% !important;
+  }
+
+  /* Toggle rows (memory on/off, HQ voice): keep side-by-side but protect text */
+  .settings-card-row:has(.switch) {
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 12px !important;
+  }
+
+  .settings-card-row:has(.switch) > div:first-child {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    width: auto !important;
+  }
+
+  .settings-card-row:has(.switch) > .switch {
+    flex: 0 0 auto !important;
+    width: auto !important;
+  }
+}
+
+/* ---- Hard fix: memory browser mobile layout (no crushed text) ---- */
+@media (max-width: 768px) {
+  #memory-browser.settings-card,
+  .settings-card#memory-browser {
+    display: flex !important;
+    flex-direction: column !important;
+    grid-template-columns: none !important;
+    gap: 14px !important;
+    align-items: stretch !important;
+  }
+
+  #memory-browser .settings-card-row {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+    gap: 12px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  #memory-browser .settings-card-row > * {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    flex: none !important;
+    grid-column: unset !important;
+    grid-row: unset !important;
+  }
+
+  #memory-browser .settings-card-title {
+    font-size: 15px !important;
+    line-height: 1.35 !important;
+    white-space: normal !important;
+  }
+
+  #memory-browser .settings-card-desc {
+    font-size: 13px !important;
+    line-height: 1.45 !important;
+    white-space: normal !important;
+    word-break: normal !important;
+    overflow-wrap: anywhere;
+  }
+
+  #generate-memory-btn {
+    width: 100% !important;
+    min-height: 44px !important;
+    margin: 0 !important;
+  }
+
+  #memory-browser .memory-add-row {
+    display: flex !important;
+    flex-direction: row !important;
+    width: 100% !important;
+    gap: 8px !important;
+  }
+
+  #memory-browser .memory-add-row input {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    font-size: 16px !important;
+  }
+
+  #memory-browser .memory-actions-row {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  #memory-browser .memory-actions-row .secondary-btn {
+    flex: 1 1 auto;
+    min-height: 40px;
+  }
+}
+
+/* ---- Consistent trailing control column (all settings sections) ---- */
+.settings-card-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px;
+  width: 100%;
+}
+
+.settings-card-row > div:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: start;
+}
+
+/* Fixed-width trailing column so every button lines up */
+.settings-control-col,
+.settings-card-row > .settings-card-actions,
+.settings-card-row > button.secondary-btn,
+.settings-card-row > button.danger-btn,
+.settings-card-row > button.primary,
+.settings-card-row > .switch {
+  flex: 0 0 auto;
+  margin: 0 !important;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-card-row > button.secondary-btn,
+.settings-card-row > button.danger-btn,
+.settings-card-row > button.primary,
+.settings-card-actions > button {
+  min-width: 132px;
+  justify-content: center;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.settings-card-row > .switch {
+  min-width: 48px;
+  justify-content: center;
+}
+
+/* Memory edit = full dedicated section */
+.settings-card.memory-edit-section {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 16px !important;
+  grid-template-columns: none !important;
+  padding: 12px 4px 24px !important;
+}
+
+.memory-edit-section .memory-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.memory-edit-section .memory-edit-actions {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.memory-edit-section .memory-edit-actions .secondary-btn,
+.memory-edit-section .memory-edit-actions .primary {
+  min-width: 100px;
+  min-height: 40px;
+}
+
+@media (max-width: 768px) {
+  .settings-card-row > button.secondary-btn,
+  .settings-card-row > button.danger-btn,
+  .settings-card-row > button.primary,
+  .settings-card-actions > button {
+    min-width: 112px;
+    font-size: 13px;
+    padding: 8px 12px;
+  }
+  .memory-edit-section .memory-edit-actions {
+    flex-direction: column-reverse;
+  }
+  .memory-edit-section .memory-edit-actions .secondary-btn,
+  .memory-edit-section .memory-edit-actions .primary {
+    width: 100%;
+    min-height: 44px;
+  }
+}
+
+/* ---- Mobile: never crush settings labels next to long buttons ---- */
+@media (max-width: 768px) {
+  /* Stack label above control when the row would squash text */
+  .settings-card-row {
+    flex-wrap: wrap !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
+
+  .settings-card-row > div:first-child {
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    width: 100%;
+  }
+
+  .settings-card-row > div:first-child .settings-card-title,
+  .settings-card-row > div:first-child .settings-card-desc {
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    hyphens: auto;
+  }
+
+  .settings-card-row > .settings-card-actions,
+  .settings-card-row > button.secondary-btn,
+  .settings-card-row > button.danger-btn,
+  .settings-card-row > button.primary,
+  .settings-card-row > .switch {
+    flex: 0 0 auto !important;
+    width: auto;
+    max-width: 100%;
+    margin-inline-start: 0 !important;
+  }
+
+  /* Full-width action under the description on narrow screens */
+  .settings-card-row > .settings-card-actions {
+    width: 100%;
+    justify-content: flex-start !important;
+  }
+
+  .settings-card-row > .settings-card-actions > button,
+  .settings-card-row > button.secondary-btn,
+  .settings-card-row > button.danger-btn,
+  .settings-card-row > button.primary {
+    min-width: 0 !important;
+    width: auto;
+    max-width: 100%;
+  }
+
+  /* Toggle stays on the same row as the title when possible */
+  .settings-card-row:has(> .switch) {
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+  }
+  .settings-card-row:has(> .switch) > div:first-child {
+    flex: 1 1 auto !important;
+    width: auto;
+  }
+
+  /* Manage memory card: explicit stack so Update from chats never overlays text */
+  #memory-browser > .settings-card-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+  }
+  #memory-browser > .settings-card-row > div:first-child {
+    width: 100%;
+  }
+  #memory-browser > .settings-card-row .settings-card-actions {
+    width: 100%;
+  }
+  #memory-browser > .settings-card-row .settings-card-actions > button {
+    width: 100%;
+    min-height: 44px;
+  }
+}

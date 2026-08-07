@@ -1031,13 +1031,12 @@ async function handleListUploads(request: Request, env: Env): Promise<Response> 
  * POST /api/tts  { text, voiceId?, language?, speed? } -> audio/mpeg
  *
  * Preferred order:
- *   1. ElevenLabs direct   (ELEVENLABS_API_KEY) — best quality
- *   2. Workers AI binding  env.AI  (MeloTTS / Deepgram Aura — real CF models)
- *   3. Workers AI REST     (CLOUDFLARE_AI_TOKEN + CLOUDFLARE_ACCOUNT_ID)
+ *   1. Cloudflare AI  elevenlabs/eleven-multilingual-v2  (env.AI binding)
+ *      https://developers.cloudflare.com/ai/models/elevenlabs/eleven-multilingual-v2/
+ *   2. Same model via REST (CLOUDFLARE_AI_TOKEN + CLOUDFLARE_ACCOUNT_ID)
+ *   3. ElevenLabs direct API (ELEVENLABS_API_KEY)
+ *   4. Workers AI fallbacks: MeloTTS, Deepgram Aura
  * When none work → 501 so the app falls back to the device voice.
- *
- * Note: There is no ElevenLabs model on Workers AI. Do not use
- * @cf/elevenlabs/... — that returns route 7000 / empty audio.
  */
 async function handleTts(request: Request, env: Env): Promise<Response> {
   const user = await getUserFromRequest(env, request);
@@ -1057,7 +1056,7 @@ async function handleTts(request: Request, env: Env): Promise<Response> {
   const voiceId =
     typeof body?.voiceId === "string" && /^[A-Za-z0-9]{8,40}$/.test(body.voiceId)
       ? body.voiceId
-      : "JBFqnCBsd6RMkjVDRZzb"; // ElevenLabs George
+      : "JBFqnCBsd6RMkjVDRZzb"; // ElevenLabs George (docs default)
   const speedRaw = Number(body?.speed);
   const speed = Number.isFinite(speedRaw) ? Math.min(1.2, Math.max(0.7, speedRaw)) : 1.0;
   const language = typeof body?.language === "string" ? body.language : "en";
@@ -1077,26 +1076,132 @@ async function handleTts(request: Request, env: Env): Promise<Response> {
     return bytes;
   }
 
-  function extractAudioFromAiResult(data: any): Uint8Array | null {
+  /** Resolve audio from CF / partner responses: base64, data URI, or https URL. */
+  async function resolveAudioPayload(data: any): Promise<Uint8Array | null> {
     if (!data) return null;
-    if (typeof data === "string" && data.length > 32) return bytesFromBase64(data);
-    const candidates = [
+    if (data instanceof ArrayBuffer) return new Uint8Array(data);
+    if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer as ArrayBuffer);
+
+    const candidates: unknown[] = [
+      data,
       data.audio,
+      data.result,
       data.result?.audio,
       data.result?.audio_base64,
       data.audio_base64,
     ];
+
     for (const c of candidates) {
-      if (typeof c === "string" && c.length > 32) return bytesFromBase64(c);
+      if (typeof c !== "string" || c.length < 16) continue;
+      // HTTPS URL returned by some CF partner / gateway responses
+      if (/^https?:\/\//i.test(c)) {
+        try {
+          const r = await fetch(c);
+          if (r.ok) {
+            const buf = await r.arrayBuffer();
+            if (buf.byteLength > 64) return new Uint8Array(buf);
+          }
+        } catch {
+          /* try next */
+        }
+        continue;
+      }
+      // data:audio/...;base64,... or raw base64
+      if (c.startsWith("data:") || /^[A-Za-z0-9+/=\s]+$/.test(c.slice(0, 80))) {
+        try {
+          const bytes = bytesFromBase64(c);
+          if (bytes.length > 64) return bytes;
+        } catch {
+          /* try next */
+        }
+      }
     }
-    if (data instanceof ArrayBuffer) return new Uint8Array(data);
-    if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer as ArrayBuffer);
     return null;
   }
 
+  // Payload matching Cloudflare AI docs for elevenlabs/eleven-multilingual-v2
+  const elevenCfPayload = {
+    text: input,
+    voice_id: voiceId,
+    language_code: lang2,
+    output_format: "mp3_44100_128",
+  };
+
+  const elevenCfModel =
+    env.TTS_MODEL?.trim() || "elevenlabs/eleven-multilingual-v2";
+
   let lastDetail = "";
 
-  // --- Path 1: ElevenLabs direct (best quality when key is set)
+  // --- Path 1: Cloudflare AI binding (env.AI) — official CF ElevenLabs path
+  if (env.AI && typeof env.AI.run === "function") {
+    try {
+      const result = await env.AI.run(elevenCfModel, elevenCfPayload);
+      const bytes = await resolveAudioPayload(result);
+      if (bytes && bytes.length) return audio(bytes);
+      if (result && typeof (result as any).arrayBuffer === "function") {
+        const buf = await (result as Response).arrayBuffer();
+        if (buf.byteLength > 64) return audio(new Uint8Array(buf));
+      }
+      lastDetail = `CF ElevenLabs binding empty: ${JSON.stringify(result)?.slice(0, 220)}`;
+      console.log("TTS: CF ElevenLabs binding empty", lastDetail);
+    } catch (e: any) {
+      lastDetail = String(e?.message || e).slice(0, 300);
+      console.log("TTS: CF ElevenLabs binding failed", lastDetail);
+    }
+  }
+
+  // --- Path 2: Cloudflare AI REST
+  // Docs curl: POST /accounts/$ID/ai/run  { model, input }
+  // Also try /ai/run/$MODEL with body = input fields.
+  const cfToken = env.CLOUDFLARE_AI_TOKEN?.trim();
+  const cfAccount = env.CLOUDFLARE_ACCOUNT_ID?.trim();
+  if (cfToken && cfAccount) {
+    const attempts: Array<{ url: string; body: unknown }> = [
+      {
+        url: `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/ai/run`,
+        body: { model: elevenCfModel, input: elevenCfPayload },
+      },
+      {
+        url: `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/ai/run/${elevenCfModel}`,
+        body: elevenCfPayload,
+      },
+    ];
+    for (const attempt of attempts) {
+      try {
+        const resp = await fetch(attempt.url, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${cfToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(attempt.body),
+        });
+        if (resp.ok) {
+          const contentType = resp.headers.get("Content-Type") || "";
+          if (contentType.includes("application/json")) {
+            const data: any = await resp.json().catch(() => null);
+            const bytes = await resolveAudioPayload(data);
+            if (bytes && bytes.length) return audio(bytes);
+            lastDetail = `CF REST JSON no audio: ${JSON.stringify(data)?.slice(0, 220)}`;
+          } else if (contentType.includes("audio") || contentType.includes("octet-stream")) {
+            return audio(resp.body!);
+          } else {
+            const buf = await resp.arrayBuffer();
+            if (buf.byteLength > 64) return audio(new Uint8Array(buf));
+            lastDetail = "CF REST ok but empty body";
+          }
+        } else {
+          lastDetail = (await resp.text().catch(() => "")).slice(0, 300);
+          console.log("TTS: CF ElevenLabs REST failed", resp.status, lastDetail);
+        }
+      } catch (e: any) {
+        lastDetail = String(e?.message || e).slice(0, 300);
+        console.log("TTS: CF ElevenLabs REST exception", lastDetail);
+      }
+    }
+  }
+
+  // --- Path 3: ElevenLabs direct API (optional own key)
   const elevenKey = env.ELEVENLABS_API_KEY?.trim();
   if (elevenKey) {
     const models = Array.from(
@@ -1136,106 +1241,221 @@ async function handleTts(request: Request, env: Env): Promise<Response> {
           );
           if (resp.ok) return audio(resp.body!);
           lastDetail = (await resp.text().catch(() => "")).slice(0, 300);
-          console.log("TTS: ElevenLabs failed", model, withSpeed, resp.status, lastDetail);
+          console.log("TTS: ElevenLabs direct failed", model, withSpeed, resp.status, lastDetail);
           if ([401, 402, 403, 429].includes(resp.status)) break;
         } catch (e: any) {
           lastDetail = String(e?.message || e).slice(0, 300);
-          console.log("TTS: ElevenLabs exception", lastDetail);
+          console.log("TTS: ElevenLabs direct exception", lastDetail);
         }
       }
     }
   }
 
-  // Real Workers AI TTS models (no ElevenLabs on CF Workers AI catalog)
-  // Override with env.TTS_MODEL if you need a specific one.
-  const workersAiModels = Array.from(
-    new Set(
-      [
-        env.TTS_MODEL?.trim(),
-        "@cf/myshell-ai/melotts",
-        // English-focused Deepgram Aura; good fallback when MeloTTS fails
-        lang2 === "es" ? "@cf/deepgram/aura-2-es" : "@cf/deepgram/aura-2-en",
-        "@cf/deepgram/aura-1",
-      ].filter(Boolean) as string[]
-    )
-  );
-
-  function payloadForWorkersModel(model: string): Record<string, unknown> {
-    // MeloTTS expects { prompt, lang }
-    if (model.includes("melotts")) {
-      return { prompt: input, lang: lang2 };
-    }
-    // Deepgram Aura expects { text } (and optional speaker on some variants)
+  // --- Path 4: Workers AI host models (free-ish fallback)
+  const fallbackModels = [
+    "@cf/myshell-ai/melotts",
+    lang2 === "es" ? "@cf/deepgram/aura-2-es" : "@cf/deepgram/aura-2-en",
+    "@cf/deepgram/aura-1",
+  ];
+  function payloadForFallback(model: string): Record<string, unknown> {
+    if (model.includes("melotts")) return { prompt: input, lang: lang2 };
     return { text: input };
   }
 
-  // --- Path 2: Workers AI binding (env.AI from wrangler [ai])
   if (env.AI && typeof env.AI.run === "function") {
-    for (const model of workersAiModels) {
+    for (const model of fallbackModels) {
       const bindingId = model.replace(/^@cf\//, "");
       try {
-        const result = await env.AI.run(bindingId, payloadForWorkersModel(model));
-        const bytes = extractAudioFromAiResult(result);
+        const result = await env.AI.run(bindingId, payloadForFallback(model));
+        const bytes = await resolveAudioPayload(result);
         if (bytes && bytes.length) return audio(bytes);
-        // Binary-ish results from some runtimes
-        if (result && typeof (result as any).arrayBuffer === "function") {
-          const buf = await (result as Response).arrayBuffer();
-          if (buf.byteLength) return audio(new Uint8Array(buf));
-        }
-        lastDetail = `AI binding empty for ${bindingId}: ${JSON.stringify(result)?.slice(0, 180)}`;
-        console.log("TTS: AI binding empty", lastDetail);
+        lastDetail = `fallback binding empty ${bindingId}`;
       } catch (e: any) {
         lastDetail = String(e?.message || e).slice(0, 300);
-        console.log("TTS: AI binding failed", bindingId, lastDetail);
+        console.log("TTS: fallback binding failed", bindingId, lastDetail);
       }
     }
   }
 
-  // --- Path 3: Workers AI REST (token + account)
-  const cfToken = env.CLOUDFLARE_AI_TOKEN?.trim();
-  const cfAccount = env.CLOUDFLARE_ACCOUNT_ID?.trim();
   if (cfToken && cfAccount) {
-    for (const model of workersAiModels) {
+    for (const model of fallbackModels) {
       const restModel = model.startsWith("@cf/") ? model : `@cf/${model}`;
-      const url = `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/ai/run/${restModel}`;
       try {
-        const resp = await fetch(url, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${cfToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payloadForWorkersModel(model)),
-        });
+        const resp = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/ai/run/${restModel}`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${cfToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payloadForFallback(model)),
+          }
+        );
         if (resp.ok) {
           const contentType = resp.headers.get("Content-Type") || "";
           if (contentType.includes("application/json")) {
             const data: any = await resp.json().catch(() => null);
-            const bytes = extractAudioFromAiResult(data) || extractAudioFromAiResult(data?.result);
+            const bytes = await resolveAudioPayload(data);
             if (bytes && bytes.length) return audio(bytes);
-            lastDetail = `REST JSON had no audio (${restModel}): ${JSON.stringify(data)?.slice(0, 180)}`;
-          } else if (contentType.includes("audio") || contentType.includes("octet-stream")) {
-            return audio(resp.body!);
           } else {
-            // Some endpoints still return binary without a clear type
             const buf = await resp.arrayBuffer();
             if (buf.byteLength > 64) return audio(new Uint8Array(buf));
-            lastDetail = `REST ok but empty body (${restModel})`;
           }
-        } else {
-          lastDetail = (await resp.text().catch(() => "")).slice(0, 300);
-          console.log("TTS: Workers AI REST failed", resp.status, restModel, lastDetail);
         }
+        lastDetail = (await resp.text().catch(() => "")).slice(0, 200);
       } catch (e: any) {
         lastDetail = String(e?.message || e).slice(0, 300);
-        console.log("TTS: Workers AI REST exception", restModel, lastDetail);
       }
     }
   }
 
   console.log("TTS: all paths failed", lastDetail);
-  // 501 → frontend falls back to system voice without a scary red JSON dump
   return err("High-quality voice isn't available right now. Using device voice.", 501);
+}
+
+/**
+ * POST /api/bg-remove  multipart form field "file"
+ * Server-side background removal via Cloudflare Images binding
+ * (segment=foreground / BiRefNet). No ~80MB model download in the browser.
+ */
+async function handleBgRemove(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+
+  if (!env.IMAGES || typeof env.IMAGES.input !== "function") {
+    return err("Background removal is not configured on this deployment (Images binding missing).", 501);
+  }
+
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return err("Expected multipart form data with a file.", 400);
+  }
+
+  const file = form.get("file");
+  if (!(file instanceof Blob)) return err("Missing file.", 400);
+  if (file.size > 15 * 1024 * 1024) return err("Image is too large (max 15 MB).", 400);
+
+  const mime = (file.type || "").toLowerCase();
+  if (mime && !mime.startsWith("image/")) return err("File must be an image.", 400);
+
+  try {
+    const buf = await file.arrayBuffer();
+    // Cloudflare Images: segment=foreground isolates the subject (BiRefNet).
+    // Docs: https://developers.cloudflare.com/images/transform-images/transform-via-workers/
+    const out = await env.IMAGES.input(buf)
+      .transform({ segment: "foreground" })
+      .output({ format: "image/png" });
+    const imageResp: Response =
+      typeof out.response === "function" ? await out.response() : (out as unknown as Response);
+    if (!(imageResp instanceof Response) || !imageResp.ok) {
+      const detail =
+        imageResp instanceof Response
+          ? (await imageResp.text().catch(() => "")).slice(0, 200)
+          : "non-Response";
+      console.log("BG-REMOVE: Images API failed", detail);
+      return err("Background removal failed.", 502);
+    }
+    const bytes = await imageResp.arrayBuffer();
+    return new Response(bytes, {
+      status: 200,
+      headers: {
+        "Content-Type": "image/png",
+        "Cache-Control": "no-store",
+      },
+    });
+  } catch (e: any) {
+    console.log("BG-REMOVE exception", e?.message || e);
+    return err("Background removal failed: " + (e?.message || "Unknown error"), 500);
+  }
+}
+
+/**
+ * POST /api/ocr  multipart form field "file"
+ * Uses Mistral Document AI (mistral-ocr-latest) with the same MISTRAL_API_KEY as chat.
+ * Returns { markdown: string }.
+ */
+async function handleOcr(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  if (!env.MISTRAL_API_KEY) return err("OCR is not configured on this deployment.", 501);
+
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return err("Expected multipart form data with a file.", 400);
+  }
+
+  const file = form.get("file");
+  if (!(file instanceof File) && !(file instanceof Blob)) {
+    return err("Missing file.", 400);
+  }
+  const blob = file as Blob;
+  if (blob.size > 20 * 1024 * 1024) return err("File is too large (max 20 MB).", 400);
+
+  const mime = (blob.type || "application/octet-stream").toLowerCase();
+  const buf = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  const b64 = btoa(binary);
+  const dataUrl = `data:${mime};base64,${b64}`;
+
+  const isPdf =
+    mime.includes("pdf") ||
+    (typeof (file as File).name === "string" && (file as File).name.toLowerCase().endsWith(".pdf"));
+
+  const document = isPdf
+    ? { type: "document_url", document_url: dataUrl }
+    : { type: "image_url", image_url: dataUrl };
+
+  try {
+    const resp = await fetch("https://api.mistral.ai/v1/ocr", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.MISTRAL_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "mistral-ocr-latest",
+        document,
+      }),
+    });
+
+    if (!resp.ok) {
+      const detail = (await resp.text().catch(() => "")).slice(0, 400);
+      console.log("OCR: Mistral failed", resp.status, detail);
+      return err(`OCR failed (${resp.status}).`, resp.status === 401 ? 502 : 502);
+    }
+
+    const data: any = await resp.json().catch(() => null);
+    // Response shape: { pages: [{ markdown, ... }], ... } or similar
+    let markdown = "";
+    if (typeof data?.markdown === "string") {
+      markdown = data.markdown;
+    } else if (Array.isArray(data?.pages)) {
+      markdown = data.pages
+        .map((p: any) => (typeof p?.markdown === "string" ? p.markdown : typeof p?.text === "string" ? p.text : ""))
+        .filter(Boolean)
+        .join("\n\n");
+    } else if (typeof data?.text === "string") {
+      markdown = data.text;
+    }
+
+    if (!markdown.trim()) {
+      return json({ markdown: "", warning: "No text found in this file." });
+    }
+    return json({ markdown });
+  } catch (e: any) {
+    console.log("OCR exception", e?.message || e);
+    return err("OCR request failed.", 500);
+  }
 }
 
 async function handleListConversations(request: Request, env: Env): Promise<Response> {
@@ -1811,6 +2031,12 @@ export default {
       } else if (path === "/api/tts" && request.method === "POST") {
         // Studio text-to-speech, proxied so the key stays server-side
         resp = await handleTts(request, env);
+      } else if (path === "/api/ocr" && request.method === "POST") {
+        // Tools → OCR via Mistral Document AI (same API key as chat)
+        resp = await handleOcr(request, env);
+      } else if (path === "/api/bg-remove" && request.method === "POST") {
+        // Tools → background removal via Cloudflare Images (no client model download)
+        resp = await handleBgRemove(request, env);
       } else if (path === "/api/uploads" && request.method === "GET") {
         // List uploads/attachments for the current user
         resp = await handleListUploads(request, env);
