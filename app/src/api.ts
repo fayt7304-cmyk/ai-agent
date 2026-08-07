@@ -410,7 +410,7 @@ export const api = {
   reindexKnowledge: () =>
     request<{ ok: true; embedded: number; failed: number }>("/api/knowledge/reindex", { method: "POST" }),
 
-  listAdminUsers: () =>
+    listAdminUsers: () =>
     request<{
       users: {
         id: string;
@@ -421,8 +421,33 @@ export const api = {
         created_at: string;
         last_seen_at?: string | null;
         deletion_requested_at?: string | null;
+        banned_at?: string | null;
+        banned?: boolean;
+        online?: boolean;
       }[];
     }>("/api/admin/users", { method: "GET" }),
+
+  adminBanUser: (id: string, ban = true) =>
+    request<{ ok: true; banned: boolean }>(`/api/admin/users/${id}/ban`, {
+      method: "POST",
+      body: JSON.stringify({ ban }),
+    }),
+
+  adminSetPassword: (id: string, password: string) =>
+    request<{ ok: true }>(`/api/admin/users/${id}/password`, {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
+
+  adminDeleteUser: (id: string) =>
+    request<{ ok: true; deleted: boolean }>(`/api/admin/users/${id}`, { method: "DELETE" }),
+
+  presenceSnapshot: () =>
+    request<{ online: { user_id: string; username: string; since: string }[]; durable: boolean }>(
+      "/api/presence",
+      { method: "GET" }
+    ),
+
 
   joinCollab: (id: string, code: string) =>
     request<{ ok: true; conversation_id: string; title?: string }>(`/api/conversations/${id}/join`, {

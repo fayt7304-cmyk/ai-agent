@@ -45,6 +45,9 @@ export interface Env {
    * Primary: elevenlabs/eleven-multilingual-v2; then MeloTTS / Aura fallbacks.
    */
   AI?: { run: (model: string, input: Record<string, unknown>) => Promise<unknown> };
+  /** v10.2 Durable Object namespace for presence */
+  PRESENCE?: DurableObjectNamespace;
+
   /**
    * Cloudflare Images binding (`[images] binding = "IMAGES"`).
    * Background removal via transform({ segment: "foreground" }).

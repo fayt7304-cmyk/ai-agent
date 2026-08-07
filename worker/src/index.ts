@@ -1,4 +1,5 @@
 import type { Env, ConversationRow, MessageRow, AttachmentIn } from "./types";
+export { PresenceHub } from "./presence-do";
 import { toPublicUser } from "./types";
 import { withCors, json } from "./cors";
 import {
@@ -127,6 +128,7 @@ async function handleLogin(request: Request, env: Env): Promise<Response> {
 
   const ok = await verifyPassword(password, user.password_hash, user.password_salt);
   if (!ok) return err("Invalid username or password.", 401);
+  if (user.banned_at) return err("This account has been banned.", 403);
 
   const { token, maxAge } = await createSession(env, user.id, undefined, request.headers.get("User-Agent"));
   const resp = json({ user: toPublicUser(user), session_token: token });
@@ -146,6 +148,10 @@ async function handleMe(request: Request, env: Env): Promise<Response> {
   await purgeAccountsPastGrace(env).catch(() => {});
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
+  if ((user as any).banned_at) {
+    try { await destroyAllSessionsForUser(env, user.id); } catch { /* ignore */ }
+    return err("This account has been banned.", 403);
+  }
   // If this account’s grace period already elapsed, finish the hard delete now.
   if (user.deletion_requested_at) {
     const purgeAt = new Date(user.deletion_requested_at).getTime() + ACCOUNT_DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000;
@@ -1348,24 +1354,181 @@ async function handleAdminLogsClear(request: Request, env: Env): Promise<Respons
   return json({ ok: true, cleared });
 }
 
-/** GET /api/admin/users — basic user list for admins */
+/** GET /api/admin/users — list + online + ban flags (admin only) */
 async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
   const user = await getUserFromRequest(env, request);
   if (!user) return json({ error: "Not authenticated" }, 401);
   if (!isAdminUser(user.username)) return json({ error: "Forbidden" }, 403);
+  await ensureConversationColumns(env);
+
+  let onlineIds = new Set<string>();
+  try {
+    if (env.PRESENCE) {
+      const id = env.PRESENCE.idFromName("global");
+      const stub = env.PRESENCE.get(id);
+      const snap = await stub.fetch("https://presence/snapshot");
+      if (snap.ok) {
+        const data: any = await snap.json();
+        for (const o of data.online || []) if (o.user_id) onlineIds.add(o.user_id);
+      }
+    }
+  } catch { /* presence optional */ }
+
   try {
     const { results } = await env.DB.prepare(
-      `SELECT id, username, email, display_name, is_guest, created_at, last_seen_at, deletion_requested_at
+      `SELECT id, username, email, display_name, is_guest, created_at, last_seen_at, deletion_requested_at, banned_at
        FROM users ORDER BY created_at DESC LIMIT 200`
     ).all();
-    return json({ users: results || [] });
+    return json({
+      users: (results || []).map((r: any) => ({
+        ...r,
+        online: onlineIds.has(r.id),
+        banned: !!r.banned_at,
+      })),
+    });
   } catch {
-    const { results } = await env.DB.prepare(
-      `SELECT id, username, email, display_name, is_guest, created_at FROM users ORDER BY created_at DESC LIMIT 200`
-    ).all();
-    return json({ users: results || [] });
+    try {
+      const { results } = await env.DB.prepare(
+        `SELECT id, username, email, display_name, is_guest, created_at, last_seen_at, deletion_requested_at
+         FROM users ORDER BY created_at DESC LIMIT 200`
+      ).all();
+      return json({
+        users: (results || []).map((r: any) => ({
+          ...r,
+          online: onlineIds.has(r.id),
+          banned: false,
+        })),
+      });
+    } catch {
+      const { results } = await env.DB.prepare(
+        `SELECT id, username, email, display_name, is_guest, created_at FROM users ORDER BY created_at DESC LIMIT 200`
+      ).all();
+      return json({
+        users: (results || []).map((r: any) => ({
+          ...r,
+          online: onlineIds.has(r.id),
+          banned: false,
+        })),
+      });
+    }
   }
 }
+
+async function handleAdminBanUser(request: Request, env: Env, targetId: string): Promise<Response> {
+  const admin = await getUserFromRequest(env, request);
+  if (!admin) return err("Not authenticated.", 401);
+  if (!isAdminUser(admin.username)) return err("Forbidden.", 403);
+  await ensureConversationColumns(env);
+  if (targetId === admin.id) return err("You can't ban yourself.", 400);
+  const body = (await request.json().catch(() => null)) as { ban?: boolean } | null;
+  const ban = body?.ban !== false;
+  const target = await env.DB.prepare("SELECT id, username FROM users WHERE id = ?")
+    .bind(targetId)
+    .first<{ id: string; username: string }>();
+  if (!target) return err("User not found.", 404);
+  if (isAdminUser(target.username)) return err("Can't ban an admin account.", 400);
+  if (ban) {
+    try {
+      await env.DB.prepare("UPDATE users SET banned_at = ? WHERE id = ?").bind(nowIso(), targetId).run();
+    } catch {
+      return err("Ban column missing — redeploy so schema migrates.", 500);
+    }
+    try { await destroyAllSessionsForUser(env, targetId); } catch { /* ignore */ }
+    adminLog("info", "admin", "user banned", { target: target.username, by: admin.username });
+    return json({ ok: true, banned: true });
+  }
+  await env.DB.prepare("UPDATE users SET banned_at = NULL WHERE id = ?").bind(targetId).run();
+  adminLog("info", "admin", "user unbanned", { target: target.username, by: admin.username });
+  return json({ ok: true, banned: false });
+}
+
+async function handleAdminSetPassword(request: Request, env: Env, targetId: string): Promise<Response> {
+  const admin = await getUserFromRequest(env, request);
+  if (!admin) return err("Not authenticated.", 401);
+  if (!isAdminUser(admin.username)) return err("Forbidden.", 403);
+  const body = (await request.json().catch(() => null)) as { password?: string } | null;
+  const password = (body?.password || "").trim();
+  if (password.length < 8) return err("Password must be at least 8 characters.", 400);
+  const target = await env.DB.prepare("SELECT id, username FROM users WHERE id = ?")
+    .bind(targetId)
+    .first<{ id: string; username: string }>();
+  if (!target) return err("User not found.", 404);
+  const { hash, salt } = await hashPassword(password);
+  await env.DB.prepare("UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?")
+    .bind(hash, salt, targetId)
+    .run();
+  adminLog("info", "admin", "password set", { target: target.username, by: admin.username });
+  return json({ ok: true });
+}
+
+async function handleAdminDeleteUser(request: Request, env: Env, targetId: string): Promise<Response> {
+  const admin = await getUserFromRequest(env, request);
+  if (!admin) return err("Not authenticated.", 401);
+  if (!isAdminUser(admin.username)) return err("Forbidden.", 403);
+  if (targetId === admin.id) return err("You can't delete yourself.", 400);
+  const target = await env.DB.prepare("SELECT id, username FROM users WHERE id = ?")
+    .bind(targetId)
+    .first<{ id: string; username: string }>();
+  if (!target) return err("User not found.", 404);
+  if (isAdminUser(target.username)) return err("Can't delete an admin account.", 400);
+  try { await destroyAllSessionsForUser(env, targetId); } catch { /* ignore */ }
+  const stmts: [string, number][] = [
+    ["DELETE FROM sessions WHERE user_id = ?", 1],
+    ["DELETE FROM conversation_members WHERE user_id = ?", 1],
+    ["DELETE FROM conversation_reads WHERE user_id = ?", 1],
+    ["DELETE FROM friendships WHERE user_a = ? OR user_b = ?", 2],
+    ["DELETE FROM user_blocks WHERE blocker_id = ? OR blocked_id = ?", 2],
+    ["DELETE FROM memories WHERE user_id = ?", 1],
+    ["DELETE FROM leads WHERE user_id = ?", 1],
+    ["DELETE FROM messages WHERE sender_user_id = ?", 1],
+    ["DELETE FROM conversations WHERE user_id = ?", 1],
+    ["DELETE FROM users WHERE id = ?", 1],
+  ];
+  for (const [sql, n] of stmts) {
+    try {
+      if (n === 2) await env.DB.prepare(sql).bind(targetId, targetId).run();
+      else await env.DB.prepare(sql).bind(targetId).run();
+    } catch { /* ignore */ }
+  }
+  adminLog("info", "admin", "user deleted", { target: target.username, by: admin.username });
+  return json({ ok: true, deleted: true });
+}
+
+async function handlePresenceLive(request: Request, env: Env): Promise<Response> {
+  if (!env.PRESENCE) {
+    return err("Presence Durable Object not configured. Deploy with PRESENCE binding.", 501);
+  }
+  const url = new URL(request.url);
+  const token = url.searchParams.get("token") || undefined;
+  let user = await getUserFromRequest(env, request);
+  if (!user && token) {
+    user = (await getUserFromToken(env, token)) as any;
+  }
+  if (!user) return err("Not authenticated.", 401);
+  await touchPresence(env, user.id);
+  const id = env.PRESENCE.idFromName("global");
+  const stub = env.PRESENCE.get(id);
+  const doUrl = new URL("https://presence/live");
+  doUrl.searchParams.set("userId", user.id);
+  doUrl.searchParams.set("username", user.username || "user");
+  return stub.fetch(doUrl.toString(), request);
+}
+
+async function handlePresenceSnapshot(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  if (!env.PRESENCE) return json({ online: [], durable: false });
+  try {
+    const id = env.PRESENCE.idFromName("global");
+    const stub = env.PRESENCE.get(id);
+    const snap = await stub.fetch("https://presence/snapshot");
+    const data: any = await snap.json();
+    return json({ online: data.online || [], durable: true });
+  } catch {
+    return json({ online: [], durable: false });
+  }
+}
+
 
 /** GET /api/usage/quota — daily message limit remaining for the signed-in user */
 async function handleUsageQuota(request: Request, env: Env): Promise<Response> {
@@ -1919,6 +2082,7 @@ async function ensureConversationColumns(env: Env): Promise<void> {
     "ALTER TABLE messages ADD COLUMN edited_at TEXT",
     "ALTER TABLE messages ADD COLUMN deleted_at TEXT",
     "ALTER TABLE knowledge_docs ADD COLUMN embedding TEXT",
+    "ALTER TABLE users ADD COLUMN banned_at TEXT",
   ];
   for (const sql of alters) {
     try {
@@ -3782,6 +3946,16 @@ export default {
         resp = await handleAdminLogsClear(request, env);
       } else if (path === "/api/admin/users" && request.method === "GET") {
         resp = await handleAdminUsers(request, env);
+      } else if (path.match(/^\/api\/admin\/users\/[^/]+\/ban$/) && request.method === "POST") {
+        resp = await handleAdminBanUser(request, env, path.split("/")[4]);
+      } else if (path.match(/^\/api\/admin\/users\/[^/]+\/password$/) && request.method === "POST") {
+        resp = await handleAdminSetPassword(request, env, path.split("/")[4]);
+      } else if (path.match(/^\/api\/admin\/users\/[^/]+$/) && request.method === "DELETE") {
+        resp = await handleAdminDeleteUser(request, env, path.split("/")[4]);
+      } else if (path === "/api/presence/live" && request.method === "GET") {
+        return handlePresenceLive(request, env);
+      } else if (path === "/api/presence" && request.method === "GET") {
+        resp = await handlePresenceSnapshot(request, env);
       } else if (path === "/api/usage/quota" && request.method === "GET") {
         resp = await handleUsageQuota(request, env);
       } else if (path === "/api/knowledge" && request.method === "GET") {

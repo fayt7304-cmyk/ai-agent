@@ -6,7 +6,7 @@ import { applyAvatar } from "./lib/avatar";
 import { readFileAsDataUrl } from "./files";
 import { showCropper } from "./lib/cropper";
 import { getPreferences, updateAnimationLevel, updateFontFamily, updateFontSize, updateVoiceLanguage, updateVoiceStyle, updateVoiceSpeed, updateHighQualityVoice, type AnimationLevel, type FontFamily, type VoiceLanguage, type VoiceStyle } from "./lib/preferences";
-import { showConfirm } from "./lib/dialog";
+import { showConfirm, showPrompt } from "./lib/dialog";
 import { renderFileList, downloadAllFiles, type StoredFile } from "./lib/file-downloads";
 import { icons } from "./lib/icons";
 
@@ -657,15 +657,116 @@ async function loadAdminUsers() {
     list.innerHTML = "";
     for (const u of users) {
       const row = document.createElement("div");
-      row.className = "admin-user-row";
+      row.className = "admin-user-row" + (u.banned ? " is-banned" : "");
+
+      const head = document.createElement("div");
+      head.className = "admin-user-head";
+
+      const left = document.createElement("div");
+      left.className = "admin-user-left";
       const name = document.createElement("div");
       name.className = "admin-user-name";
-      name.textContent = `${u.display_name || u.username}${u.is_guest ? " (guest)" : ""}`;
+      const dot = document.createElement("span");
+      dot.className = "admin-online-dot" + (u.online ? " is-online" : "");
+      dot.title = u.online ? "Online now" : "Offline";
+      name.appendChild(dot);
+      name.appendChild(document.createTextNode(` ${u.display_name || u.username}${u.is_guest ? " (guest)" : ""}${u.banned ? " · banned" : ""}`));
       const meta = document.createElement("div");
       meta.className = "admin-user-meta";
       meta.textContent = `@${u.username} · ${u.email || "no email"} · ${u.created_at?.slice(0, 10) || ""}`;
-      row.appendChild(name);
-      row.appendChild(meta);
+      left.appendChild(name);
+      left.appendChild(meta);
+
+      const menuWrap = document.createElement("div");
+      menuWrap.className = "admin-user-menu-wrap";
+      const menuBtn = document.createElement("button");
+      menuBtn.type = "button";
+      menuBtn.className = "admin-user-menu-btn";
+      menuBtn.setAttribute("aria-label", "User actions");
+      menuBtn.textContent = "⋯";
+      const menu = document.createElement("div");
+      menu.className = "admin-user-menu";
+      menu.style.display = "none";
+
+      const addAction = (label: string, danger: boolean, fn: () => void) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "admin-user-menu-item" + (danger ? " danger" : "");
+        b.textContent = label;
+        b.addEventListener("click", (e) => {
+          e.stopPropagation();
+          menu.style.display = "none";
+          fn();
+        });
+        menu.appendChild(b);
+      };
+
+      addAction("Change password", false, async () => {
+        const pw = await showPrompt({
+          title: `New password for @${u.username}`,
+          message: "At least 8 characters.",
+          value: "",
+          confirmLabel: "Set password",
+        });
+        if (!pw) return;
+        try {
+          await api.adminSetPassword(u.id, pw);
+          settingsSuccess.textContent = `Password updated for @${u.username}`;
+          setTimeout(() => { settingsSuccess.textContent = ""; }, 2500);
+        } catch (e: any) {
+          settingsError.textContent = e?.message || "Failed";
+        }
+      });
+
+      addAction(u.banned ? "Unban user" : "Ban user", true, async () => {
+        const ok = await showConfirm({
+          title: u.banned ? `Unban @${u.username}?` : `Ban @${u.username}?`,
+          message: u.banned
+            ? "They will be able to sign in again."
+            : "They will be signed out and blocked from logging in.",
+          confirmLabel: u.banned ? "Unban" : "Ban",
+          danger: !u.banned,
+        });
+        if (!ok) return;
+        try {
+          await api.adminBanUser(u.id, !u.banned);
+          void loadAdminUsers();
+        } catch (e: any) {
+          settingsError.textContent = e?.message || "Failed";
+        }
+      });
+
+      addAction("Delete account", true, async () => {
+        const ok = await showConfirm({
+          title: `Delete @${u.username}?`,
+          message: "Permanently deletes this account and their data. This cannot be undone.",
+          confirmLabel: "Delete",
+          danger: true,
+        });
+        if (!ok) return;
+        try {
+          await api.adminDeleteUser(u.id);
+          row.remove();
+          settingsSuccess.textContent = `Deleted @${u.username}`;
+          setTimeout(() => { settingsSuccess.textContent = ""; }, 2500);
+        } catch (e: any) {
+          settingsError.textContent = e?.message || "Failed";
+        }
+      });
+
+      menuBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        document.querySelectorAll(".admin-user-menu").forEach((el) => {
+          if (el !== menu) (el as HTMLElement).style.display = "none";
+        });
+        menu.style.display = menu.style.display === "none" ? "block" : "none";
+      });
+      menuWrap.appendChild(menuBtn);
+      menuWrap.appendChild(menu);
+
+      head.appendChild(left);
+      head.appendChild(menuWrap);
+      row.appendChild(head);
       list.appendChild(row);
     }
   } catch (e: any) {

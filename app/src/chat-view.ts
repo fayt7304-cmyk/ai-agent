@@ -249,6 +249,7 @@ function mountStaticIcons() {
 
 let isCollabChat = false;
 /** 1:1 friend DM — live updates, group-style bubbles; @paul NOT required. */
+const onlineUserIds = new Set<string>();
 let isDmChat = false;
 /** Peer in the open friend DM (username + id shown in header — not a convo title/link). */
 let replyTarget: { id: string; preview: string; author?: string } | null = null;
@@ -282,10 +283,12 @@ function isOnline(lastSeen?: string | null): boolean {
 function applyPresence(lastSeen?: string | null) {
   document.getElementById("presence-chip")?.remove();
   if (!isDmChat) return;
+  const liveOnline = !!(currentDmPeer?.id && onlineUserIds.has(currentDmPeer.id));
+  const online = liveOnline || isOnline(lastSeen);
   const chip = document.createElement("span");
   chip.id = "presence-chip";
-  chip.className = "presence-chip" + (isOnline(lastSeen) ? " is-online" : "");
-  if (isOnline(lastSeen)) chip.textContent = "Online";
+  chip.className = "presence-chip" + (online ? " is-online" : "");
+  if (online) chip.textContent = "Online";
   else if (lastSeen) {
     try {
       chip.textContent = "Last seen " + new Date(lastSeen).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -3742,8 +3745,58 @@ function wireConnectivityToasts() {
   window.addEventListener("online", () => showToast("Back online"));
 }
 
+
+/** v10.2 — Durable Object presence: stay connected so peers see you online */
+let presenceWs: WebSocket | null = null;
+let presencePing: ReturnType<typeof setInterval> | null = null;
+
+function startPresenceConnection() {
+  if (presenceWs && (presenceWs.readyState === WebSocket.OPEN || presenceWs.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+  const sessionTok = getSessionToken();
+  if (!sessionTok) return;
+  const wsBase = API_BASE.replace(/^http/, "ws");
+  try {
+    const qs = `?token=${encodeURIComponent(sessionTok)}`;
+    const ws = new WebSocket(`${wsBase}/api/presence/live${qs}`);
+    presenceWs = ws;
+    ws.onopen = () => {
+      try { ws.send("who"); } catch { /* ignore */ }
+      if (presencePing) clearInterval(presencePing);
+      presencePing = setInterval(() => {
+        try { ws.send("ping"); } catch { /* ignore */ }
+      }, 25000);
+    };
+    ws.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(String(ev.data));
+        if (data?.type === "presence" && Array.isArray(data.online)) {
+          onlineUserIds.clear();
+          for (const o of data.online) if (o.user_id) onlineUserIds.add(o.user_id);
+          // Refresh DM presence label if open
+          if (isDmChat && currentDmPeer?.id) {
+            applyPresence(onlineUserIds.has(currentDmPeer.id) ? new Date().toISOString() : null);
+          }
+        }
+      } catch { /* ignore */ }
+    };
+    ws.onclose = () => {
+      presenceWs = null;
+      if (presencePing) { clearInterval(presencePing); presencePing = null; }
+      setTimeout(() => startPresenceConnection(), 5000);
+    };
+    ws.onerror = () => {
+      try { ws.close(); } catch { /* ignore */ }
+    };
+  } catch {
+    /* DO not deployed yet */
+  }
+}
+
 export function initChatView(user: User) {
   wireConnectivityToasts();
+  startPresenceConnection();
 
   currentUser = user;
   mountStaticIcons();

@@ -6731,3 +6731,69 @@ html[dir="rtl"] .messages.is-collab .msg-row.user .msg {
     flex: 0 0 auto !important;
   }
 }
+
+/* Admin user actions (v10.2) */
+.admin-user-row { position: relative; }
+.admin-user-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+.admin-user-left { min-width: 0; flex: 1; }
+.admin-online-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #666;
+  margin-inline-end: 4px;
+  vertical-align: middle;
+}
+.admin-online-dot.is-online {
+  background: #3ecf8e;
+  box-shadow: 0 0 0 2px rgba(62, 207, 142, 0.25);
+}
+.admin-user-row.is-banned { opacity: 0.7; }
+.admin-user-menu-wrap { position: relative; flex-shrink: 0; }
+.admin-user-menu-btn {
+  border: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+.admin-user-menu {
+  position: absolute;
+  top: 100%;
+  inset-inline-end: 0;
+  margin-top: 4px;
+  min-width: 160px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-md, 0 8px 24px rgba(0,0,0,0.25));
+  z-index: 50;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+.admin-user-menu-item {
+  border: none;
+  background: transparent;
+  text-align: start;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  width: 100%;
+}
+.admin-user-menu-item:hover { background: var(--surface-hover, var(--surface)); }
+.admin-user-menu-item.danger { color: #e55; }

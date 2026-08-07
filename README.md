@@ -1,10 +1,20 @@
-# Paul — Your Personal AI Agent (v10.1)
+# Paul — Your Personal AI Agent (v10.2)
 
 A comprehensive chat web application powered by a Mistral AI agent, designed to run entirely on your own Cloudflare account for maximum privacy and control.
 
 ---
 
-## 🚀 What's New in v10.1 — Full vector RAG
+## 🚀 What's New in v10.2 — Durable Objects presence + admin user controls
+
+| Feature | Description |
+| :--- | :--- |
+| **PresenceHub DO** | Real-time online presence via Cloudflare Durable Object (`PRESENCE` binding). Clients connect to `/api/presence/live`. |
+| **Online dots** | Admin user list shows live online/offline; DM header uses DO presence when available. |
+| **Admin ⋯ menu** | Per-user: **Change password**, **Ban / Unban**, **Delete account** (admin only). |
+| **Ban enforcement** | Banned users cannot log in; active sessions cleared. |
+
+### From v10.1 — Full vector RAG
+
 
 | Feature | Description |
 | :--- | :--- |
@@ -19,7 +29,7 @@ A comprehensive chat web application powered by a Mistral AI agent, designed to 
 
 | Version | Item |
 | :--- | :--- |
-| **10.2** | True Durable Objects presence |
+| **10.2** | ✅ Durable Objects presence + admin user tools |
 | **10.3** | Voice notes / calls |
 | **10.4** | Native apps / PWA shell |
 | **10.5** | Multi-agent marketplace |
