@@ -28,31 +28,131 @@ initPreferences();
 // Chrome's async voiceschanged event.
 void warmBrowserVoices();
 
-// Register the service worker (app-shell caching, installability). Safe no-op if unsupported.
+// ─── PWA shell (v10.4) ───────────────────────────────────────────────────────
+function isStandalonePwa(): boolean {
+  try {
+    return (
+      window.matchMedia("(display-mode: standalone)").matches ||
+      window.matchMedia("(display-mode: window-controls-overlay)").matches ||
+      (navigator as any).standalone === true
+    );
+  } catch {
+    return false;
+  }
+}
+
+if (isStandalonePwa()) {
+  document.documentElement.classList.add("pwa-standalone");
+}
+
+// Register service worker + detect updates
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then((reg) => {
+        reg.addEventListener("updatefound", () => {
+          const worker = reg.installing;
+          if (!worker) return;
+          worker.addEventListener("statechange", () => {
+            if (worker.state === "installed" && navigator.serviceWorker.controller) {
+              const banner = document.getElementById("pwa-update-banner");
+              if (banner) banner.hidden = false;
+            }
+          });
+        });
+      })
+      .catch(() => {});
+  });
+  document.getElementById("pwa-update-now")?.addEventListener("click", () => {
+    navigator.serviceWorker.getRegistration().then((reg) => {
+      reg?.waiting?.postMessage("skipWaiting");
+    });
+    window.location.reload();
   });
 }
 
-// PWA install prompt: browsers fire this instead of showing their own UI, so we can
-// surface our own "Install" button and only ask the browser to show the prompt then.
+// Online / offline chip
+const offlineChip = document.getElementById("pwa-offline-chip");
+function syncOfflineChip() {
+  if (!offlineChip) return;
+  offlineChip.hidden = navigator.onLine;
+}
+window.addEventListener("online", syncOfflineChip);
+window.addEventListener("offline", syncOfflineChip);
+syncOfflineChip();
+
+// Install prompt (Chrome / Edge / Android) + banner + settings button
 let deferredInstallPrompt: any = null;
 const installBtn = document.getElementById("install-app-btn") as HTMLButtonElement | null;
-window.addEventListener("beforeinstallprompt", (e) => {
-  e.preventDefault();
-  deferredInstallPrompt = e;
-  if (installBtn) installBtn.style.display = "inline-flex";
-});
-installBtn?.addEventListener("click", async () => {
+const installBanner = document.getElementById("pwa-install-banner");
+const settingsInstallBtn = document.getElementById("pwa-settings-install") as HTMLButtonElement | null;
+const settingsInstalled = document.getElementById("pwa-settings-installed");
+const PWA_BANNER_DISMISSED = "paul_pwa_banner_dismissed";
+
+function showInstallUi(show: boolean) {
+  if (isStandalonePwa()) show = false;
+  if (installBtn) installBtn.style.display = show ? "inline-flex" : "none";
+  if (settingsInstallBtn) settingsInstallBtn.style.display = show ? "inline-flex" : "none";
+  if (installBanner) {
+    const dismissed = localStorage.getItem(PWA_BANNER_DISMISSED) === "1";
+    installBanner.hidden = !(show && !dismissed);
+  }
+  if (settingsInstalled) settingsInstalled.style.display = isStandalonePwa() ? "inline" : "none";
+  const status = document.getElementById("pwa-settings-status");
+  if (status && isStandalonePwa()) {
+    status.textContent = "You're using the installed Paul app.";
+  }
+}
+
+async function triggerInstall() {
   if (!deferredInstallPrompt) return;
   deferredInstallPrompt.prompt();
   await deferredInstallPrompt.userChoice;
   deferredInstallPrompt = null;
-  installBtn.style.display = "none";
+  showInstallUi(false);
+  if (installBanner) installBanner.hidden = true;
+}
+
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  showInstallUi(true);
+});
+installBtn?.addEventListener("click", () => void triggerInstall());
+settingsInstallBtn?.addEventListener("click", () => void triggerInstall());
+document.getElementById("pwa-install-now")?.addEventListener("click", () => void triggerInstall());
+document.getElementById("pwa-install-dismiss")?.addEventListener("click", () => {
+  localStorage.setItem(PWA_BANNER_DISMISSED, "1");
+  if (installBanner) installBanner.hidden = true;
 });
 window.addEventListener("appinstalled", () => {
-  if (installBtn) installBtn.style.display = "none";
+  deferredInstallPrompt = null;
+  showInstallUi(false);
+  document.documentElement.classList.add("pwa-standalone");
+});
+showInstallUi(false);
+if (isStandalonePwa()) showInstallUi(false);
+
+// Deep links from PWA shortcuts / share target
+window.addEventListener("DOMContentLoaded", () => {
+  try {
+    const params = new URLSearchParams(location.search);
+    const action = params.get("action");
+    if (action === "new-chat") {
+      sessionStorage.setItem("paul_pending_action", "new-chat");
+    } else if (action === "quote") {
+      sessionStorage.setItem("paul_pending_action", "quote");
+    }
+    const shareText = [params.get("title"), params.get("text"), params.get("url")]
+      .filter(Boolean)
+      .join("\n");
+    if (params.get("share") === "1" && shareText) {
+      sessionStorage.setItem("paul_pending_share", shareText);
+    }
+  } catch {
+    /* ignore */
+  }
 });
 
 const appShell = document.getElementById("app-shell") as HTMLDivElement;

@@ -1,6 +1,6 @@
 /**
- * CallRoom — Durable Object for 1:1 WebRTC signaling (v10.3 voice calls).
- * One room per conversation id. Clients send JSON { type, sdp?, candidate?, from }.
+ * CallRoom — Durable Object for 1:1 WebRTC signaling (v10.3/10.4 fix).
+ * One room per conversation id. Relays invite/offer/answer/ice/hangup between peers.
  */
 
 type Peer = { userId: string; username: string };
@@ -23,7 +23,10 @@ export class CallRoom {
 
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get("Upgrade") !== "websocket") {
-      return new Response("Expected WebSocket", { status: 426 });
+      return new Response(
+        JSON.stringify({ peers: [...this.peers.values()].map((p) => p.userId) }),
+        { headers: { "Content-Type": "application/json" } }
+      );
     }
     const url = new URL(request.url);
     const userId = url.searchParams.get("userId") || "";
@@ -32,15 +35,19 @@ export class CallRoom {
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
+
+    // Prefer hibernation API (required path on many CF runtimes)
+    let hibernating = false;
     try {
       this.state.acceptWebSocket(server);
-      (server as any).serializeAttachment?.({ userId, username });
+      (server as any).serializeAttachment?.({ userId, username } satisfies Peer);
+      hibernating = true;
     } catch {
       server.accept();
     }
+
     this.peers.set(server, { userId, username });
 
-    // Tell room size
     this.send(server, {
       type: "joined",
       peers: [...this.peers.values()].map((p) => ({ user_id: p.userId, username: p.username })),
@@ -51,15 +58,19 @@ export class CallRoom {
       username,
     });
 
-    server.addEventListener("message", (ev) => this.onMessage(server, String((ev as MessageEvent).data || "")));
-    server.addEventListener("close", () => this.leave(server));
-    server.addEventListener("error", () => this.leave(server));
+    if (!hibernating) {
+      server.addEventListener("message", (ev) => {
+        this.onMessage(server, String((ev as MessageEvent).data || ""));
+      });
+      server.addEventListener("close", () => this.leave(server));
+      server.addEventListener("error", () => this.leave(server));
+    }
 
     return new Response(null, { status: 101, webSocket: client });
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
-    this.onMessage(ws, typeof message === "string" ? message : "");
+    this.onMessage(ws, typeof message === "string" ? message : new TextDecoder().decode(message));
   }
 
   async webSocketClose(ws: WebSocket) {
@@ -79,9 +90,26 @@ export class CallRoom {
     }
     const peer = this.peers.get(ws);
     if (!peer) return;
-    // Relay signaling to the other peer(s)
-    if (["offer", "answer", "ice", "hangup", "invite", "accept", "decline"].includes(data.type)) {
-      this.broadcast(ws, { ...data, from: peer.userId, from_username: peer.username });
+
+    const type = String(data.type || "");
+    // Relay all signaling types to the other peer(s)
+    if (
+      [
+        "hello",
+        "invite",
+        "offer",
+        "answer",
+        "ice",
+        "hangup",
+        "decline",
+        "accept",
+      ].includes(type)
+    ) {
+      this.broadcast(ws, {
+        ...data,
+        from: peer.userId,
+        from_username: peer.username,
+      });
     }
   }
 
@@ -92,7 +120,7 @@ export class CallRoom {
       this.broadcast(ws, { type: "peer-left", user_id: peer.userId, username: peer.username });
     }
     try {
-      ws.close();
+      ws.close(1000, "left");
     } catch {
       /* ignore */
     }

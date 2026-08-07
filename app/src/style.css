@@ -6834,3 +6834,86 @@ html[dir="rtl"] .messages.is-collab .msg-row.user .msg {
   border: 1px solid var(--border);
 }
 .staff-mission strong { color: var(--text); }
+
+/* ─── PWA shell (v10.4) ─────────────────────────────────────────── */
+.pwa-banner {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  z-index: 1200;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--card, #1c1914);
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  color: var(--text);
+}
+.pwa-banner[hidden] { display: none !important; }
+.pwa-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.pwa-banner-text strong {
+  color: var(--text);
+  font-size: 14px;
+}
+.pwa-banner-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.pwa-banner-update {
+  bottom: auto;
+  top: max(12px, env(safe-area-inset-top, 0px));
+}
+.pwa-offline-chip {
+  position: fixed;
+  top: max(10px, env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1100;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #a33;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 650;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+.pwa-offline-chip[hidden] { display: none !important; }
+.pwa-howto {
+  margin: 10px 0 0;
+  padding-inline-start: 18px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+.pwa-howto li { margin-bottom: 4px; }
+
+/* Standalone installed app: use safe areas on notch devices */
+html.pwa-standalone body {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+html.pwa-standalone .app-shell {
+  min-height: 100dvh;
+}
+html.pwa-standalone .chat-header,
+html.pwa-standalone .composer {
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+}
+
+.call-bar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.call-bar .primary, .call-bar .secondary-btn { min-height: 36px; }

@@ -1,2 +1,13 @@
 /*
   Cross-Origin-Opener-Policy: same-origin
+  X-Content-Type-Options: nosniff
+
+/sw.js
+  Cache-Control: no-cache
+  Service-Worker-Allowed: /
+
+/offline.html
+  Cache-Control: public, max-age=86400
+
+/manifest.json
+  Cache-Control: public, max-age=3600

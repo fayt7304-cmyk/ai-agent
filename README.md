@@ -1,10 +1,23 @@
-# Paul — Your Personal AI Agent (v10.3)
+# Paul — Your Personal AI Agent (v10.4)
 
 A comprehensive chat web application powered by a Mistral AI agent, designed to run entirely on your own Cloudflare account for maximum privacy and control.
 
 ---
 
-## 🚀 What's New in v10.3 — Voice notes / calls + staff roles
+## 🚀 What's New in v10.4 — Native apps / PWA shell
+
+| Feature | Description |
+| :--- | :--- |
+| **Installable PWA** | Enhanced `manifest.json` (standalone, shortcuts, share target). |
+| **Service worker v4** | App-shell cache, offline page, update banner. |
+| **Install banner** | Chrome/Android install prompt + Settings → Install app how-to (iOS included). |
+| **Standalone chrome** | Safe-area insets, offline chip, home-screen shortcuts (New chat / Quote). |
+| **Share target** | Share text/links into Paul from other apps. |
+
+True native App Store binaries are still a separate project; this is the production **installable web app** path.
+
+### From v10.3 — Voice / calls / roles
+
 
 | Feature | Description |
 | :--- | :--- |
@@ -40,7 +53,7 @@ A comprehensive chat web application powered by a Mistral AI agent, designed to 
 | :--- | :--- |
 | **10.2** | ✅ Durable Objects presence + admin user tools |
 | **10.3** | ✅ Voice notes / calls + staff roles |
-| **10.4** | Native apps / PWA shell |
+| **10.4** | ✅ Native apps / PWA shell |
 | **10.5** | Multi-agent marketplace |
 
 ### From v10

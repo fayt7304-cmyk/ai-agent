@@ -1,55 +1,105 @@
-// Minimal service worker: just enough to make the app installable and
-// keep the app shell available offline. It does NOT cache API responses —
-// chat data always comes fresh from the Worker.
-//
-// v2: the old fetch handler could resolve respondWith() with `undefined`
-// (when nothing was cached yet AND the network call failed), which is what
-// caused the "Failed to convert value to 'Response'" console errors. It also
-// intercepted cross-origin requests (Cloudflare's own beacon/zaraz calls),
-// which is where the "Response body is already used" clone errors came
-// from. This version only touches same-origin GETs and always resolves to
-// a real Response.
-const CACHE_NAME = "agent-shell-v3";
-const SHELL_URLS = ["/", "/manifest.json", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png"];
+// Paul PWA shell — v4 (10.4)
+// Caches the app shell for offline launch. Never caches API/chat data.
+const CACHE_NAME = "paul-shell-v4";
+const OFFLINE_URL = "/offline.html";
+const SHELL_URLS = [
+  "/",
+  "/offline.html",
+  "/manifest.json",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/apple-touch-icon.png",
+  "/favicon.svg",
+];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_URLS)));
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.all(
+        SHELL_URLS.map((u) =>
+          cache.add(u).catch(() => {
+            /* missing asset is non-fatal */
+          })
+        )
+      )
+    )
+  );
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+    )
   );
   self.clients.claim();
 });
 
+self.addEventListener("message", (event) => {
+  if (event.data === "skipWaiting") self.skipWaiting();
+});
+
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  // Never intercept API calls — always go to the network for those.
   if (url.pathname.startsWith("/api/")) return;
   if (event.request.method !== "GET") return;
-  // Don't touch cross-origin requests (analytics beacons, fonts, etc.) —
-  // caching/cloning those isn't our job and it's what caused the
-  // "Response body is already used" errors.
   if (url.origin !== self.location.origin) return;
+
+  // Navigations: network-first, offline page fallback
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      (async () => {
+        try {
+          const resp = await fetch(event.request);
+          if (resp && resp.ok) {
+            const cache = await caches.open(CACHE_NAME);
+            cache.put(event.request, resp.clone()).catch(() => {});
+          }
+          return resp;
+        } catch {
+          const cache = await caches.open(CACHE_NAME);
+          return (
+            (await cache.match("/")) ||
+            (await cache.match(OFFLINE_URL)) ||
+            new Response("Offline", { status: 503, headers: { "Content-Type": "text/plain" } })
+          );
+        }
+      })()
+    );
+    return;
+  }
 
   event.respondWith(
     (async () => {
       const cached = await caches.match(event.request);
       try {
         const resp = await fetch(event.request);
-        // Only cache successful, same-origin ("basic") responses.
         if (resp && resp.ok && resp.type === "basic") {
           const cache = await caches.open(CACHE_NAME);
           cache.put(event.request, resp.clone()).catch(() => {});
         }
         return resp;
       } catch {
-        // Offline / network failure: fall back to cache, and only ever
-        // resolve with a real Response (never undefined).
-        return cached || Response.error();
+        return (
+          cached ||
+          (await caches.match(OFFLINE_URL)) ||
+          new Response("Offline", { status: 503, headers: { "Content-Type": "text/plain" } })
+        );
       }
     })()
+  );
+});
+
+// Optional: show notification when client posts a message (browser notifications already in app)
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for (const c of list) {
+        if ("focus" in c) return c.focus();
+      }
+      if (clients.openWindow) return clients.openWindow("/");
+    })
   );
 });

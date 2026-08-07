@@ -1595,19 +1595,25 @@ async function handleCallLive(request: Request, env: Env, conversationId: string
   let user = await getUserFromRequest(env, request);
   if (!user && token) user = (await getUserFromToken(env, token)) as any;
   if (!user) return err("Not authenticated.", 401);
-  // Access check: member of conversation
-  const convo = await env.DB.prepare("SELECT id, user_id, visibility FROM conversations WHERE id = ?")
+  // Access check: owner, member, or DM peer
+  const convo = await env.DB.prepare(
+    "SELECT id, user_id, visibility, dm_peer_id FROM conversations WHERE id = ?"
+  )
     .bind(conversationId)
-    .first<{ id: string; user_id: string; visibility: string }>();
+    .first<{ id: string; user_id: string; visibility: string; dm_peer_id: string | null }>();
   if (!convo) return err("Conversation not found.", 404);
-  let allowed = convo.user_id === user.id;
+  let allowed = convo.user_id === user.id || convo.dm_peer_id === user.id;
   if (!allowed) {
-    const mem = await env.DB.prepare(
-      "SELECT 1 AS ok FROM conversation_members WHERE conversation_id = ? AND user_id = ?"
-    )
-      .bind(conversationId, user.id)
-      .first();
-    allowed = !!mem;
+    try {
+      const mem = await env.DB.prepare(
+        "SELECT 1 AS ok FROM conversation_members WHERE conversation_id = ? AND user_id = ?"
+      )
+        .bind(conversationId, user.id)
+        .first();
+      allowed = !!mem;
+    } catch {
+      allowed = false;
+    }
   }
   if (!allowed) return err("Access forbidden.", 403);
 

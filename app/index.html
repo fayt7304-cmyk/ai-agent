@@ -2,15 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Paul</title>
 <link rel="manifest" href="/manifest.json">
-<!-- Installed-app chrome follows the app's own theme instead of the old blue, which
-     is what made the PWA flash an all-white/blue shell before the CSS loaded. -->
+<meta name="application-name" content="Paul">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Paul">
+<meta name="format-detection" content="telephone=no">
+<!-- Installed-app chrome follows the app's own theme -->
 <meta name="theme-color" content="#faf8f4" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#14110c" media="(prefers-color-scheme: dark)">
-<!-- Paints the saved theme background before any stylesheet arrives, so launching
-     the installed app no longer shows a blank white screen first. -->
+<!-- Paints the saved theme background before any stylesheet arrives -->
 <script>
   (function () {
     try {
@@ -18,6 +22,11 @@
       var dark = stored === "dark" || (stored === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
       document.documentElement.style.background = dark ? "#16140f" : "#faf9f5";
       document.documentElement.style.colorScheme = dark ? "dark" : "light";
+      // Mark installed / standalone early for CSS (no flash of browser chrome layout)
+      var standalone = window.matchMedia("(display-mode: standalone)").matches
+        || window.matchMedia("(display-mode: window-controls-overlay)").matches
+        || (window.navigator).standalone === true;
+      if (standalone) document.documentElement.classList.add("pwa-standalone");
     } catch (e) {}
   })();
 </script>
@@ -35,6 +44,28 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
 </head>
 <body>
+
+<!-- PWA install / update banners -->
+<div id="pwa-install-banner" class="pwa-banner" hidden>
+  <div class="pwa-banner-text">
+    <strong>Install Paul</strong>
+    <span>Add to your home screen for a full-screen app experience.</span>
+  </div>
+  <div class="pwa-banner-actions">
+    <button type="button" id="pwa-install-now" class="primary">Install</button>
+    <button type="button" id="pwa-install-dismiss" class="secondary-btn">Not now</button>
+  </div>
+</div>
+<div id="pwa-update-banner" class="pwa-banner pwa-banner-update" hidden>
+  <div class="pwa-banner-text">
+    <strong>Update available</strong>
+    <span>A new version of Paul is ready.</span>
+  </div>
+  <div class="pwa-banner-actions">
+    <button type="button" id="pwa-update-now" class="primary">Refresh</button>
+  </div>
+</div>
+<div id="pwa-offline-chip" class="pwa-offline-chip" hidden>Offline</div>
 
 <!-- ============ AUTH SCREEN ============ -->
 <div id="auth-screen" class="auth-screen">
@@ -536,6 +567,23 @@
               <button type="button" id="hq-voice-toggle" class="switch" role="switch" aria-checked="false" aria-label="High-quality voice" data-i18n-aria-label="settings.hqVoice">
                 <span class="switch-thumb"></span>
               </button>
+            </div>
+          </div>
+
+          <h3 class="settings-subheading">Install app</h3>
+          <div class="settings-card" id="pwa-settings-card">
+            <div class="settings-card-title">Paul on your phone or desktop</div>
+            <div class="settings-card-desc" id="pwa-settings-status">
+              Install as a Progressive Web App for a full-screen, home-screen experience. No App Store required.
+            </div>
+            <ul class="pwa-howto">
+              <li><strong>Android / Chrome:</strong> menu → Install app, or use the Install banner.</li>
+              <li><strong>iPhone / iPad:</strong> Safari → Share → Add to Home Screen.</li>
+              <li><strong>Desktop:</strong> install icon in the address bar, or the Install button below.</li>
+            </ul>
+            <div class="catalog-actions" style="margin-top:10px;">
+              <button type="button" id="pwa-settings-install" class="primary" style="display:none;">Install Paul</button>
+              <span id="pwa-settings-installed" class="settings-muted" style="display:none;">✓ Running as installed app</span>
             </div>
           </div>
         </section>

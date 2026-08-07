@@ -319,6 +319,11 @@ function applyPeerRead(peerRead?: { last_read_at: string; last_message_id: strin
 function applyDmHeader(peer?: { id: string; username: string; display_name?: string } | null) {
   const callBtn = document.getElementById("header-call-btn") as HTMLButtonElement | null;
   if (callBtn) callBtn.style.display = peer ? "inline-flex" : "none";
+  if (peer) {
+    try { ensureCallSignaling(); } catch { /* ignore */ }
+  } else {
+    try { endCall(false); stopCallSignaling(); } catch { /* ignore */ }
+  }
 
   if (!peer) {
     chatTitle.textContent = "Friend chat";
@@ -3065,6 +3070,8 @@ async function selectConversation(id: string) {
 }
 
 function startNewConversation() {
+  try { endCall(false); stopCallSignaling(); } catch { /* ignore */ }
+
   stopCollabLive();
   // Clear DM/collab state before URL sync so we never leave a stale #user=
   isCollabChat = false;
@@ -3742,10 +3749,21 @@ function stopVoiceNoteRecording() {
   voiceNoteRecorder = null;
 }
 
-/** WebRTC call over CallRoom DO */
+/** WebRTC call over CallRoom DO — both peers stay on signaling while in a DM */
 let callWs: WebSocket | null = null;
 let callPc: RTCPeerConnection | null = null;
 let callLocalStream: MediaStream | null = null;
+let callSignalingConvo: string | null = null;
+let callIsCaller = false;
+let callInProgress = false;
+let incomingCallFrom: string | null = null;
+
+function iceServers(): RTCIceServer[] {
+  return [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+  ];
+}
 
 function ensureCallBar() {
   let bar = document.getElementById("call-bar") as HTMLDivElement | null;
@@ -3753,13 +3771,233 @@ function ensureCallBar() {
     bar = document.createElement("div");
     bar.id = "call-bar";
     bar.className = "call-bar";
-    bar.innerHTML = `<span class="call-bar-status">Call</span>
-      <button type="button" class="secondary-btn" id="call-hangup">Hang up</button>`;
+    bar.innerHTML = `
+      <span class="call-bar-status">Call</span>
+      <div class="call-bar-actions">
+        <button type="button" class="primary" id="call-accept" style="display:none">Accept</button>
+        <button type="button" class="secondary-btn" id="call-decline" style="display:none">Decline</button>
+        <button type="button" class="secondary-btn" id="call-hangup">Hang up</button>
+      </div>`;
     const host = document.querySelector(".chat-main") || document.body;
     host.insertBefore(bar, host.firstChild);
-    bar.querySelector("#call-hangup")!.addEventListener("click", () => endCall());
+    bar.querySelector("#call-hangup")!.addEventListener("click", () => endCall(true));
+    bar.querySelector("#call-accept")!.addEventListener("click", () => void acceptIncomingCall());
+    bar.querySelector("#call-decline")!.addEventListener("click", () => {
+      try {
+        callWs?.send(JSON.stringify({ type: "decline" }));
+      } catch { /* ignore */ }
+      hideIncomingCallUi();
+      showToast("Call declined");
+    });
   }
   return bar;
+}
+
+function showIncomingCallUi(fromName: string) {
+  const bar = ensureCallBar();
+  bar.style.display = "flex";
+  bar.querySelector(".call-bar-status")!.textContent = `${fromName} is calling…`;
+  (bar.querySelector("#call-accept") as HTMLElement).style.display = "inline-flex";
+  (bar.querySelector("#call-decline") as HTMLElement).style.display = "inline-flex";
+  (bar.querySelector("#call-hangup") as HTMLElement).style.display = "none";
+}
+
+function hideIncomingCallUi() {
+  const bar = document.getElementById("call-bar");
+  if (!bar) return;
+  (bar.querySelector("#call-accept") as HTMLElement | null)?.style.setProperty("display", "none");
+  (bar.querySelector("#call-decline") as HTMLElement | null)?.style.setProperty("display", "none");
+  (bar.querySelector("#call-hangup") as HTMLElement | null)?.style.setProperty("display", "inline-flex");
+  if (!callInProgress) bar.style.display = "none";
+}
+
+function setCallStatus(text: string) {
+  const bar = ensureCallBar();
+  bar.style.display = "flex";
+  bar.querySelector(".call-bar-status")!.textContent = text;
+  (bar.querySelector("#call-accept") as HTMLElement).style.display = "none";
+  (bar.querySelector("#call-decline") as HTMLElement).style.display = "none";
+  (bar.querySelector("#call-hangup") as HTMLElement).style.display = "inline-flex";
+}
+
+function attachRemoteAudio(stream: MediaStream) {
+  let audio = document.getElementById("call-remote-audio") as HTMLAudioElement | null;
+  if (!audio) {
+    audio = document.createElement("audio");
+    audio.id = "call-remote-audio";
+    audio.autoplay = true;
+    audio.setAttribute("playsinline", "true");
+    document.body.appendChild(audio);
+  }
+  audio.srcObject = stream;
+  void audio.play().catch(() => {});
+}
+
+async function createPeerConnection(): Promise<RTCPeerConnection> {
+  if (callPc) {
+    try { callPc.close(); } catch { /* ignore */ }
+  }
+  callPc = new RTCPeerConnection({ iceServers: iceServers() });
+  try {
+    callLocalStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true },
+      video: false,
+    });
+  } catch {
+    throw new Error("Microphone permission is required for calls");
+  }
+  callLocalStream.getTracks().forEach((tr) => callPc!.addTrack(tr, callLocalStream!));
+  callPc.ontrack = (ev) => {
+    if (ev.streams[0]) attachRemoteAudio(ev.streams[0]);
+  };
+  callPc.onicecandidate = (ev) => {
+    if (ev.candidate && callWs?.readyState === WebSocket.OPEN) {
+      callWs.send(
+        JSON.stringify({
+          type: "ice",
+          candidate: ev.candidate.toJSON ? ev.candidate.toJSON() : ev.candidate,
+        })
+      );
+    }
+  };
+  callPc.onconnectionstatechange = () => {
+    const st = callPc?.connectionState;
+    if (st === "connected") {
+      callInProgress = true;
+      setCallStatus("In call");
+    } else if (st === "failed" || st === "disconnected" || st === "closed") {
+      if (callInProgress) {
+        endCall(false);
+        showToast("Call ended");
+      }
+    }
+  };
+  return callPc;
+}
+
+/** Keep a signaling socket open while viewing a DM so we can receive invites */
+function ensureCallSignaling() {
+  if (!isDmChat || !currentConversationId) {
+    stopCallSignaling();
+    return;
+  }
+  if (
+    callWs &&
+    callSignalingConvo === currentConversationId &&
+    (callWs.readyState === WebSocket.OPEN || callWs.readyState === WebSocket.CONNECTING)
+  ) {
+    return;
+  }
+  stopCallSignaling();
+  const sessionTok = getSessionToken();
+  if (!sessionTok) return;
+  const wsBase = API_BASE.replace(/^http/, "ws");
+  const qs = `?token=${encodeURIComponent(sessionTok)}`;
+  const convoId = currentConversationId;
+  let ws: WebSocket;
+  try {
+    ws = new WebSocket(`${wsBase}/api/conversations/${convoId}/call${qs}`);
+  } catch {
+    return;
+  }
+  callWs = ws;
+  callSignalingConvo = convoId;
+
+  ws.onopen = () => {
+    try {
+      ws.send(JSON.stringify({ type: "hello" }));
+    } catch { /* ignore */ }
+  };
+
+  ws.onmessage = async (ev) => {
+    let data: any;
+    try {
+      data = JSON.parse(String(ev.data));
+    } catch {
+      return;
+    }
+    // Ignore our own echoes
+    if (data.from && currentUser?.id && data.from === currentUser.id) return;
+
+    try {
+      if (data.type === "invite") {
+        const fromName = String(data.from_username || "Friend");
+        incomingCallFrom = fromName;
+        showIncomingCallUi(fromName);
+        showToast(`${fromName} is calling…`);
+      } else if (data.type === "offer" && data.sdp) {
+        // Store offer for accept — auto-show incoming UI
+        (window as any).__pendingCallOffer = data.sdp;
+        if (!callInProgress) {
+          const fromName = String(data.from_username || "Friend");
+          incomingCallFrom = fromName;
+          showIncomingCallUi(fromName);
+        }
+      } else if (data.type === "answer" && data.sdp && callPc) {
+        await callPc.setRemoteDescription(
+          data.sdp.type ? data.sdp : { type: "answer", sdp: data.sdp }
+        );
+        callInProgress = true;
+        setCallStatus("In call");
+      } else if (data.type === "ice" && data.candidate && callPc) {
+        try {
+          await callPc.addIceCandidate(data.candidate);
+        } catch { /* ignore */ }
+      } else if (data.type === "hangup" || data.type === "decline" || data.type === "peer-left") {
+        endCall(false);
+        showToast(data.type === "decline" ? "Call declined" : "Call ended");
+      }
+    } catch (e: any) {
+      console.warn("call signal error", e);
+      showToast(e?.message || "Call signal error");
+    }
+  };
+
+  ws.onclose = () => {
+    if (callWs === ws) {
+      callWs = null;
+      // Reconnect if still in same DM and not intentional hangup
+      if (isDmChat && currentConversationId === convoId) {
+        setTimeout(() => ensureCallSignaling(), 2000);
+      }
+    }
+  };
+  ws.onerror = () => {
+    try { ws.close(); } catch { /* ignore */ }
+  };
+}
+
+function stopCallSignaling() {
+  if (callWs) {
+    try {
+      callWs.onclose = null;
+      callWs.close();
+    } catch { /* ignore */ }
+  }
+  callWs = null;
+  callSignalingConvo = null;
+}
+
+async function acceptIncomingCall() {
+  const offer = (window as any).__pendingCallOffer;
+  if (!offer) {
+    showToast("No pending call");
+    return;
+  }
+  try {
+    await createPeerConnection();
+    await callPc!.setRemoteDescription(offer.type ? offer : { type: "offer", sdp: offer });
+    const answer = await callPc!.createAnswer();
+    await callPc!.setLocalDescription(answer);
+    callWs?.send(JSON.stringify({ type: "answer", sdp: answer }));
+    callInProgress = true;
+    hideIncomingCallUi();
+    setCallStatus("In call");
+    (window as any).__pendingCallOffer = null;
+  } catch (e: any) {
+    showToast(e?.message || "Could not accept call");
+    endCall(true);
+  }
 }
 
 async function startCall() {
@@ -3767,125 +4005,53 @@ async function startCall() {
     showToast("Calls work in friend DMs");
     return;
   }
-  const sessionTok = getSessionToken();
-  if (!sessionTok) return;
-  try {
-    callLocalStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  } catch {
-    showToast("Microphone needed for calls");
+  if (callInProgress) {
+    showToast("Already in a call");
     return;
   }
-  callPc = new RTCPeerConnection({
-    iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-  });
-  callLocalStream.getTracks().forEach((tr) => callPc!.addTrack(tr, callLocalStream!));
-  callPc.ontrack = (ev) => {
-    let audio = document.getElementById("call-remote-audio") as HTMLAudioElement | null;
-    if (!audio) {
-      audio = document.createElement("audio");
-      audio.id = "call-remote-audio";
-      audio.autoplay = true;
-      document.body.appendChild(audio);
-    }
-    audio.srcObject = ev.streams[0];
-  };
-  callPc.onicecandidate = (ev) => {
-    if (ev.candidate && callWs?.readyState === WebSocket.OPEN) {
-      callWs.send(JSON.stringify({ type: "ice", candidate: ev.candidate }));
-    }
-  };
-
-  const wsBase = API_BASE.replace(/^http/, "ws");
-  const qs = `?token=${encodeURIComponent(sessionTok)}`;
-  callWs = new WebSocket(`${wsBase}/api/conversations/${currentConversationId}/call${qs}`);
-  callWs.onopen = async () => {
+  ensureCallSignaling();
+  // Wait briefly for WS open
+  for (let i = 0; i < 20 && callWs?.readyState !== WebSocket.OPEN; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  if (!callWs || callWs.readyState !== WebSocket.OPEN) {
+    showToast("Call signaling unavailable — is CALLS Durable Object deployed?");
+    return;
+  }
+  try {
+    callIsCaller = true;
+    await createPeerConnection();
     const offer = await callPc!.createOffer();
     await callPc!.setLocalDescription(offer);
-    callWs!.send(JSON.stringify({ type: "invite" }));
-    callWs!.send(JSON.stringify({ type: "offer", sdp: offer }));
-    const bar = ensureCallBar();
-    bar.style.display = "flex";
-    bar.querySelector(".call-bar-status")!.textContent = "Calling…";
-  };
-  callWs.onmessage = async (ev) => {
-    try {
-      const data = JSON.parse(String(ev.data));
-      if (data.type === "offer" && data.sdp) {
-        // incoming call
-        if (!callPc) {
-          callLocalStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          callPc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
-          callLocalStream.getTracks().forEach((tr) => callPc!.addTrack(tr, callLocalStream!));
-          callPc.ontrack = (e) => {
-            let audio = document.getElementById("call-remote-audio") as HTMLAudioElement | null;
-            if (!audio) {
-              audio = document.createElement("audio");
-              audio.id = "call-remote-audio";
-              audio.autoplay = true;
-              document.body.appendChild(audio);
-            }
-            audio.srcObject = e.streams[0];
-          };
-          callPc.onicecandidate = (e) => {
-            if (e.candidate && callWs?.readyState === WebSocket.OPEN) {
-              callWs.send(JSON.stringify({ type: "ice", candidate: e.candidate }));
-            }
-          };
-        }
-        await callPc.setRemoteDescription(data.sdp);
-        const answer = await callPc.createAnswer();
-        await callPc.setLocalDescription(answer);
-        callWs?.send(JSON.stringify({ type: "answer", sdp: answer }));
-        const bar = ensureCallBar();
-        bar.style.display = "flex";
-        bar.querySelector(".call-bar-status")!.textContent = "In call";
-        showToast(`Call from ${data.from_username || "friend"}`);
-      } else if (data.type === "answer" && data.sdp) {
-        await callPc?.setRemoteDescription(data.sdp);
-        const bar = ensureCallBar();
-        bar.querySelector(".call-bar-status")!.textContent = "In call";
-      } else if (data.type === "ice" && data.candidate) {
-        try {
-          await callPc?.addIceCandidate(data.candidate);
-        } catch {
-          /* ignore */
-        }
-      } else if (data.type === "hangup" || data.type === "peer-left") {
-        endCall(false);
-        showToast("Call ended");
-      } else if (data.type === "invite") {
-        showToast(`${data.from_username || "Friend"} is calling…`);
-      }
-    } catch {
-      /* ignore */
-    }
-  };
-  callWs.onclose = () => {
-    callWs = null;
-  };
+    callWs.send(JSON.stringify({ type: "invite" }));
+    callWs.send(JSON.stringify({ type: "offer", sdp: offer }));
+    setCallStatus("Calling…");
+    showToast("Calling…");
+  } catch (e: any) {
+    showToast(e?.message || "Could not start call");
+    endCall(false);
+  }
 }
 
 function endCall(sendHangup = true) {
   if (sendHangup && callWs?.readyState === WebSocket.OPEN) {
     try {
       callWs.send(JSON.stringify({ type: "hangup" }));
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
   }
-  try {
-    callWs?.close();
-  } catch {
-    /* ignore */
-  }
-  callWs = null;
-  callPc?.close();
+  callInProgress = false;
+  callIsCaller = false;
+  incomingCallFrom = null;
+  (window as any).__pendingCallOffer = null;
+  try { callPc?.close(); } catch { /* ignore */ }
   callPc = null;
   callLocalStream?.getTracks().forEach((tr) => tr.stop());
   callLocalStream = null;
   document.getElementById("call-remote-audio")?.remove();
+  hideIncomingCallUi();
   const bar = document.getElementById("call-bar");
   if (bar) bar.style.display = "none";
+  // Keep signaling socket for future calls while still in DM
 }
 
 
@@ -4062,6 +4228,27 @@ export function initChatView(user: User) {
   });
 
   newChatBtn.addEventListener("click", startNewConversation);
+
+  // PWA shortcuts / share target (v10.4)
+  try {
+    const pending = sessionStorage.getItem("paul_pending_action");
+    if (pending) {
+      sessionStorage.removeItem("paul_pending_action");
+      if (pending === "new-chat") setTimeout(() => startNewConversation(), 300);
+      if (pending === "quote") setTimeout(() => openLeadModal(currentConversationId), 400);
+    }
+    const share = sessionStorage.getItem("paul_pending_share");
+    if (share) {
+      sessionStorage.removeItem("paul_pending_share");
+      setTimeout(() => {
+        chatInput.value = share;
+        chatInput.style.height = "auto";
+        chatInput.style.height = `${chatInput.scrollHeight}px`;
+        chatInput.focus();
+      }, 400);
+    }
+  } catch { /* ignore */ }
+
   sidebarToggle.addEventListener("click", () => toggleSidebar());
   sidebarOpenBtn.addEventListener("click", () => toggleSidebar(false));
   sidebarBackdrop.addEventListener("click", () => toggleSidebar(true));
