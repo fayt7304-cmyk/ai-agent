@@ -51,7 +51,7 @@ export interface User {
  * - shared:  anyone signed in with the link can read it
  * - collab:  anyone signed in with the link can read AND reply
  */
-export type Visibility = "private" | "shared" | "collab";
+export type Visibility = "private" | "shared" | "collab" | "dm";
 
 export interface Conversation {
   id: string;
@@ -62,6 +62,24 @@ export interface Conversation {
   collab_locked?: boolean;
   /** True when you joined via collab invite (not the owner). */
   is_collab_member?: boolean | number;
+  /** Friend 1:1 direct message. */
+  is_dm?: boolean | number;
+  dm_peer_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FriendPeer {
+  id: string;
+  username: string;
+  display_name: string;
+  avatar: string | null;
+}
+
+export interface Friendship {
+  id: string;
+  status: string;
+  peer: FriendPeer;
   created_at: string;
   updated_at: string;
 }
@@ -351,10 +369,35 @@ export const api = {
   getConversationUsage: (id: string) =>
     request<ConversationUsage>(`/api/conversations/${id}/usage`, { method: "GET" }),
 
-    joinCollab: (id: string, code: string) =>
+  joinCollab: (id: string, code: string) =>
     request<{ ok: true; conversation_id: string; title?: string }>(`/api/conversations/${id}/join`, {
       method: "POST",
       body: JSON.stringify({ code }),
+    }),
+
+  listFriends: () =>
+    request<{ friends: Friendship[]; pending_in: Friendship[]; pending_out: Friendship[] }>("/api/friends", {
+      method: "GET",
+    }),
+
+  requestFriend: (username: string) =>
+    request<{ ok: true; status: string; friendship_id: string }>("/api/friends/request", {
+      method: "POST",
+      body: JSON.stringify({ username }),
+    }),
+
+  acceptFriend: (id: string) =>
+    request<{ ok: true; status: string }>(`/api/friends/${id}/accept`, { method: "POST" }),
+
+  rejectFriend: (id: string) =>
+    request<{ ok: true; status: string }>(`/api/friends/${id}/reject`, { method: "POST" }),
+
+  removeFriend: (id: string) =>
+    request<{ ok: true; status: string }>(`/api/friends/${id}`, { method: "DELETE" }),
+
+  openFriendDm: (friendshipId: string) =>
+    request<{ conversation_id: string; title: string; peer: FriendPeer }>(`/api/friends/${friendshipId}/dm`, {
+      method: "POST",
     }),
 
 getMessages: (id: string) =>
@@ -369,6 +412,14 @@ getMessages: (id: string) =>
         collab_locked?: boolean;
         is_member?: boolean;
         collab_code?: string | null;
+        is_dm?: boolean;
+        members?: {
+          id: string;
+          username: string;
+          display_name: string;
+          avatar: string | null;
+          is_owner: boolean;
+        }[];
       };
     }>(`/api/conversations/${id}/messages`, { method: "GET" }),
 

@@ -8,6 +8,7 @@ import {
   type Attachment,
   type User,
   type Visibility,
+  type Friendship,
 } from "./api";
 import { readFileAsDataUrl, formatBytes, fileIcon, MAX_FILE_BYTES } from "./files";
 import { showConfirm, showPrompt } from "./lib/dialog";
@@ -161,6 +162,12 @@ function mountStaticIcons() {
 
 
 let isCollabChat = false;
+/** 1:1 friend DM — live updates, group-style bubbles; @paul NOT required. */
+let isDmChat = false;
+/** Collab or DM: sender heads, ownership layout, live WebSocket. */
+function isGroupStyleChat(): boolean {
+  return isCollabChat || isDmChat;
+}
 /** True when the current user owns the open conversation (for null-sender fallback). */
 let isConversationOwner = false;
 let currentVisibility: Visibility = "private";
@@ -207,7 +214,7 @@ function applyLiveMessages(
     can_write?: boolean;
   } | null
 ) {
-  if (!currentConversationId || !isCollabChat) return;
+  if (!currentConversationId || !isGroupStyleChat()) return;
   if (conversation) {
     isConversationOwner = !!conversation.owner;
     const local = conversations.find((c) => c.id === currentConversationId);
@@ -224,16 +231,15 @@ function applyLiveMessages(
 
   const nearBottom =
     messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 120;
-  isCollabChat = true;
   renderMessages(messages);
   if (nearBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
-/** Prefer WebSocket; fall back to HTTP polling. */
+/** Prefer WebSocket; fall back to HTTP polling. Used for collab + friend DMs. */
 function startCollabLive() {
   stopCollabLive();
   syncCollabComposerHint();
-  if (!isCollabChat || !currentConversationId) return;
+  if (!isGroupStyleChat() || !currentConversationId) return;
 
   const id = currentConversationId;
   const sessionTok = getSessionToken();
@@ -245,7 +251,7 @@ function startCollabLive() {
     const ws = new WebSocket(url);
     collabWs = ws;
     ws.onmessage = (ev) => {
-      if (currentConversationId !== id || !isCollabChat) return;
+      if (currentConversationId !== id || !isGroupStyleChat()) return;
       try {
         const data = JSON.parse(String(ev.data));
         if (data?.type === "messages" && Array.isArray(data.messages)) {
@@ -257,15 +263,14 @@ function startCollabLive() {
     };
     ws.onclose = () => {
       collabWs = null;
-      if (isCollabChat && currentConversationId === id) {
-        // Fall back to polling after disconnect
+      if (isGroupStyleChat() && currentConversationId === id) {
         if (!collabPollTimer) {
           collabPollTimer = setInterval(() => {
             void pollCollabMessages();
           }, COLLAB_POLL_MS);
         }
         collabWsReconnectTimer = setTimeout(() => {
-          if (isCollabChat && currentConversationId === id) startCollabLive();
+          if (isGroupStyleChat() && currentConversationId === id) startCollabLive();
         }, 4000);
       }
     };
@@ -284,13 +289,13 @@ function startCollabLive() {
 }
 
 async function pollCollabMessages() {
-  if (!isCollabChat || !currentConversationId || isReplying || collabPollInFlight) return;
+  if (!isGroupStyleChat() || !currentConversationId || isReplying || collabPollInFlight) return;
   if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
   const id = currentConversationId;
   collabPollInFlight = true;
   try {
     const data = await api.getMessages(id);
-    if (currentConversationId !== id || !isCollabChat) return;
+    if (currentConversationId !== id || !isGroupStyleChat()) return;
     applyLiveMessages(data.messages || [], data.conversation || null);
   } catch {
     /* next tick */
@@ -301,7 +306,7 @@ async function pollCollabMessages() {
 
 if (typeof document !== "undefined") {
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && isCollabChat && currentConversationId) {
+    if (document.visibilityState === "visible" && isGroupStyleChat() && currentConversationId) {
       void pollCollabMessages();
     }
   });
@@ -392,7 +397,7 @@ function wireHeaderActions() {
       isCollabChat = visibility === "collab";
       syncManageChatPanel();
       renderConvoList();
-      messagesEl.classList.toggle("is-collab", isCollabChat);
+      messagesEl.classList.toggle("is-collab", isGroupStyleChat());
       if (visibility === "collab") startCollabLive();
       else stopCollabLive();
     } catch (e: any) {
@@ -978,16 +983,177 @@ function createConvoItem(c: Conversation): HTMLDivElement {
   return item;
 }
 
+let friendsList: Friendship[] = [];
+let friendsPendingIn: Friendship[] = [];
+let friendsPendingOut: Friendship[] = [];
+let friendsLoaded = false;
+
+async function loadFriends() {
+  try {
+    const data = await api.listFriends();
+    friendsList = data.friends || [];
+    friendsPendingIn = data.pending_in || [];
+    friendsPendingOut = data.pending_out || [];
+    friendsLoaded = true;
+  } catch {
+    friendsList = [];
+    friendsPendingIn = [];
+    friendsPendingOut = [];
+  }
+}
+
+async function openFriendChat(friendshipId: string) {
+  try {
+    const dm = await api.openFriendDm(friendshipId);
+    await loadConversations();
+    await selectConversation(dm.conversation_id);
+    showToast(`Chat with ${dm.peer.display_name || dm.peer.username}`);
+  } catch (e: any) {
+    showToast(e?.message || "Could not open chat");
+  }
+}
+
+function showAddFriendModal() {
+  document.getElementById("add-friend-modal")?.remove();
+  const overlay = document.createElement("div");
+  overlay.id = "add-friend-modal";
+  overlay.className = "sender-popup";
+  overlay.innerHTML = `
+    <div class="sender-popup-card collab-share-card">
+      <div class="sender-popup-name">Add friend</div>
+      <p class="collab-share-hint">Enter their username to send a friend request.</p>
+      <input type="text" class="collab-share-input" id="add-friend-username" placeholder="username" maxlength="32" />
+      <div class="collab-share-actions">
+        <button type="button" class="secondary-btn" id="add-friend-cancel">Cancel</button>
+        <button type="button" class="primary" id="add-friend-ok">Send request</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const input = overlay.querySelector("#add-friend-username") as HTMLInputElement;
+  input.focus();
+  const close = () => overlay.remove();
+  overlay.querySelector("#add-friend-cancel")!.addEventListener("click", close);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) close();
+  });
+  const submit = async () => {
+    const username = input.value.trim().replace(/^@/, "");
+    if (!username) {
+      showToast("Enter a username");
+      return;
+    }
+    try {
+      const res = await api.requestFriend(username);
+      close();
+      await loadFriends();
+      renderConvoList();
+      showToast(res.status === "accepted" ? "You're now friends!" : "Friend request sent");
+    } catch (e: any) {
+      showToast(e?.message || "Could not send request");
+    }
+  };
+  overlay.querySelector("#add-friend-ok")!.addEventListener("click", () => void submit());
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") void submit();
+  });
+}
+
+function renderFriendsSection(parent: HTMLElement) {
+  const header = document.createElement("div");
+  header.className = "convo-group-header convo-friends-header";
+  header.innerHTML = `<span class="menu-icon">${icons.people || ""}</span><span>Friends</span>`;
+  parent.appendChild(header);
+
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.className = "convo-item friends-add-btn";
+  addBtn.innerHTML = `<span class="menu-icon">${icons.plus}</span><span>Add friend</span>`;
+  addBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    showAddFriendModal();
+  });
+  parent.appendChild(addBtn);
+
+  for (const f of friendsPendingIn) {
+    const row = document.createElement("div");
+    row.className = "convo-item friends-pending-item";
+    row.innerHTML = `<span class="friends-peer-name">${f.peer.display_name || f.peer.username}</span>
+      <span class="friends-pending-actions">
+        <button type="button" class="friends-accept" title="Accept">✓</button>
+        <button type="button" class="friends-reject" title="Decline">✕</button>
+      </span>`;
+    row.querySelector(".friends-accept")!.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      try {
+        await api.acceptFriend(f.id);
+        await loadFriends();
+        renderConvoList();
+        showToast("Friend request accepted");
+      } catch (err: any) {
+        showToast(err?.message || "Failed");
+      }
+    });
+    row.querySelector(".friends-reject")!.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      try {
+        await api.rejectFriend(f.id);
+        await loadFriends();
+        renderConvoList();
+      } catch (err: any) {
+        showToast(err?.message || "Failed");
+      }
+    });
+    parent.appendChild(row);
+  }
+
+  for (const f of friendsPendingOut) {
+    const row = document.createElement("div");
+    row.className = "convo-item friends-pending-item is-outgoing";
+    row.innerHTML = `<span class="friends-peer-name">${f.peer.display_name || f.peer.username}</span>
+      <span class="friends-pending-label">Pending</span>`;
+    parent.appendChild(row);
+  }
+
+  for (const f of friendsList) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "convo-item friends-friend-item";
+    const initial = (f.peer.display_name || f.peer.username || "?").slice(0, 1).toUpperCase();
+    row.innerHTML = `<span class="friends-avatar">${
+      f.peer.avatar ? `<img src="${f.peer.avatar}" alt="" />` : initial
+    }</span><span class="friends-peer-name">${f.peer.display_name || f.peer.username}</span>`;
+    row.addEventListener("click", () => void openFriendChat(f.id));
+    parent.appendChild(row);
+  }
+}
+
 function renderConvoList() {
   convoList.innerHTML = "";
   const isCollab = (c: Conversation) =>
-    !!c.is_collab_member || c.visibility === "collab";
-  const active = conversations.filter((c) => !c.archived && !isCollab(c));
+    (!!c.is_collab_member || c.visibility === "collab") && c.visibility !== "dm";
+  const isDm = (c: Conversation) => !!c.is_dm || c.visibility === "dm";
+  const active = conversations.filter((c) => !c.archived && !isCollab(c) && !isDm(c));
+  const dms = conversations.filter((c) => !c.archived && isDm(c));
   const collab = conversations.filter((c) => !c.archived && isCollab(c));
   const archived = conversations.filter((c) => c.archived);
 
   for (const c of active) {
     convoList.appendChild(createConvoItem(c));
+  }
+
+  // Friends section: accepted friends + pending requests + DM threads
+  renderFriendsSection(convoList);
+
+  if (dms.length > 0) {
+    const header = document.createElement("div");
+    header.className = "convo-group-header convo-friends-header";
+    header.innerHTML = `<span class="menu-icon">${icons.chats || icons.people || ""}</span><span>Friend chats</span>`;
+    convoList.appendChild(header);
+    for (const c of dms) {
+      const item = createConvoItem(c);
+      item.classList.add("convo-dm-item");
+      convoList.appendChild(item);
+    }
   }
 
   if (collab.length > 0) {
@@ -1034,7 +1200,9 @@ async function loadConversations() {
     archived: !!c.archived,
     is_collab_member: !!c.is_collab_member,
     collab_locked: !!c.collab_locked,
+    is_dm: !!c.is_dm || c.visibility === "dm",
   }));
+  await loadFriends();
   renderConvoList();
 }
 
@@ -1082,10 +1250,11 @@ function setComposerReadOnly(readOnly: boolean, reason = "") {
 function syncCollabComposerHint() {
   if (currentChatReadOnly) return;
   if (isCollabChat) {
-    chatInput.placeholder = "Message the group… Tag @paul to ask Paul";
-    setHint("Collab: chat with the group. Tag @paul when you want Paul to reply.");
+    chatInput.placeholder = "Message the group… @paul or @username";
+    setHint("Collab: type @ to mention. Tag @paul when you want Paul to reply — you can mix multiple mentions.");
   } else {
     chatInput.placeholder = t("chat.placeholder") || "Message the agent…";
+    hideMentionMenu();
     // Don't clear error hints
     if (!composerHint.classList.contains("error")) setHint("");
   }
@@ -1107,16 +1276,18 @@ async function openConversationLink(id: string) {
     const data = await api.getMessages(id);
     const { messages, conversation } = data;
     chatTitle.textContent = conversation?.title || t("chat.newChat");
-    isCollabChat = conversation?.visibility === "collab" || !!conversation?.is_member;
+    isCollabChat = conversation?.visibility === "collab" || (!!conversation?.is_member && conversation?.visibility !== "dm");
+    isDmChat = conversation?.visibility === "dm" || !!(conversation as any)?.is_dm;
     isConversationOwner = !!conversation?.owner;
     currentVisibility = (conversation?.visibility as Visibility) || "private";
     currentCollabCode = conversation?.collab_code || null;
+    collabMembers = conversation?.members || [];
     if (conversation) {
       const local = conversations.find((c) => c.id === id);
       if (local) {
         local.visibility = conversation.visibility;
         local.collab_locked = !!conversation.collab_locked;
-        local.is_collab_member = !!conversation.is_member && !conversation.owner;
+        local.is_collab_member = !!conversation.is_member && !conversation.owner && conversation.visibility === "collab";
       }
     }
     syncManageChatPanel();
@@ -1327,8 +1498,8 @@ function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: strin
   emptyState.style.display = "none";
   const row = document.createElement("div");
 
-  const mine = isCollabChat && isMyUserMessage(kind, sender);
-  const otherUser = isCollabChat && kind === "user" && !mine;
+  const mine = isGroupStyleChat() && isMyUserMessage(kind, sender);
+  const otherUser = isGroupStyleChat() && kind === "user" && !mine;
   // Other users' messages use the left-side (agent) layout so they don't look like "I typed this"
   if (kind === "thinking") {
     row.className = "msg-row agent thinking";
@@ -1339,7 +1510,7 @@ function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: strin
   }
 
   // Sender head: Paul + other people only — never on my own bubbles
-  if (isCollabChat && (kind === "agent" || otherUser)) {
+  if (isGroupStyleChat() && (kind === "agent" || otherUser)) {
     const head = document.createElement("button");
     head.type = "button";
     head.className = "msg-sender-head";
@@ -1374,10 +1545,12 @@ function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: strin
   }
 
   const bubble = document.createElement("div");
-  // Peer text is plain; Paul still gets markdown
+  // Peer text is plain; Paul still gets markdown. In collab, highlight @mentions.
   bubble.className = "msg" + (otherUser ? " collab-peer-msg" : "");
   if (kind === "agent") {
     bubble.innerHTML = renderMarkdown(content);
+  } else if (isGroupStyleChat() && /(^|[^\w])@[a-zA-Z]/.test(content)) {
+    bubble.innerHTML = formatMentionsHtml(content);
   } else {
     bubble.textContent = content;
   }
@@ -1527,7 +1700,7 @@ function renderMessages(messages: Message[]) {
   replyVersions = [];
   replyVersionIndex = 0;
   knownMessageIds = new Set(messages.map((m) => m.id).filter(Boolean) as string[]);
-  messagesEl.classList.toggle("is-collab", isCollabChat);
+  messagesEl.classList.toggle("is-collab", isGroupStyleChat());
   if (messages.length === 0) {
     messagesEl.appendChild(emptyState);
     emptyState.style.display = "flex";
@@ -1556,17 +1729,22 @@ async function selectConversation(id: string) {
   messagesEl.innerHTML = "";
   const data = await api.getMessages(id);
   const messages = data.messages;
-  isCollabChat = data.conversation?.visibility === "collab" || !!data.conversation?.is_member;
+  isCollabChat =
+    data.conversation?.visibility === "collab" ||
+    (!!data.conversation?.is_member && data.conversation?.visibility !== "dm");
+  isDmChat = data.conversation?.visibility === "dm" || !!(data.conversation as any)?.is_dm;
   isConversationOwner = !!data.conversation?.owner;
   currentVisibility = (data.conversation?.visibility as Visibility) || "private";
   currentCollabCode = data.conversation?.collab_code || null;
+  collabMembers = data.conversation?.members || [];
   // Keep sidebar/local convo in sync with server lock + visibility
   if (data.conversation) {
     const local = conversations.find((c) => c.id === id);
     if (local) {
       local.visibility = data.conversation.visibility;
       local.collab_locked = !!data.conversation.collab_locked;
-      local.is_collab_member = !!data.conversation.is_member && !data.conversation.owner;
+      local.is_collab_member =
+        !!data.conversation.is_member && !data.conversation.owner && data.conversation.visibility === "collab";
     }
   }
   syncManageChatPanel();
@@ -1612,9 +1790,12 @@ function startNewConversation() {
   setCurrentConversation(null);
   setComposerReadOnly(false);
   isCollabChat = false;
+  isDmChat = false;
   isConversationOwner = true;
   currentVisibility = "private";
   currentCollabCode = null;
+  collabMembers = [];
+  hideMentionMenu();
   chatTitle.textContent = t("chat.newChat");
   lastUserText = "";
   lastUserAttachments = [];
@@ -1807,9 +1988,152 @@ function removeTrailingAssistantRows() {
   lastAgentRow = null;
 }
 
-/** In collab, Paul only answers when tagged with @paul (case-insensitive). */
+/** Parse unique @handles from text (lowercase, without @). Supports many per message. */
+function parseMentionHandles(text: string): string[] {
+  const found = new Set<string>();
+  const re = /(^|[^\w])@([a-zA-Z][\w.-]{0,31})\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text || ""))) found.add(m[2].toLowerCase());
+  return [...found];
+}
+
+/** Paul answers only when @paul is among the mentions. */
 function messageMentionsPaul(text: string): boolean {
-  return /(^|[^\w])@paul\b/i.test(text || "");
+  return parseMentionHandles(text).includes("paul");
+}
+
+/** Escape HTML then highlight every @handle. */
+function formatMentionsHtml(text: string): string {
+  const esc = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return esc(text).replace(/(^|[^\w])(@[a-zA-Z][\w.-]{0,31})\b/g, (_all, pre, tag) => {
+    const handle = String(tag).slice(1).toLowerCase();
+    const cls = handle === "paul" ? "mention mention-paul" : "mention";
+    return `${pre}<span class="${cls}">${tag}</span>`;
+  });
+}
+
+type CollabMember = {
+  id: string;
+  username: string;
+  display_name: string;
+  avatar: string | null;
+  is_owner?: boolean;
+};
+
+let collabMembers: CollabMember[] = [];
+let mentionMenuEl: HTMLDivElement | null = null;
+let mentionActiveIndex = 0;
+let mentionQueryStart = -1;
+
+function hideMentionMenu() {
+  mentionMenuEl?.remove();
+  mentionMenuEl = null;
+  mentionActiveIndex = 0;
+  mentionQueryStart = -1;
+}
+
+function mentionCandidates(query: string): { handle: string; label: string }[] {
+  const q = query.toLowerCase();
+  const items: { handle: string; label: string }[] = [{ handle: "paul", label: "Paul (AI)" }];
+  for (const m of collabMembers) {
+    if (!m.username) continue;
+    if (currentUser?.id && m.id === currentUser.id) continue;
+    items.push({ handle: m.username.toLowerCase(), label: m.display_name || m.username });
+  }
+  const seen = new Set<string>();
+  return items
+    .filter((it) => {
+      if (seen.has(it.handle)) return false;
+      seen.add(it.handle);
+      if (!q) return true;
+      return it.handle.startsWith(q) || it.label.toLowerCase().includes(q);
+    })
+    .slice(0, 8);
+}
+
+function showMentionMenu(query: string, startIdx: number) {
+  const items = mentionCandidates(query);
+  mentionQueryStart = startIdx;
+  if (!items.length) {
+    hideMentionMenu();
+    return;
+  }
+  if (!mentionMenuEl) {
+    mentionMenuEl = document.createElement("div");
+    mentionMenuEl.className = "mention-menu";
+    mentionMenuEl.id = "mention-menu";
+    document.getElementById("chat-form")?.appendChild(mentionMenuEl);
+  }
+  mentionActiveIndex = Math.min(mentionActiveIndex, items.length - 1);
+  mentionMenuEl.innerHTML = items
+    .map(
+      (it, i) =>
+        `<button type="button" class="mention-menu-item${i === mentionActiveIndex ? " is-active" : ""}" data-handle="${it.handle}">
+          <span class="mention-menu-at">@${it.handle}</span>
+          <span class="mention-menu-label">${it.label}</span>
+        </button>`
+    )
+    .join("");
+  mentionMenuEl.querySelectorAll<HTMLButtonElement>(".mention-menu-item").forEach((btn) => {
+    btn.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      insertMention(btn.dataset.handle || "");
+    });
+  });
+}
+
+function insertMention(handle: string) {
+  if (!handle || mentionQueryStart < 0) return;
+  const val = chatInput.value;
+  const cursor = chatInput.selectionStart ?? val.length;
+  const before = val.slice(0, mentionQueryStart);
+  const after = val.slice(cursor);
+  const insertion = `@${handle} `;
+  chatInput.value = before + insertion + after;
+  const pos = before.length + insertion.length;
+  chatInput.setSelectionRange(pos, pos);
+  chatInput.focus();
+  hideMentionMenu();
+  chatInput.dispatchEvent(new Event("input"));
+}
+
+function onComposerMentionInput() {
+  if (!isCollabChat) {
+    hideMentionMenu();
+    return;
+  }
+  const val = chatInput.value;
+  const cursor = chatInput.selectionStart ?? val.length;
+  const upto = val.slice(0, cursor);
+  const match = upto.match(/(^|[\s])@([a-zA-Z][\w.-]{0,31})?$/);
+  if (!match) {
+    hideMentionMenu();
+    return;
+  }
+  const start = cursor - (match[2]?.length || 0) - 1;
+  showMentionMenu(match[2] || "", start);
+}
+
+function onComposerMentionKeydown(e: KeyboardEvent) {
+  if (!mentionMenuEl) return;
+  const items = mentionMenuEl.querySelectorAll<HTMLButtonElement>(".mention-menu-item");
+  if (!items.length) return;
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    mentionActiveIndex = (mentionActiveIndex + 1) % items.length;
+    items.forEach((el, i) => el.classList.toggle("is-active", i === mentionActiveIndex));
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    mentionActiveIndex = (mentionActiveIndex - 1 + items.length) % items.length;
+    items.forEach((el, i) => el.classList.toggle("is-active", i === mentionActiveIndex));
+  } else if (e.key === "Enter" || e.key === "Tab") {
+    e.preventDefault();
+    const handle = items[mentionActiveIndex]?.dataset.handle;
+    if (handle) insertMention(handle);
+  } else if (e.key === "Escape") {
+    hideMentionMenu();
+  }
 }
 
 async function performSend(
@@ -2203,9 +2527,15 @@ export function initChatView(user: User) {
   chatInput.addEventListener("input", () => {
     chatInput.style.height = "auto";
     chatInput.style.height = `${chatInput.scrollHeight}px`;
+    onComposerMentionInput();
   });
 
   chatInput.addEventListener("keydown", (e) => {
+    // Mention menu takes priority over send-on-Enter
+    if (mentionMenuEl && (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter" || e.key === "Tab" || e.key === "Escape")) {
+      onComposerMentionKeydown(e);
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       chatForm.requestSubmit();

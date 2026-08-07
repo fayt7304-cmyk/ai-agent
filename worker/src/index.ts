@@ -1546,11 +1546,13 @@ async function handleListConversations(request: Request, env: Env): Promise<Resp
     .bind(user.id)
     .all();
 
-  // Conversations this user joined via collab invite
+  // Conversations this user joined via collab invite or DM membership
   let joined: any[] = [];
   try {
     const { results } = await env.DB.prepare(
-      `SELECT c.id, c.title, c.starred, c.archived, c.visibility, c.collab_locked, c.created_at, c.updated_at, 1 AS is_collab_member
+      `SELECT c.id, c.title, c.starred, c.archived, c.visibility, c.collab_locked, c.dm_peer_id, c.created_at, c.updated_at,
+              CASE WHEN c.visibility = 'collab' THEN 1 ELSE 0 END AS is_collab_member,
+              CASE WHEN c.visibility = 'dm' THEN 1 ELSE 0 END AS is_dm
        FROM conversation_members m
        JOIN conversations c ON c.id = m.conversation_id
        WHERE m.user_id = ? AND c.user_id != ?
@@ -1564,7 +1566,10 @@ async function handleListConversations(request: Request, env: Env): Promise<Resp
   }
 
   const seen = new Set((owned || []).map((c: any) => c.id));
-  const conversations = [...(owned || [])];
+  const conversations = [...(owned || [])].map((c: any) => ({
+    ...c,
+    is_dm: c.visibility === "dm" ? 1 : 0,
+  }));
   for (const c of joined) {
     if (!seen.has(c.id)) conversations.push(c);
   }
@@ -1644,6 +1649,17 @@ async function ensureConversationColumns(env: Env): Promise<void> {
       user_id TEXT NOT NULL,
       joined_at TEXT NOT NULL,
       PRIMARY KEY (conversation_id, user_id)
+    )`,
+    "ALTER TABLE conversations ADD COLUMN dm_peer_id TEXT",
+    `CREATE TABLE IF NOT EXISTS friendships (
+      id TEXT PRIMARY KEY,
+      user_a TEXT NOT NULL,
+      user_b TEXT NOT NULL,
+      requester_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(user_a, user_b)
     )`,
   ];
   for (const sql of alters) {
@@ -1807,9 +1823,10 @@ async function handleGetMessages(request: Request, env: Env, id: string): Promis
   if (!convo) return err("Conversation not found.", 404);
   const isOwner = convo.user_id === user.id;
   const isShared = convo.visibility === "shared" || convo.visibility === "collab";
+  const isDm = convo.visibility === "dm";
 
   let isMember = false;
-  if (!isOwner && convo.visibility === "collab") {
+  if (!isOwner && (convo.visibility === "collab" || isDm)) {
     const mem = await env.DB.prepare(
       "SELECT 1 AS ok FROM conversation_members WHERE conversation_id = ? AND user_id = ?"
     )
@@ -1818,7 +1835,7 @@ async function handleGetMessages(request: Request, env: Env, id: string): Promis
     isMember = !!mem;
   }
 
-  if (!isOwner && !isShared) {
+  if (!isOwner && !isShared && !(isDm && isMember)) {
     return err("Access forbidden. Ask the owner to share a link with access.", 403);
   }
   // Collab: must have joined with the code (members) unless still only viewing shared link without write
@@ -1870,6 +1887,11 @@ async function handleGetMessages(request: Request, env: Env, id: string): Promis
           : null,
   }));
 
+  let members: Awaited<ReturnType<typeof listCollabMembers>> = [];
+  if (convo.visibility === "collab") {
+    members = await listCollabMembers(env, id, convo.user_id);
+  }
+
   return json({
     messages,
     conversation: {
@@ -1879,9 +1901,11 @@ async function handleGetMessages(request: Request, env: Env, id: string): Promis
       visibility: convo.visibility,
       collab_locked: !!convo.collab_locked,
       is_member: isOwner || isMember,
-      can_write: isOwner || (convo.visibility === "collab" && isMember),
+      can_write: isOwner || (convo.visibility === "collab" && isMember) || (isDm && isMember),
       collab_code: isOwner && convo.visibility === "collab" && !convo.collab_code_used ? convo.collab_code : null,
       collab_locked: !!convo.collab_locked,
+      members,
+      is_dm: isDm,
     },
   });
 }
@@ -1952,7 +1976,17 @@ async function handleCollabLive(request: Request, env: Env, id: string): Promise
 
   const isOwner = convo.user_id === user.id;
   const isShared = convo.visibility === "shared" || convo.visibility === "collab";
-  if (!isOwner && !isShared) return err("Access forbidden.", 403);
+  let isMember = false;
+  if (!isOwner && (convo.visibility === "collab" || convo.visibility === "dm")) {
+    isMember = !!(await env.DB.prepare(
+      "SELECT 1 AS ok FROM conversation_members WHERE conversation_id = ? AND user_id = ?"
+    )
+      .bind(id, user.id)
+      .first());
+  }
+  if (!isOwner && !isShared && !(convo.visibility === "dm" && isMember)) {
+    return err("Access forbidden.", 403);
+  }
 
   const pair = new WebSocketPair();
   const client = pair[0];
@@ -2076,6 +2110,219 @@ async function handleCollabLive(request: Request, env: Env, id: string): Promise
   return new Response(null, { status: 101, webSocket: client });
 }
 
+// ---------------------------------------------------------------------------
+// Friends + DM chats
+// ---------------------------------------------------------------------------
+
+function friendshipPair(a: string, b: string): [string, string] {
+  return a < b ? [a, b] : [b, a];
+}
+
+async function handleListFriends(request: Request, env: Env): Promise<Response> {
+  await ensureConversationColumns(env);
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  if (user.is_guest) return json({ friends: [], pending_in: [], pending_out: [] });
+
+  let rows: any[] = [];
+  try {
+    const q = await env.DB.prepare(
+      `SELECT f.id, f.user_a, f.user_b, f.requester_id, f.status, f.created_at, f.updated_at,
+              ua.username AS a_username, ua.display_name AS a_display_name, ua.avatar AS a_avatar,
+              ub.username AS b_username, ub.display_name AS b_display_name, ub.avatar AS b_avatar
+       FROM friendships f
+       JOIN users ua ON ua.id = f.user_a
+       JOIN users ub ON ub.id = f.user_b
+       WHERE f.user_a = ? OR f.user_b = ?
+       ORDER BY f.updated_at DESC`
+    )
+      .bind(user.id, user.id)
+      .all();
+    rows = q.results || [];
+  } catch {
+    rows = [];
+  }
+
+  const friends: any[] = [];
+  const pending_in: any[] = [];
+  const pending_out: any[] = [];
+
+  for (const r of rows) {
+    const peerIsA = r.user_b === user.id;
+    const peer = {
+      id: peerIsA ? r.user_a : r.user_b,
+      username: peerIsA ? r.a_username : r.b_username,
+      display_name: (peerIsA ? r.a_display_name : r.b_display_name) || (peerIsA ? r.a_username : r.b_username),
+      avatar: peerIsA ? r.a_avatar : r.b_avatar,
+    };
+    const item = { id: r.id, status: r.status, peer, created_at: r.created_at, updated_at: r.updated_at };
+    if (r.status === "accepted") friends.push(item);
+    else if (r.status === "pending") {
+      if (r.requester_id === user.id) pending_out.push(item);
+      else pending_in.push(item);
+    }
+  }
+
+  return json({ friends, pending_in, pending_out });
+}
+
+async function handleFriendRequest(request: Request, env: Env): Promise<Response> {
+  await ensureConversationColumns(env);
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  if (user.is_guest) return err("Save your account before adding friends.", 400);
+
+  const body = (await request.json().catch(() => null)) as { username?: string } | null;
+  const username = String(body?.username || "").trim().replace(/^@/, "");
+  if (!username || username.length < 2) return err("Enter a username.", 400);
+
+  const peer = await env.DB.prepare(
+    "SELECT id, username, display_name, avatar, is_guest FROM users WHERE lower(username) = lower(?)"
+  )
+    .bind(username)
+    .first<{ id: string; username: string; display_name: string | null; avatar: string | null; is_guest: number }>();
+  if (!peer) return err("User not found.", 404);
+  if (peer.id === user.id) return err("You can't add yourself.", 400);
+  if (peer.is_guest) return err("That account is a guest — they need to save it first.", 400);
+
+  const [user_a, user_b] = friendshipPair(user.id, peer.id);
+  const existing = await env.DB.prepare(
+    "SELECT id, status, requester_id FROM friendships WHERE user_a = ? AND user_b = ?"
+  )
+    .bind(user_a, user_b)
+    .first<{ id: string; status: string; requester_id: string }>();
+
+  if (existing?.status === "accepted") return err("You're already friends.", 409);
+  if (existing?.status === "pending") {
+    if (existing.requester_id === user.id) return err("Friend request already sent.", 409);
+    // They already requested us — auto-accept
+    await env.DB.prepare("UPDATE friendships SET status = 'accepted', updated_at = ? WHERE id = ?")
+      .bind(nowIso(), existing.id)
+      .run();
+    return json({ ok: true, status: "accepted", friendship_id: existing.id });
+  }
+
+  const id = crypto.randomUUID();
+  const ts = nowIso();
+  await env.DB.prepare(
+    "INSERT INTO friendships (id, user_a, user_b, requester_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'pending', ?, ?)"
+  )
+    .bind(id, user_a, user_b, user.id, ts, ts)
+    .run();
+
+  return json({ ok: true, status: "pending", friendship_id: id });
+}
+
+async function handleFriendRespond(request: Request, env: Env, friendshipId: string, action: "accept" | "reject"): Promise<Response> {
+  await ensureConversationColumns(env);
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+
+  const row = await env.DB.prepare(
+    "SELECT id, user_a, user_b, requester_id, status FROM friendships WHERE id = ?"
+  )
+    .bind(friendshipId)
+    .first<{ id: string; user_a: string; user_b: string; requester_id: string; status: string }>();
+  if (!row) return err("Request not found.", 404);
+  if (row.user_a !== user.id && row.user_b !== user.id) return err("Access forbidden.", 403);
+
+  if (action === "accept") {
+    if (row.status === "accepted") return json({ ok: true, status: "accepted" });
+    if (row.requester_id === user.id) return err("You sent this request — wait for them to accept.", 400);
+    await env.DB.prepare("UPDATE friendships SET status = 'accepted', updated_at = ? WHERE id = ?")
+      .bind(nowIso(), row.id)
+      .run();
+    return json({ ok: true, status: "accepted" });
+  }
+
+  // reject / cancel / unfriend
+  await env.DB.prepare("DELETE FROM friendships WHERE id = ?").bind(row.id).run();
+  return json({ ok: true, status: "removed" });
+}
+
+/** Open or create a DM conversation with an accepted friend. */
+async function handleOpenDm(request: Request, env: Env, friendshipId: string): Promise<Response> {
+  await ensureConversationColumns(env);
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+
+  const row = await env.DB.prepare(
+    "SELECT id, user_a, user_b, status FROM friendships WHERE id = ?"
+  )
+    .bind(friendshipId)
+    .first<{ id: string; user_a: string; user_b: string; status: string }>();
+  if (!row || row.status !== "accepted") return err("You're not friends with this user.", 403);
+  if (row.user_a !== user.id && row.user_b !== user.id) return err("Access forbidden.", 403);
+
+  const peerId = row.user_a === user.id ? row.user_b : row.user_a;
+  const peer = await env.DB.prepare(
+    "SELECT id, username, display_name, avatar FROM users WHERE id = ?"
+  )
+    .bind(peerId)
+    .first<{ id: string; username: string; display_name: string | null; avatar: string | null }>();
+  if (!peer) return err("User not found.", 404);
+
+  // Find existing DM between these two
+  let existing: { id: string; title: string } | null = null;
+  try {
+    existing = await env.DB.prepare(
+      `SELECT c.id, c.title FROM conversations c
+       JOIN conversation_members m1 ON m1.conversation_id = c.id AND m1.user_id = ?
+       JOIN conversation_members m2 ON m2.conversation_id = c.id AND m2.user_id = ?
+       WHERE c.visibility = 'dm'
+       LIMIT 1`
+    )
+      .bind(user.id, peerId)
+      .first<{ id: string; title: string }>();
+  } catch {
+    existing = null;
+  }
+
+  if (existing) {
+    return json({
+      conversation_id: existing.id,
+      title: existing.title,
+      peer: {
+        id: peer.id,
+        username: peer.username,
+        display_name: peer.display_name || peer.username,
+        avatar: peer.avatar,
+      },
+    });
+  }
+
+  const id = crypto.randomUUID();
+  const ts = nowIso();
+  const title = peer.display_name || peer.username;
+  await env.DB.prepare(
+    `INSERT INTO conversations (id, user_id, mistral_conversation_id, title, visibility, dm_peer_id, created_at, updated_at)
+     VALUES (?, ?, NULL, ?, 'dm', ?, ?, ?)`
+  )
+    .bind(id, user.id, title, peerId, ts, ts)
+    .run();
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO conversation_members (conversation_id, user_id, joined_at) VALUES (?, ?, ?)"
+  )
+    .bind(id, user.id, ts)
+    .run();
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO conversation_members (conversation_id, user_id, joined_at) VALUES (?, ?, ?)"
+  )
+    .bind(id, peerId, ts)
+    .run();
+
+  return json({
+    conversation_id: id,
+    title,
+    peer: {
+      id: peer.id,
+      username: peer.username,
+      display_name: peer.display_name || peer.username,
+      avatar: peer.avatar,
+    },
+  });
+}
+
 /** POST /api/conversations/:id/join  { code: "1234" } — accept collab invite */
 async function handleJoinCollab(request: Request, env: Env, id: string): Promise<Response> {
   await ensureConversationColumns(env);
@@ -2128,6 +2375,76 @@ interface ChatRequestBody {
   attachments?: AttachmentIn[];
 }
 
+/** Extract unique @handles from text (lowercase, no @). Supports many in one message. */
+function parseMentionHandles(text: string): string[] {
+  const found = new Set<string>();
+  const re = /(^|[^\w])@([a-zA-Z][\w.-]{0,31})\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text || ""))) {
+    found.add(m[2].toLowerCase());
+  }
+  return [...found];
+}
+
+/** Remove every @handle token, collapse leftover whitespace. */
+function stripMentionHandles(text: string): string {
+  return (text || "")
+    .replace(/(^|[^\w])@([a-zA-Z][\w.-]{0,31})\b/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+async function listCollabMembers(
+  env: Env,
+  conversationId: string,
+  ownerId: string
+): Promise<{ id: string; username: string; display_name: string; avatar: string | null; is_owner: boolean }[]> {
+  const members: { id: string; username: string; display_name: string; avatar: string | null; is_owner: boolean }[] = [];
+  // Owner first
+  try {
+    const owner = await env.DB.prepare(
+      "SELECT id, username, display_name, avatar FROM users WHERE id = ?"
+    )
+      .bind(ownerId)
+      .first<{ id: string; username: string; display_name: string | null; avatar: string | null }>();
+    if (owner) {
+      members.push({
+        id: owner.id,
+        username: owner.username,
+        display_name: owner.display_name || owner.username,
+        avatar: owner.avatar,
+        is_owner: true,
+      });
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const q = await env.DB.prepare(
+      `SELECT u.id, u.username, u.display_name, u.avatar
+       FROM conversation_members m
+       JOIN users u ON u.id = m.user_id
+       WHERE m.conversation_id = ? AND m.user_id != ?
+       ORDER BY m.joined_at ASC`
+    )
+      .bind(conversationId, ownerId)
+      .all();
+    for (const row of q.results || []) {
+      const r = row as any;
+      members.push({
+        id: r.id,
+        username: r.username,
+        display_name: r.display_name || r.username,
+        avatar: r.avatar || null,
+        is_owner: false,
+      });
+    }
+  } catch {
+    /* table may not exist */
+  }
+  return members;
+}
+
 async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
@@ -2172,19 +2489,22 @@ async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): P
       .bind(body.conversation_id)
       .first<ConversationRow>();
     if (!convo) return err("Conversation not found.", 404);
-    // Non-owners may only post into a collab chat after joining with the code.
+    // Non-owners: collab members or DM peers may post
     if (convo.user_id !== user.id) {
-      if (convo.visibility !== "collab") {
-        return err("Access forbidden. Ask the owner to share this chat for collaboration.", 403);
-      }
       await ensureConversationColumns(env);
       const mem = await env.DB.prepare(
         "SELECT 1 AS ok FROM conversation_members WHERE conversation_id = ? AND user_id = ?"
       )
         .bind(convo.id, user.id)
         .first();
-      if (!mem) {
-        return err("Join this collaboration with the 4-digit code before sending messages.", 403);
+      if (convo.visibility === "dm") {
+        if (!mem) return err("Access forbidden.", 403);
+      } else if (convo.visibility === "collab") {
+        if (!mem) {
+          return err("Join this collaboration with the 4-digit code before sending messages.", 403);
+        }
+      } else {
+        return err("Access forbidden. Ask the owner to share this chat for collaboration.", 403);
       }
     }
   } else {
@@ -2227,10 +2547,11 @@ async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): P
     }
   }
 
-  // Collab group chat: Paul only replies when explicitly tagged with @paul
-  // (case-insensitive). Plain messages stay human-to-human.
+  // Collab group chat: parse all @mentions. Paul only replies when @paul is
+  // among them (case-insensitive). Other @username tags are for humans only.
   const isCollab = (convo as any).visibility === "collab";
-  const mentionsPaul = /(^|[^\w])@paul\b/i.test(body.message || "");
+  const mentionHandles = parseMentionHandles(body.message || "");
+  const mentionsPaul = mentionHandles.some((h) => h === "paul");
   if (isCollab && !mentionsPaul) {
     await env.DB.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?")
       .bind(nowIso(), convo.id)
@@ -2241,6 +2562,7 @@ async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): P
       reply: null,
       attachments: [],
       paul_skipped: true,
+      mentions: mentionHandles,
     });
   }
 
@@ -2249,8 +2571,9 @@ async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): P
   // chat ("who am I?") had no memory in context at all.
   const useMemory = memoryEnabled(user);
   const memoryRows = useMemory ? await listMemoryRows(env, user.id) : [];
-  // Strip the @paul tag from what Paul sees so it doesn't pollute the prompt
-  const cleanMessage = (body.message || "").replace(/(^|[^\w])@paul\b/gi, "$1").replace(/\s{2,}/g, " ").trim();
+  // Strip ALL @handles from what Paul sees so tags don't pollute the prompt
+  // (keeps multi-mention messages readable: "@paul @alice what's the quote?")
+  const cleanMessage = stripMentionHandles(body.message || "");
   const outgoingMessage = buildMemoryPreamble(memoryRows) + (cleanMessage || body.message || "");
 
   try {
@@ -2492,6 +2815,18 @@ export default {
         resp = await handleSetConversationVisibility(request, env, path.split("/")[3]);
       } else if (path.match(/^\/api\/conversations\/[^/]+\/join$/) && request.method === "POST") {
         resp = await handleJoinCollab(request, env, path.split("/")[3]);
+      } else if (path === "/api/friends" && request.method === "GET") {
+        resp = await handleListFriends(request, env);
+      } else if (path === "/api/friends/request" && request.method === "POST") {
+        resp = await handleFriendRequest(request, env);
+      } else if (path.match(/^\/api\/friends\/[^/]+\/accept$/) && request.method === "POST") {
+        resp = await handleFriendRespond(request, env, path.split("/")[3], "accept");
+      } else if (path.match(/^\/api\/friends\/[^/]+\/reject$/) && request.method === "POST") {
+        resp = await handleFriendRespond(request, env, path.split("/")[3], "reject");
+      } else if (path.match(/^\/api\/friends\/[^/]+$/) && request.method === "DELETE") {
+        resp = await handleFriendRespond(request, env, path.split("/")[3], "reject");
+      } else if (path.match(/^\/api\/friends\/[^/]+\/dm$/) && request.method === "POST") {
+        resp = await handleOpenDm(request, env, path.split("/")[3]);
       } else if (path.match(/^\/api\/conversations\/[^/]+\/files$/) && request.method === "GET") {
         resp = await handleGetConversationFiles(request, env, path.split("/")[3]);
       } else if (path.match(/^\/api\/conversations\/[^/]+\/usage$/) && request.method === "GET") {
