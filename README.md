@@ -44,7 +44,7 @@ Frontend is a Vite TypeScript SPA; the Worker owns auth, sessions, chat, tools, 
 | Cloudflare account | Yes | Worker + D1 |
 | [Resend](https://resend.com/) API key | Soft-delete email + password reset + leads | Email |
 | Google OAuth client | Optional | Sign in with Google |
-| ElevenLabs or Workers AI TTS | Optional | High-quality voice (`/api/tts` returns **501** if not configured) |
+| ElevenLabs API key **or** Workers AI | Optional | High-quality voice (`/api/tts` → **501** until configured; see below) |
 
 ---
 
@@ -156,6 +156,29 @@ API: `PATCH /api/memory/:id` with `{ "title": "...", "content": "..." }`.
 ## Tools (in-app)
 
 Converter, weather, calculator, image tools, OCR, PDF/DOCX helpers — labels follow the active UI language where wired.
+
+---
+
+## High-quality voice (TTS)
+
+`/api/tts` tries, in order:
+
+1. **ElevenLabs** — set secret `ELEVENLABS_API_KEY` (best quality)
+2. **Workers AI binding** — `[ai] binding = "AI"` in `wrangler.toml` (already present); uses MeloTTS then Deepgram Aura
+3. **Workers AI REST** — secrets `CLOUDFLARE_AI_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`
+
+```bash
+cd worker
+npx wrangler secret put ELEVENLABS_API_KEY   # recommended
+npx wrangler deploy
+```
+
+Templates for local secrets and frontend API base:
+
+- `worker/.dev.vars.example` → copy to `worker/.dev.vars`
+- `app/.env.example` → copy to `app/.env` (`VITE_API_BASE=https://api.afmarbre.com`)
+
+Full steps: `DEPLOY_CHECKLIST.md` → “High-quality TTS (v8.1)”.
 
 ---
 

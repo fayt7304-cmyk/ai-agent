@@ -17,6 +17,7 @@
 import { API_BASE, authHeaders } from "../api";
 import { getPreferences, type VoiceStyle } from "./preferences";
 
+/** ElevenLabs voice IDs used when high-quality voice is on (proxied via /api/tts). */
 const VOICE_IDS: Record<VoiceStyle, string> = {
   natural: "EXAVITQu4vr4xnSDxMaL", // Sarah
   formal: "JBFqnCBsd6RMkjVDRZzb", // George

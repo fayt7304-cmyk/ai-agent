@@ -24,24 +24,25 @@ export interface Env {
   /** Optional: max chat messages a single user can send in a rolling 24h window.
    *  Unset = unlimited. */
   MAX_MESSAGES_PER_DAY?: string;
-  /** Optional: ElevenLabs key for the /api/tts studio-voice proxy.
+  /** Optional: ElevenLabs key for /api/tts (best quality). Preferred when set.
    *  Set with: npx wrangler secret put ELEVENLABS_API_KEY
    *  Never put this in code or in wrangler.toml [vars]. */
   ELEVENLABS_API_KEY?: string;
-  /** Optional override for the ElevenLabs model id (default: eleven_turbo_v2_5). */
+  /** Optional override for the ElevenLabs model id (default tries multilingual, turbo, flash). */
   ELEVENLABS_MODEL?: string;
-  /** Optional: use Cloudflare Workers AI (eleven-multilingual) instead of calling
-   *  ElevenLabs directly. Needs BOTH of these:
+  /** Optional: Workers AI REST path when the AI binding is unavailable.
    *    npx wrangler secret put CLOUDFLARE_AI_TOKEN
    *    npx wrangler secret put CLOUDFLARE_ACCOUNT_ID
-   *  When both are present this path is preferred. */
+   *  (no trailing spaces/newlines on ACCOUNT_ID) */
   CLOUDFLARE_AI_TOKEN?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
-  /** Optional: override the TTS model id used on the Cloudflare path. */
+  /** Optional: override Workers AI TTS model. Default tries:
+   *  @cf/myshell-ai/melotts → @cf/deepgram/aura-2-en|es → @cf/deepgram/aura-1
+   *  There is no ElevenLabs model on Workers AI — do not use @cf/elevenlabs/... */
   TTS_MODEL?: string;
   /**
    * Workers AI binding (`[ai] binding = "AI"` in wrangler.toml).
-   * Preferred path for `elevenlabs/eleven-multilingual-v2`.
+   * Used for MeloTTS / Deepgram Aura when ElevenLabs key is absent.
    */
   AI?: { run: (model: string, input: Record<string, unknown>) => Promise<unknown> };
 }

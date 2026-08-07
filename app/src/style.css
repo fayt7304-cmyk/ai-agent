@@ -4641,3 +4641,413 @@ html[dir="rtl"] .hourly-scroll {
     min-height: 44px;
   }
 }
+
+/* ---- v8.1.1: settings rows next to labels + memory detail stack ----------- */
+
+/* Multi-block cards must NOT use the 3-column label|control grid */
+.settings-card.memory-detail,
+.settings-card#memory-browser,
+.settings-card:has(.memory-list),
+.settings-card:has(#uploads-list),
+.settings-card:has(.memory-add-row),
+.settings-card:has(.sessions-list),
+.settings-card:has(.file-list) {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 12px;
+  grid-template-columns: none !important;
+}
+
+/* Label + control on one horizontal row */
+.settings-card-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px;
+  width: 100%;
+  grid-column: 1 / -1;
+}
+
+.settings-card-row > div:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: start;
+}
+
+.settings-card-row > .switch,
+.settings-card-row > button,
+.settings-card-row > .settings-card-actions,
+.settings-card-row > .secondary-btn,
+.settings-card-row > .danger-btn,
+.settings-card-row > .primary {
+  flex: 0 0 auto;
+  margin: 0 !important;
+  align-self: center;
+  justify-self: unset;
+  grid-column: unset;
+  grid-row: unset;
+}
+
+.settings-card-actions {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* When title/desc are direct children of the grid card (no row wrapper),
+   keep them in column 1 and push sibling control to the end */
+.settings-card > .settings-card-title {
+  grid-column: 1;
+  grid-row: 1;
+  text-align: start;
+}
+.settings-card > .settings-card-desc {
+  grid-column: 1;
+  grid-row: 2;
+  text-align: start;
+}
+
+/* ---- Memory detail: vertical stack, talk composer at bottom ---- */
+.memory-detail {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 0 !important;
+  padding: 12px 4px 20px !important;
+}
+
+#memory-view-mode {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 0;
+}
+
+.memory-detail-head {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+.memory-detail-titles {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: start;
+}
+
+.memory-detail-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-inline-start: auto;
+}
+
+.memory-section {
+  display: block;
+  width: 100%;
+  margin-top: 16px;
+  text-align: start;
+}
+
+.memory-section-label {
+  display: block;
+  text-align: start;
+}
+
+.memory-summary,
+.memory-detail-body {
+  width: 100%;
+  text-align: start;
+}
+
+/* Talk-to-Paul stays at the bottom of the detail view */
+.memory-talk-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 20px;
+  order: 99;
+}
+
+.memory-talk-hint {
+  width: 100%;
+  text-align: start;
+  order: 100;
+}
+
+.memory-add-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.memory-actions-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+  justify-content: flex-start;
+}
+
+/* Toggle: reliable hit target + visible state on PC and mobile */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 28px;
+  min-width: 48px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+  vertical-align: middle;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.switch .switch-thumb {
+  position: absolute;
+  top: 3px;
+  inset-inline-start: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  transition: transform 0.18s ease, background 0.18s ease;
+  pointer-events: none;
+}
+
+.switch input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  inset: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.switch .switch-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.switch:has(input[type="checkbox"]:checked),
+.switch.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switch:has(input[type="checkbox"]:checked) .switch-thumb,
+.switch.on .switch-thumb {
+  transform: translateX(20px);
+  background: #1a1814;
+}
+
+html[dir="rtl"] .switch:has(input[type="checkbox"]:checked) .switch-thumb,
+html[dir="rtl"] .switch.on .switch-thumb {
+  transform: translateX(-20px);
+}
+
+/* Privacy / Account / General: never center the whole card content */
+.settings-panel,
+.settings-panels,
+.settings-card {
+  text-align: start;
+}
+
+.settings-panels button.primary,
+.settings-panels .danger-btn,
+.settings-panels .secondary-btn {
+  align-self: auto;
+}
+
+/* Mobile: keep label | control on one row when possible; wrap only if needed */
+@media (max-width: 768px) {
+  .settings-card-row {
+    flex-wrap: nowrap;
+    gap: 12px;
+  }
+  .settings-card-row > div:first-child {
+    flex: 1 1 auto;
+  }
+  .settings-card-actions {
+    justify-content: flex-end;
+  }
+  /* Full-width destructive only when alone and very narrow */
+  .settings-card.danger-card .settings-card-row {
+    flex-wrap: wrap;
+  }
+  .settings-card.danger-card .settings-card-row > .danger-btn {
+    width: 100%;
+    margin-top: 4px;
+  }
+
+  .memory-detail-head {
+    flex-wrap: wrap;
+  }
+  .memory-detail-actions {
+    width: 100%;
+    justify-content: flex-end;
+    margin-inline-start: 0;
+  }
+  .memory-talk-row {
+    margin-top: 16px;
+  }
+  .memory-talk-row input {
+    font-size: 16px; /* no iOS zoom */
+    min-height: 40px;
+  }
+  .switch {
+    width: 52px;
+    height: 30px;
+    min-width: 52px;
+  }
+  .switch .switch-thumb {
+    width: 22px;
+    height: 22px;
+    top: 3px;
+  }
+  .switch:has(input[type="checkbox"]:checked) .switch-thumb,
+  .switch.on .switch-thumb {
+    transform: translateX(22px);
+  }
+  html[dir="rtl"] .switch:has(input[type="checkbox"]:checked) .switch-thumb,
+  html[dir="rtl"] .switch.on .switch-thumb {
+    transform: translateX(-22px);
+  }
+}
+
+/* ---- Motion (animation) control: always visible on mobile + desktop ---- */
+.settings-card.settings-card-motion {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 12px !important;
+  grid-template-columns: none !important;
+}
+
+.settings-card-motion > .settings-card-row {
+  width: 100%;
+}
+
+.settings-card-motion > .segmented,
+.segmented.segmented-full {
+  display: flex !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box;
+  grid-column: unset !important;
+  grid-row: unset !important;
+  justify-self: stretch !important;
+  align-self: stretch !important;
+}
+
+.segmented.segmented-full button {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: center;
+  padding: 10px 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .settings-card.settings-card-motion {
+    display: flex !important;
+    flex-direction: column !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .settings-card-motion > .segmented,
+  .segmented.segmented-full {
+    display: flex !important;
+    width: 100% !important;
+    min-height: 44px;
+  }
+  .segmented.segmented-full button {
+    min-height: 44px;
+    font-size: 14px;
+    padding: 10px 6px;
+  }
+  /* Any other full-width segmented under a settings card on mobile */
+  .settings-card > .segmented:not(.segmented-icons) {
+    grid-column: 1 / -1 !important;
+    grid-row: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    justify-self: stretch !important;
+    display: flex !important;
+  }
+}
+
+/* ---- Mobile settings tabs: more space (tool-tile style) ---- */
+@media (max-width: 768px) {
+  .settings-nav-tabs {
+    display: flex !important;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 10px !important;
+    padding: 6px 2px 10px !important;
+    overflow-x: visible;
+  }
+
+  .settings-nav-btn {
+    flex: 1 1 calc(50% - 8px) !important;
+    min-width: calc(50% - 8px) !important;
+    max-width: calc(50% - 8px);
+    min-height: 44px !important;
+    padding: 10px 12px !important;
+    font-size: 14px !important;
+    border-radius: 12px !important;
+    border: 1px solid var(--border) !important;
+    background: var(--bg) !important;
+    justify-content: center;
+    text-align: center;
+    box-sizing: border-box;
+  }
+
+  .settings-nav-btn.active {
+    background: var(--accent-bg) !important;
+    border-color: var(--accent) !important;
+    color: var(--accent-strong) !important;
+    font-weight: 600;
+  }
+
+  /* Profile section rows: more vertical breathing room like tool cards */
+  .settings-panels {
+    gap: 4px !important;
+  }
+  .settings-panel-title {
+    margin-bottom: 12px !important;
+  }
+  .settings-subheading {
+    margin-top: 24px !important;
+    margin-bottom: 8px !important;
+  }
+  .settings-card {
+    padding: 16px 2px !important;
+    row-gap: 8px;
+  }
+}

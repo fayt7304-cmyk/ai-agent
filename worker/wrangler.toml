@@ -2,7 +2,7 @@ name = "mistral-agent-chat"
 main = "src/index.ts"
 compatibility_date = "2026-07-31"
 
-# Workers AI binding — used for ElevenLabs multilingual TTS
+# Workers AI binding — MeloTTS / Deepgram Aura for high-quality TTS when no ElevenLabs key
 [ai]
 binding = "AI"
 

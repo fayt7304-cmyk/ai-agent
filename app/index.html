@@ -438,12 +438,14 @@
             </select>
           </div>
 
-          <div class="settings-card">
-            <div>
-              <div class="settings-card-title" data-i18n="settings.animationLevel">Motion</div>
-              <div class="settings-card-desc" data-i18n="settings.animationLevelDesc">Reduce animation in streaming responses and other interface elements.</div>
+          <div class="settings-card settings-card-motion">
+            <div class="settings-card-row">
+              <div>
+                <div class="settings-card-title" data-i18n="settings.animationLevel">Motion</div>
+                <div class="settings-card-desc" data-i18n="settings.animationLevelDesc">Reduce animation in streaming responses and other interface elements.</div>
+              </div>
             </div>
-            <div class="segmented" id="animation-segmented">
+            <div class="segmented segmented-full" id="animation-segmented">
               <button type="button" data-animation-level="normal" data-i18n="settings.animNormal">System</button>
               <button type="button" data-animation-level="reduced" data-i18n="settings.animReduced">Reduced</button>
               <button type="button" data-animation-level="none" data-i18n="settings.animNone">None</button>

@@ -95,3 +95,81 @@ npx wrangler secret put CLOUDFLARE_ACCOUNT_ID   # no trailing spaces/newlines
 # optional: TTS_MODEL to override @cf/myshell-ai/melotts
 ```
 With neither set, "high-quality voice" falls back to the browser voice silently.
+
+---
+
+# High-quality TTS (v8.1)
+
+`/api/tts` returns **501** until at least one path is configured. The app then falls back to the browser voice.
+
+## Option A — ElevenLabs (best quality)
+
+1. Create a key at https://elevenlabs.io  
+2. On the machine that deploys the Worker:
+
+```bash
+cd worker
+npx wrangler secret put ELEVENLABS_API_KEY
+# optional:
+# npx wrangler secret put ELEVENLABS_MODEL
+# value e.g. eleven_multilingual_v2
+```
+
+3. Redeploy: `npx wrangler deploy`  
+4. In the app: Settings → General → turn **High-quality voice** on.
+
+Voice styles map to ElevenLabs IDs in `app/src/lib/speech.ts` (`VOICE_IDS`).
+
+## Option B — Workers AI only (no ElevenLabs bill)
+
+`wrangler.toml` already has:
+
+```toml
+[ai]
+binding = "AI"
+```
+
+That alone is enough for the binding path. Models tried in order:
+
+1. `TTS_MODEL` if set  
+2. `@cf/myshell-ai/melotts`  
+3. `@cf/deepgram/aura-2-en` or `aura-2-es`  
+4. `@cf/deepgram/aura-1`
+
+Optional REST fallback (if the binding is missing on some plans):
+
+```bash
+npx wrangler secret put CLOUDFLARE_AI_TOKEN    # Workers AI permission
+npx wrangler secret put CLOUDFLARE_ACCOUNT_ID  # no trailing newline
+# optional:
+# npx wrangler secret put TTS_MODEL
+# value: @cf/myshell-ai/melotts
+```
+
+**Do not** use `@cf/elevenlabs/...` — that model does not exist on Workers AI (route error 7000).
+
+## Local files (paths that were easy to miss)
+
+| Path | Purpose |
+|------|---------|
+| `app/.env` | Copy from `app/.env.example` — set `VITE_API_BASE` before `npm run build` |
+| `app/.env.example` | Template for frontend API origin |
+| `worker/.dev.vars` | Copy from `worker/.dev.vars.example` — secrets for `wrangler dev` |
+| `worker/.dev.vars.example` | Template including TTS secrets |
+| `worker/wrangler.toml` | `[ai]` binding, D1, public `[vars]` |
+| `worker/src/index.ts` | `handleTts` — ElevenLabs → MeloTTS → Aura |
+| `app/src/lib/speech.ts` | Client TTS + `VOICE_IDS` + fallback delays |
+| `app/src/api.ts` | `API_BASE` resolution (`VITE_API_BASE` / `localStorage api-base`) |
+
+## Quick verify
+
+```bash
+# Worker alive
+curl -i https://api.afmarbre.com/api/auth/me
+
+# After login, high-quality voice should return audio/mpeg (not 501)
+# Check Worker logs:
+npx wrangler tail
+```
+
+If you still see 501 with Option B, open the Cloudflare dashboard → Workers AI and confirm the account has Workers AI enabled and usage is allowed.

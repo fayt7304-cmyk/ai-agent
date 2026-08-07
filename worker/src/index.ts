@@ -1031,10 +1031,13 @@ async function handleListUploads(request: Request, env: Env): Promise<Response> 
  * POST /api/tts  { text, voiceId?, language?, speed? } -> audio/mpeg
  *
  * Preferred order:
- *   1. Workers AI binding  env.AI.run("elevenlabs/eleven-multilingual-v2", …)
- *   2. Workers AI REST     (CLOUDFLARE_AI_TOKEN + CLOUDFLARE_ACCOUNT_ID)
- *   3. ElevenLabs direct   (ELEVENLABS_API_KEY)
+ *   1. ElevenLabs direct   (ELEVENLABS_API_KEY) — best quality
+ *   2. Workers AI binding  env.AI  (MeloTTS / Deepgram Aura — real CF models)
+ *   3. Workers AI REST     (CLOUDFLARE_AI_TOKEN + CLOUDFLARE_ACCOUNT_ID)
  * When none work → 501 so the app falls back to the device voice.
+ *
+ * Note: There is no ElevenLabs model on Workers AI. Do not use
+ * @cf/elevenlabs/... — that returns route 7000 / empty audio.
  */
 async function handleTts(request: Request, env: Env): Promise<Response> {
   const user = await getUserFromRequest(env, request);
@@ -1054,7 +1057,7 @@ async function handleTts(request: Request, env: Env): Promise<Response> {
   const voiceId =
     typeof body?.voiceId === "string" && /^[A-Za-z0-9]{8,40}$/.test(body.voiceId)
       ? body.voiceId
-      : "JBFqnCBsd6RMkjVDRzZb"; // ElevenLabs default from CF model docs
+      : "JBFqnCBsd6RMkjVDRZzb"; // ElevenLabs George
   const speedRaw = Number(body?.speed);
   const speed = Number.isFinite(speedRaw) ? Math.min(1.2, Math.max(0.7, speedRaw)) : 1.0;
   const language = typeof body?.language === "string" ? body.language : "en";
@@ -1067,7 +1070,6 @@ async function handleTts(request: Request, env: Env): Promise<Response> {
     });
 
   function bytesFromBase64(b64: string): Uint8Array {
-    // Accept raw base64 or a data:audio/...;base64, URI
     const pure = b64.includes(",") ? b64.slice(b64.indexOf(",") + 1) : b64;
     const binary = atob(pure);
     const bytes = new Uint8Array(binary.length);
@@ -1077,10 +1079,6 @@ async function handleTts(request: Request, env: Env): Promise<Response> {
 
   function extractAudioFromAiResult(data: any): Uint8Array | null {
     if (!data) return null;
-    // Workers AI / ElevenLabs binding shapes:
-    //  - string data URI or raw base64
-    //  - { audio: "..." }
-    //  - { result: { audio: "..." } }
     if (typeof data === "string" && data.length > 32) return bytesFromBase64(data);
     const candidates = [
       data.audio,
@@ -1091,85 +1089,14 @@ async function handleTts(request: Request, env: Env): Promise<Response> {
     for (const c of candidates) {
       if (typeof c === "string" && c.length > 32) return bytesFromBase64(c);
     }
-    // Some runtimes return ArrayBuffer / Uint8Array
     if (data instanceof ArrayBuffer) return new Uint8Array(data);
-    if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer);
+    if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer as ArrayBuffer);
     return null;
   }
 
-  const elevenPayload = {
-    text: input,
-    voice_id: voiceId,
-    language_code: lang2,
-    output_format: "mp3_44100_128",
-  };
-
-  // Model id: dashboard uses "elevenlabs/eleven-multilingual-v2"
-  // REST often wants "@cf/elevenlabs/eleven-multilingual-v2"
-  const bindingModel =
-    env.TTS_MODEL?.trim() || "elevenlabs/eleven-multilingual-v2";
-  const restModel = bindingModel.startsWith("@cf/")
-    ? bindingModel
-    : `@cf/${bindingModel.replace(/^@cf\//, "")}`;
-
   let lastDetail = "";
 
-  // --- Path 1: Workers AI binding (env.AI) — what the CF dashboard Quick Start uses
-  if (env.AI && typeof env.AI.run === "function") {
-    try {
-      const result = await env.AI.run(bindingModel, {
-        ...elevenPayload,
-        // Some model wrappers also accept these aliases
-        voiceId,
-        language: lang2,
-      });
-      const bytes = extractAudioFromAiResult(result);
-      if (bytes && bytes.length) {
-        return audio(bytes);
-      }
-      lastDetail = `AI binding returned no audio: ${JSON.stringify(result)?.slice(0, 200)}`;
-      console.log("TTS: AI binding empty", lastDetail);
-    } catch (e: any) {
-      lastDetail = String(e?.message || e).slice(0, 300);
-      console.log("TTS: AI binding failed", lastDetail);
-    }
-  }
-
-  // --- Path 2: Workers AI REST (token + account)
-  const cfToken = env.CLOUDFLARE_AI_TOKEN?.trim();
-  const cfAccount = env.CLOUDFLARE_ACCOUNT_ID?.trim();
-  if (cfToken && cfAccount) {
-    const url = `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/ai/run/${restModel}`;
-    try {
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${cfToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(elevenPayload),
-      });
-      if (resp.ok) {
-        const contentType = resp.headers.get("Content-Type") || "";
-        if (contentType.includes("application/json")) {
-          const data: any = await resp.json().catch(() => null);
-          const bytes = extractAudioFromAiResult(data) || extractAudioFromAiResult(data?.result);
-          if (bytes && bytes.length) return audio(bytes);
-          lastDetail = `REST JSON had no audio: ${JSON.stringify(data)?.slice(0, 200)}`;
-        } else {
-          return audio(resp.body!);
-        }
-      } else {
-        lastDetail = (await resp.text().catch(() => "")).slice(0, 300);
-        console.log("TTS: Workers AI REST failed", resp.status, restModel, lastDetail);
-      }
-    } catch (e: any) {
-      lastDetail = String(e?.message || e).slice(0, 300);
-      console.log("TTS: Workers AI REST exception", lastDetail);
-    }
-  }
-
-  // --- Path 3: ElevenLabs direct API
+  // --- Path 1: ElevenLabs direct (best quality when key is set)
   const elevenKey = env.ELEVENLABS_API_KEY?.trim();
   if (elevenKey) {
     const models = Array.from(
@@ -1178,37 +1105,130 @@ async function handleTts(request: Request, env: Env): Promise<Response> {
           env.ELEVENLABS_MODEL?.trim(),
           "eleven_multilingual_v2",
           "eleven_turbo_v2_5",
+          "eleven_flash_v2_5",
         ].filter(Boolean) as string[]
       )
     );
     for (const model of models) {
       for (const withSpeed of [true, false]) {
-        const resp = await fetch(
-          `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=mp3_44100_128&optimize_streaming_latency=3`,
-          {
-            method: "POST",
-            headers: {
-              "xi-api-key": elevenKey,
-              "Content-Type": "application/json",
-              Accept: "audio/mpeg",
-            },
-            body: JSON.stringify({
-              text: input,
-              model_id: model,
-              language_code: lang2 === "en" ? undefined : lang2,
-              voice_settings: {
-                stability: 0.5,
-                similarity_boost: 0.75,
-                use_speaker_boost: true,
-                ...(withSpeed ? { speed } : {}),
+        try {
+          const resp = await fetch(
+            `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=mp3_44100_128&optimize_streaming_latency=3`,
+            {
+              method: "POST",
+              headers: {
+                "xi-api-key": elevenKey,
+                "Content-Type": "application/json",
+                Accept: "audio/mpeg",
               },
-            }),
+              body: JSON.stringify({
+                text: input,
+                model_id: model,
+                language_code: lang2 === "en" ? undefined : lang2,
+                voice_settings: {
+                  stability: 0.5,
+                  similarity_boost: 0.75,
+                  use_speaker_boost: true,
+                  ...(withSpeed ? { speed } : {}),
+                },
+              }),
+            }
+          );
+          if (resp.ok) return audio(resp.body!);
+          lastDetail = (await resp.text().catch(() => "")).slice(0, 300);
+          console.log("TTS: ElevenLabs failed", model, withSpeed, resp.status, lastDetail);
+          if ([401, 402, 403, 429].includes(resp.status)) break;
+        } catch (e: any) {
+          lastDetail = String(e?.message || e).slice(0, 300);
+          console.log("TTS: ElevenLabs exception", lastDetail);
+        }
+      }
+    }
+  }
+
+  // Real Workers AI TTS models (no ElevenLabs on CF Workers AI catalog)
+  // Override with env.TTS_MODEL if you need a specific one.
+  const workersAiModels = Array.from(
+    new Set(
+      [
+        env.TTS_MODEL?.trim(),
+        "@cf/myshell-ai/melotts",
+        // English-focused Deepgram Aura; good fallback when MeloTTS fails
+        lang2 === "es" ? "@cf/deepgram/aura-2-es" : "@cf/deepgram/aura-2-en",
+        "@cf/deepgram/aura-1",
+      ].filter(Boolean) as string[]
+    )
+  );
+
+  function payloadForWorkersModel(model: string): Record<string, unknown> {
+    // MeloTTS expects { prompt, lang }
+    if (model.includes("melotts")) {
+      return { prompt: input, lang: lang2 };
+    }
+    // Deepgram Aura expects { text } (and optional speaker on some variants)
+    return { text: input };
+  }
+
+  // --- Path 2: Workers AI binding (env.AI from wrangler [ai])
+  if (env.AI && typeof env.AI.run === "function") {
+    for (const model of workersAiModels) {
+      const bindingId = model.replace(/^@cf\//, "");
+      try {
+        const result = await env.AI.run(bindingId, payloadForWorkersModel(model));
+        const bytes = extractAudioFromAiResult(result);
+        if (bytes && bytes.length) return audio(bytes);
+        // Binary-ish results from some runtimes
+        if (result && typeof (result as any).arrayBuffer === "function") {
+          const buf = await (result as Response).arrayBuffer();
+          if (buf.byteLength) return audio(new Uint8Array(buf));
+        }
+        lastDetail = `AI binding empty for ${bindingId}: ${JSON.stringify(result)?.slice(0, 180)}`;
+        console.log("TTS: AI binding empty", lastDetail);
+      } catch (e: any) {
+        lastDetail = String(e?.message || e).slice(0, 300);
+        console.log("TTS: AI binding failed", bindingId, lastDetail);
+      }
+    }
+  }
+
+  // --- Path 3: Workers AI REST (token + account)
+  const cfToken = env.CLOUDFLARE_AI_TOKEN?.trim();
+  const cfAccount = env.CLOUDFLARE_ACCOUNT_ID?.trim();
+  if (cfToken && cfAccount) {
+    for (const model of workersAiModels) {
+      const restModel = model.startsWith("@cf/") ? model : `@cf/${model}`;
+      const url = `https://api.cloudflare.com/client/v4/accounts/${cfAccount}/ai/run/${restModel}`;
+      try {
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${cfToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payloadForWorkersModel(model)),
+        });
+        if (resp.ok) {
+          const contentType = resp.headers.get("Content-Type") || "";
+          if (contentType.includes("application/json")) {
+            const data: any = await resp.json().catch(() => null);
+            const bytes = extractAudioFromAiResult(data) || extractAudioFromAiResult(data?.result);
+            if (bytes && bytes.length) return audio(bytes);
+            lastDetail = `REST JSON had no audio (${restModel}): ${JSON.stringify(data)?.slice(0, 180)}`;
+          } else if (contentType.includes("audio") || contentType.includes("octet-stream")) {
+            return audio(resp.body!);
+          } else {
+            // Some endpoints still return binary without a clear type
+            const buf = await resp.arrayBuffer();
+            if (buf.byteLength > 64) return audio(new Uint8Array(buf));
+            lastDetail = `REST ok but empty body (${restModel})`;
           }
-        );
-        if (resp.ok) return audio(resp.body!);
-        lastDetail = (await resp.text().catch(() => "")).slice(0, 300);
-        console.log("TTS: ElevenLabs failed", model, withSpeed, resp.status, lastDetail);
-        if ([401, 402, 403, 429].includes(resp.status)) break;
+        } else {
+          lastDetail = (await resp.text().catch(() => "")).slice(0, 300);
+          console.log("TTS: Workers AI REST failed", resp.status, restModel, lastDetail);
+        }
+      } catch (e: any) {
+        lastDetail = String(e?.message || e).slice(0, 300);
+        console.log("TTS: Workers AI REST exception", restModel, lastDetail);
       }
     }
   }
