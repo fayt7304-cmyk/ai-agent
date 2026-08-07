@@ -5538,6 +5538,19 @@ html::-webkit-scrollbar-thumb:hover,
   background: color-mix(in srgb, var(--text-secondary) 75%, transparent);
 }
 
+/* WhatsApp-style group chat: avatar + name above each bubble */
+.messages.is-collab .msg-row.user,
+.messages.is-collab .msg-row.agent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.messages.is-collab .msg-row.user {
+  align-items: flex-end;
+}
+.messages.is-collab .msg-row.agent {
+  align-items: flex-start;
+}
 .msg-sender-head {
   display: inline-flex;
   align-items: center;
@@ -5546,9 +5559,13 @@ html::-webkit-scrollbar-thumb:hover,
   background: transparent;
   color: var(--text);
   cursor: pointer;
-  padding: 0 0 6px;
+  padding: 0 2px 2px;
   font: inherit;
   max-width: 100%;
+  border-radius: 8px;
+}
+.msg-sender-head:hover {
+  opacity: 0.9;
 }
 .msg-sender-avatar {
   width: 28px;
@@ -5563,6 +5580,7 @@ html::-webkit-scrollbar-thumb:hover,
   font-size: 12px;
   font-weight: 600;
   flex-shrink: 0;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
 }
 .msg-sender-avatar img {
   width: 100%;
@@ -5577,6 +5595,22 @@ html::-webkit-scrollbar-thumb:hover,
 .msg-row.user .msg-sender-head,
 .msg-row.agent .msg-sender-head {
   margin-inline-start: 2px;
+}
+.messages.is-collab .msg-row.user .msg-sender-head {
+  flex-direction: row-reverse;
+  margin-inline-end: 2px;
+  margin-inline-start: 0;
+}
+.manage-chat-option.is-locked,
+.manage-chat-option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: auto;
+}
+.manage-chat-option.is-locked .manage-chat-option-hint::after {
+  content: " (locked)";
+  font-weight: 600;
+  color: var(--text-secondary);
 }
 
 .sender-popup {

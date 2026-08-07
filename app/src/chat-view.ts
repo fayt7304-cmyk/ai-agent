@@ -157,11 +157,25 @@ let currentCollabCode: string | null = null;
 function syncManageChatPanel() {
   const box = document.getElementById("manage-collab-box") as HTMLDivElement | null;
   const codeEl = document.getElementById("manage-collab-code") as HTMLElement | null;
+  const convo = conversations.find((c) => c.id === currentConversationId);
+  const locked = !!convo?.collab_locked;
   document.querySelectorAll<HTMLButtonElement>(".manage-chat-option").forEach((btn) => {
     const v = btn.dataset.visibility as Visibility;
     btn.classList.toggle("is-active", v === currentVisibility);
     const check = btn.querySelector(".manage-chat-check");
     if (check) check.textContent = v === currentVisibility ? "✓" : "";
+    // After a third party has messaged, cannot go back to Only me
+    if (v === "private") {
+      btn.disabled = locked;
+      btn.classList.toggle("is-locked", locked);
+      btn.title = locked
+        ? "Locked: a collaborator already sent a message. This chat cannot be set to Only me."
+        : "";
+    } else {
+      btn.disabled = false;
+      btn.classList.remove("is-locked");
+      btn.title = "";
+    }
   });
   if (box) {
     box.style.display = currentVisibility === "collab" ? "block" : "none";
@@ -252,6 +266,11 @@ function wireHeaderActions() {
   }
 
   document.getElementById("share-only-me")?.addEventListener("click", () => {
+    const convo = conversations.find((c) => c.id === currentConversationId);
+    if (convo?.collab_locked) {
+      showToast("This chat stays collaborative — a participant already sent a message.");
+      return;
+    }
     void shareCurrentConversation("private", { copyLink: false });
   });
   document.getElementById("share-with-people")?.addEventListener("click", () => {
@@ -920,6 +939,14 @@ async function openConversationLink(id: string) {
     isCollabChat = conversation?.visibility === "collab" || !!conversation?.is_member;
     currentVisibility = (conversation?.visibility as Visibility) || "private";
     currentCollabCode = conversation?.collab_code || null;
+    if (conversation) {
+      const local = conversations.find((c) => c.id === id);
+      if (local) {
+        local.visibility = conversation.visibility;
+        local.collab_locked = !!conversation.collab_locked;
+        local.is_collab_member = !!conversation.is_member && !conversation.owner;
+      }
+    }
     syncManageChatPanel();
 
     // Collab link opened by a non-member: can read, but need the 4-digit code to type.
@@ -1111,10 +1138,11 @@ function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: strin
   emptyState.style.display = "none";
   const row = document.createElement("div");
   row.className = `msg-row ${kind === "thinking" ? "agent thinking" : kind}`;
-  if (isCollabChat && (kind === "user" || kind === "agent") && kind !== "thinking" as any) {
+  if (isCollabChat && (kind === "user" || kind === "agent")) {
     const head = document.createElement("button");
     head.type = "button";
     head.className = "msg-sender-head";
+    head.title = "View profile";
     const av = document.createElement("span");
     av.className = "msg-sender-avatar";
     if (kind === "agent" || sender?.is_paul) {
@@ -1293,9 +1321,11 @@ function attachRegenerateButton(row: HTMLDivElement) {
 function renderMessages(messages: Message[]) {
   messagesEl.innerHTML = "";
   lastAgentRow = null;
-  isCollabChat = false;
+  // Do NOT clear isCollabChat here — callers set it from the conversation
+  // (visibility / is_member). Clearing it hid WhatsApp-style sender heads.
   replyVersions = [];
   replyVersionIndex = 0;
+  messagesEl.classList.toggle("is-collab", isCollabChat);
   if (messages.length === 0) {
     messagesEl.appendChild(emptyState);
     emptyState.style.display = "flex";
@@ -1326,6 +1356,15 @@ async function selectConversation(id: string) {
   isCollabChat = data.conversation?.visibility === "collab" || !!data.conversation?.is_member;
   currentVisibility = (data.conversation?.visibility as Visibility) || "private";
   currentCollabCode = data.conversation?.collab_code || null;
+  // Keep sidebar/local convo in sync with server lock + visibility
+  if (data.conversation) {
+    const local = conversations.find((c) => c.id === id);
+    if (local) {
+      local.visibility = data.conversation.visibility;
+      local.collab_locked = !!data.conversation.collab_locked;
+      local.is_collab_member = !!data.conversation.is_member && !data.conversation.owner;
+    }
+  }
   syncManageChatPanel();
   // Prompt for code if collab, not owner, cannot write yet.
   // Declining still allows reading; typing requires the invite code.
@@ -1364,6 +1403,9 @@ async function selectConversation(id: string) {
 function startNewConversation() {
   setCurrentConversation(null);
   setComposerReadOnly(false);
+  isCollabChat = false;
+  currentVisibility = "private";
+  currentCollabCode = null;
   chatTitle.textContent = t("chat.newChat");
   lastUserText = "";
   lastUserAttachments = [];
