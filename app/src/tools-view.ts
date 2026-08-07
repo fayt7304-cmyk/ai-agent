@@ -1,3 +1,4 @@
+import { API_BASE, authHeaders } from "./api";
 import { extractText } from "./lib/ocr";
 import { removeBackground } from "./lib/bgRemove";
 import { loadImage, convertImage, extensionFor, type ImageMimeType } from "./lib/convert";
@@ -312,6 +313,7 @@ export function initToolsView() {
   toolsBtn.addEventListener("click", () => {
     overlay.style.display = "flex";
     showMenu();
+    void refreshToolsHealth();
   });
   closeBtn.addEventListener("click", close);
   backBtn.addEventListener("click", showMenu);
@@ -332,3 +334,33 @@ export function initToolsView() {
   initDocxTool();
   initUniversalConverter();
 }
+
+
+async function refreshToolsHealth() {
+  const el = document.getElementById("tools-health");
+  if (!el) return;
+  try {
+    const resp = await fetch(`${API_BASE}/api/tools/health`, {
+      headers: authHeaders(),
+      credentials: "include",
+    });
+    if (!resp.ok) {
+      el.style.display = "none";
+      return;
+    }
+    const data: any = await resp.json();
+    const problems: string[] = [];
+    if (data?.ocr && !data.ocr.ok) problems.push(data.ocr.detail || "OCR unavailable");
+    if (data?.bg_remove && !data.bg_remove.ok) problems.push(data.bg_remove.detail || "Background removal unavailable");
+    if (problems.length) {
+      el.textContent = problems.join(" · ");
+      el.style.display = "";
+    } else {
+      el.style.display = "none";
+      el.textContent = "";
+    }
+  } catch {
+    el.style.display = "none";
+  }
+}
+

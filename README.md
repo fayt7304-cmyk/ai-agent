@@ -1,11 +1,19 @@
-# Paul — Personal AI Agent (v8.1)
+# Paul — Personal AI Agent (v9.0)
 
 Self-hosted chat app powered by a **Mistral AI agent**, running on **Cloudflare Workers + D1**.  
 Frontend is a Vite TypeScript SPA; the Worker owns auth, sessions, chat, tools, memory, and email.
 
 ---
 
-## What’s new in v8.1
+## What’s new in v9.0
+
+- **Agent tools** — time, weather, translate, and stock quotes executed on the Worker (function.call loop)
+- **OCR** — `POST /api/ocr` via Mistral Document AI on `api.afmarbre.com` (no external OCR worker)
+- **Background removal** — `POST /api/bg-remove` via Cloudflare Images (`segment=foreground`), no ~80MB client model
+- **TTS** — Cloudflare `elevenlabs/eleven-multilingual-v2` with fallbacks
+- **Memory** — self-edit section, mobile layout fixes
+- **Tools health** — `GET /api/tools/health` surfaces OCR / bg-remove config issues in the Tools UI
+
 
 | Area | Change |
 |------|--------|
@@ -232,6 +240,7 @@ repo/
 
 ## Version
 
+**9.0.0** — Agent tools, server OCR & bg-remove, TTS, tools health.
 **8.1.0** — Memory self-edit, Language/Learn more RTL fix, settings layout polish.  
 Earlier notes for v8.0 / v7 remain in git history.
 

@@ -284,7 +284,11 @@ function openLanguage() {
   closeLearnMore(0, true);
   learnMorePinned = false;
   syncLanguageMenuChecks();
+  // Force visible even after RTL layout flips (inline left/right can fight CSS)
   languageSubmenu.style.display = "block";
+  languageSubmenu.style.visibility = "visible";
+  languageSubmenu.style.opacity = "1";
+  languageSubmenu.removeAttribute("hidden");
 }
 
 function closeLanguage(delay = 0, force = false) {

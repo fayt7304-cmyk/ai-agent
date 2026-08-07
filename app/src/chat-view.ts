@@ -1366,6 +1366,7 @@ function setupMic() {
   micBtn.addEventListener("click", (e) => e.preventDefault());
 }
 
+document.addEventListener("langchange", () => { try { closeAttachMenu(); } catch {} });
 function closeAttachMenu() {
   attachMenu.style.display = "none";
 }
@@ -1438,6 +1439,9 @@ export function initChatView(user: User) {
   attachBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     attachMenu.style.display = attachMenu.style.display === "none" ? "flex" : "none";
+    // keep menu above + in both LTR and RTL after open
+    attachMenu.style.bottom = "calc(100% + 8px)";
+    attachMenu.style.zIndex = "30";
   });
   attachMenuFiles.addEventListener("click", () => {
     closeAttachMenu();

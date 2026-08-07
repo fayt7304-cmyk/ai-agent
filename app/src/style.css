@@ -1331,7 +1331,11 @@ html[dir="rtl"] .msg-row.user .msg {
 
 #chat-input:focus { outline: none; }
 
-.attach-wrap { position: relative; flex-shrink: 0; }
+.attach-wrap {
+  position: relative;
+  flex-shrink: 0;
+  z-index: 8; /* above suggestion chips when menu is open */
+}
 
 .composer-icon-btn {
   border: none;
@@ -1361,19 +1365,23 @@ html[dir="rtl"] .msg-row.user .msg {
   50% { box-shadow: 0 0 0 5px var(--danger-bg); }
 }
 
+/* Opens above the + button. Logical props keep LTR + RTL correct. */
 .attach-menu {
   position: absolute;
-  bottom: 42px;
+  bottom: calc(100% + 8px);
   inset-inline-start: 0;
-  min-width: 210px;
+  inset-inline-end: auto;
+  min-width: 220px;
+  max-width: min(280px, calc(100vw - 24px));
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   box-shadow: var(--shadow);
   overflow: hidden;
+  display: none;
   flex-direction: column;
-  padding: 4px;
-  z-index: 6;
+  padding: 6px;
+  z-index: 30;
 }
 
 .attach-menu-item {
@@ -4644,8 +4652,8 @@ html[dir="rtl"] .hourly-scroll {
 
 /* ---- v8.1.1: settings rows next to labels + memory detail stack ----------- */
 
-/* Multi-block cards must NOT use the 3-column label|control grid */
-.settings-card.memory-detail,
+/* Multi-block cards must NOT use the 3-column label|control grid.
+   Never force display on memory-detail / memory-edit — JS toggles visibility. */
 .settings-card#memory-browser,
 .settings-card:has(.memory-list),
 .settings-card:has(#uploads-list),
@@ -4653,6 +4661,13 @@ html[dir="rtl"] .hourly-scroll {
 .settings-card:has(.sessions-list),
 .settings-card:has(.file-list) {
   display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 12px;
+  grid-template-columns: none !important;
+}
+.settings-card.memory-detail,
+.settings-card.memory-edit-section {
   flex-direction: column !important;
   align-items: stretch !important;
   gap: 12px;
@@ -4712,13 +4727,20 @@ html[dir="rtl"] .hourly-scroll {
   text-align: start;
 }
 
-/* ---- Memory detail: vertical stack, talk composer at bottom ---- */
+/* ---- Memory detail: vertical stack, talk composer at bottom ----
+   Do NOT set display:flex !important here — that overrides inline
+   display:none and leaves detail/edit stacked on the list. */
 .memory-detail {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 12px 4px 20px;
+}
+#memory-detail[data-open="1"],
+#memory-edit-section[data-open="1"] {
   display: flex !important;
   flex-direction: column !important;
   align-items: stretch !important;
-  gap: 0 !important;
-  padding: 12px 4px 20px !important;
 }
 
 #memory-view-mode {
@@ -5268,7 +5290,7 @@ html[dir="rtl"] .switch.on .switch-thumb {
 
 /* Memory edit = full dedicated section */
 .settings-card.memory-edit-section {
-  display: flex !important;
+  /* display controlled by data-open + JS — never force visible */
   flex-direction: column !important;
   align-items: stretch !important;
   gap: 16px !important;
@@ -5393,3 +5415,36 @@ html[dir="rtl"] .switch.on .switch-thumb {
     min-height: 44px;
   }
 }
+
+/* Tools health banner (OCR / bg-remove config issues) */
+.tools-health {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent-bg) 70%, transparent);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+
+/* ---- v9: language / learn-more submenus must open in both LTR and RTL ---- */
+.language-submenu,
+.learn-more-submenu,
+#language-submenu,
+#learn-more-submenu {
+  z-index: 10050;
+  min-width: 160px;
+}
+html[dir="rtl"] #language-submenu,
+html[dir="rtl"] #learn-more-submenu,
+html[dir="rtl"] .language-submenu,
+html[dir="rtl"] .learn-more-submenu {
+  /* Fly out toward the chat area (start side in RTL = right) */
+  inset-inline-start: auto;
+  inset-inline-end: 100%;
+  margin-inline-end: 6px;
+  margin-inline-start: 0;
+}
+/* language-menu fix v9 */

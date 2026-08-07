@@ -1315,9 +1315,50 @@ async function handleTts(request: Request, env: Env): Promise<Response> {
 }
 
 /**
+ * GET /api/tools/health — lightweight status for OCR / bg-remove / TTS / chat tools.
+ * Used by the Tools UI to show a note when a feature isn't configured (501-class).
+ */
+async function handleToolsHealth(request: Request, env: Env): Promise<Response> {
+  // Auth optional for a coarse status, but prefer signed-in users
+  const user = await getUserFromRequest(env, request);
+  const ocr = {
+    ok: !!env.MISTRAL_API_KEY,
+    detail: env.MISTRAL_API_KEY
+      ? "OCR uses Mistral Document AI on this Worker."
+      : "MISTRAL_API_KEY is not set — OCR will return 501.",
+  };
+  const bgRemove = {
+    ok: !!(env.IMAGES && typeof env.IMAGES.input === "function"),
+    detail:
+      env.IMAGES && typeof env.IMAGES.input === "function"
+        ? "Background removal uses Cloudflare Images (segment=foreground)."
+        : "IMAGES binding missing — deploy with [images] binding = \"IMAGES\".",
+  };
+  const tts = {
+    ok: !!(env.AI || env.ELEVENLABS_API_KEY || (env.CLOUDFLARE_AI_TOKEN && env.CLOUDFLARE_ACCOUNT_ID)),
+    detail: env.AI
+      ? "TTS can use the AI binding (elevenlabs/eleven-multilingual-v2)."
+      : env.ELEVENLABS_API_KEY
+        ? "TTS can use your ElevenLabs API key."
+        : "No AI binding or ElevenLabs key — high-quality voice may fall back to device.",
+  };
+  const agentTools = {
+    ok: !!(env.MISTRAL_API_KEY && env.MISTRAL_AGENT_ID),
+    detail: "Time, weather, translate, and stock tools run on the Worker when the agent calls them.",
+  };
+  return json({
+    authenticated: !!user,
+    ocr,
+    bg_remove: bgRemove,
+    tts,
+    agent_tools: agentTools,
+  });
+}
+
+/**
  * POST /api/bg-remove  multipart form field "file"
  * Server-side background removal via Cloudflare Images binding
- * (segment=foreground / BiRefNet). No ~80MB model download in the browser.
+ * (segment=foreground / BiRefNet). No large model download in the browser.
  */
 async function handleBgRemove(request: Request, env: Env): Promise<Response> {
   const user = await getUserFromRequest(env, request);
@@ -2037,6 +2078,8 @@ export default {
       } else if (path === "/api/bg-remove" && request.method === "POST") {
         // Tools → background removal via Cloudflare Images (no client model download)
         resp = await handleBgRemove(request, env);
+      } else if (path === "/api/tools/health" && request.method === "GET") {
+        resp = await handleToolsHealth(request, env);
       } else if (path === "/api/uploads" && request.method === "GET") {
         // List uploads/attachments for the current user
         resp = await handleListUploads(request, env);

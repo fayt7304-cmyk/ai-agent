@@ -148,22 +148,44 @@ function memorySummary(entry: MemoryEntry): string {
   return first.length > 140 ? first.slice(0, 137) + "…" : first;
 }
 
+function setMemoryPanel(which: "list" | "detail" | "edit") {
+  // Only one of list / detail / edit may be visible. CSS used to force
+  // display:flex !important on detail/edit which stacked all three.
+  if (memoryBrowser) {
+    memoryBrowser.style.display = which === "list" ? "" : "none";
+    memoryBrowser.toggleAttribute("hidden", which !== "list");
+  }
+  if (memoryDetail) {
+    memoryDetail.style.display = which === "detail" ? "flex" : "none";
+    if (which === "detail") memoryDetail.setAttribute("data-open", "1");
+    else memoryDetail.removeAttribute("data-open");
+    memoryDetail.toggleAttribute("hidden", which !== "detail");
+  }
+  if (memoryEditSection) {
+    memoryEditSection.style.display = which === "edit" ? "flex" : "none";
+    if (which === "edit") memoryEditSection.setAttribute("data-open", "1");
+    else memoryEditSection.removeAttribute("data-open");
+    memoryEditSection.toggleAttribute("hidden", which !== "edit");
+  }
+  memoryEditing = which === "edit";
+}
+
 function exitMemoryEdit() {
   memoryEditing = false;
-  if (memoryEditSection) memoryEditSection.style.display = "none";
+  if (memoryEditSection) {
+    memoryEditSection.style.display = "none";
+    memoryEditSection.removeAttribute("data-open");
+    memoryEditSection.setAttribute("hidden", "");
+  }
 }
 
 function showMemoryList() {
   openMemoryId = null;
-  exitMemoryEdit();
-  memoryDetail.style.display = "none";
-  if (memoryEditSection) memoryEditSection.style.display = "none";
-  memoryBrowser.style.display = "";
+  setMemoryPanel("list");
 }
 
 function showMemoryDetail(entry: MemoryEntry) {
   openMemoryId = entry.id;
-  exitMemoryEdit();
   memoryDetailTitle.textContent = entry.title;
   memoryDetailMeta.textContent = `${t("settings.memoryUpdated")} ${formatMemoryDate(entry.updated_at)}`;
   memoryDetailSummary.textContent = memorySummary(entry);
@@ -174,23 +196,17 @@ function showMemoryDetail(entry: MemoryEntry) {
     memoryDetailBody.appendChild(li);
   }
   memoryTalkInput.value = "";
-  memoryBrowser.style.display = "none";
-  if (memoryEditSection) memoryEditSection.style.display = "none";
-  memoryDetail.style.display = "";
   if (memoryViewMode) memoryViewMode.style.display = "";
+  setMemoryPanel("detail");
 }
 
 function enterMemoryEdit() {
   if (!openMemoryId) return;
   const entry = allMemories.find((m) => m.id === openMemoryId);
   if (!entry) return;
-  memoryEditing = true;
   memoryEditTitle.value = entry.title;
   memoryEditContent.value = entry.content;
-  // Open a dedicated edit section — hide list + detail
-  memoryBrowser.style.display = "none";
-  memoryDetail.style.display = "none";
-  if (memoryEditSection) memoryEditSection.style.display = "";
+  setMemoryPanel("edit");
   memoryEditTitle.focus();
 }
 

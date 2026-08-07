@@ -21,12 +21,27 @@ html[dir="rtl"] .menu-icon {
   margin-inline-start: 0;
 }
 
-/* Attach / tool menus near the composer */
+/* Attach menu: stay anchored to the + button in RTL (no physical left/right).
+   Logical inset-inline-* on .attach-menu already handles mirroring. */
 html[dir="rtl"] #attach-menu,
+html[dir="rtl"] .attach-menu {
+  inset-inline-start: auto;
+  inset-inline-end: 0; /* align with + (inline-end side of composer in RTL) */
+  left: auto;
+  right: auto;
+  text-align: right;
+}
+
+html[dir="rtl"] .attach-menu-item {
+  flex-direction: row; /* icons stay before label in reading order */
+  text-align: right;
+  direction: rtl;
+}
+
 html[dir="rtl"] .tool-menu,
 html[dir="rtl"] .tools-menu {
-  right: auto;
-  left: 0;
+  inset-inline-start: auto;
+  inset-inline-end: 0;
 }
 
 /* ---------- Account (PFP) menu ---------- */
