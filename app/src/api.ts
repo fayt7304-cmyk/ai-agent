@@ -59,8 +59,20 @@ export interface Conversation {
   starred: boolean;
   archived: boolean;
   visibility?: Visibility;
+  collab_locked?: boolean;
+  /** True when you joined via collab invite (not the owner). */
+  is_collab_member?: boolean | number;
   created_at: string;
   updated_at: string;
+}
+
+export interface MessageSender {
+  id: string;
+  username: string;
+  display_name: string;
+  email: string | null;
+  avatar: string | null;
+  is_paul?: boolean;
 }
 
 export interface ConversationFile {
@@ -97,6 +109,7 @@ export interface Message {
   content: string;
   attachments: Attachment[];
   created_at: string;
+  sender?: MessageSender | null;
 }
 
 export class ApiError extends Error {
@@ -327,7 +340,7 @@ export const api = {
     }),
 
   setConversationVisibility: (id: string, visibility: Visibility) =>
-    request<{ ok: true; visibility: Visibility }>(`/api/conversations/${id}/visibility`, {
+    request<{ ok: true; visibility: Visibility; collab_code?: string | null }>(`/api/conversations/${id}/visibility`, {
       method: "PATCH",
       body: JSON.stringify({ visibility }),
     }),
@@ -338,7 +351,13 @@ export const api = {
   getConversationUsage: (id: string) =>
     request<ConversationUsage>(`/api/conversations/${id}/usage`, { method: "GET" }),
 
-  getMessages: (id: string) =>
+    joinCollab: (id: string, code: string) =>
+    request<{ ok: true; conversation_id: string; title?: string }>(`/api/conversations/${id}/join`, {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
+
+getMessages: (id: string) =>
     request<{
       messages: Message[];
       conversation?: {
@@ -347,6 +366,8 @@ export const api = {
         owner: boolean;
         visibility?: Visibility;
         can_write?: boolean;
+        collab_locked?: boolean;
+        is_member?: boolean;
       };
     }>(`/api/conversations/${id}/messages`, { method: "GET" }),
 

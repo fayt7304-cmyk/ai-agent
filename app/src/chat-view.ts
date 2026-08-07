@@ -198,25 +198,33 @@ function wireHeaderActions() {
       return;
     }
     const id = currentConversationId;
+    let collabCode: string | null = null;
     try {
-      await api.setConversationVisibility(id, visibility);
+      const result = await api.setConversationVisibility(id, visibility);
       const convo = conversations.find((c) => c.id === id);
       if (convo) convo.visibility = visibility;
-    } catch {
-      showToast(t("share.failed"));
+      collabCode = result.collab_code || null;
+    } catch (e: any) {
+      showToast(e?.message || t("share.failed"));
+      return;
+    }
+    const url = conversationUrl(id);
+    if (visibility === "collab" && collabCode) {
+      const payload = `${url}\nCode: ${collabCode}`;
+      try {
+        await navigator.clipboard.writeText(payload);
+      } catch { /* ignore */ }
+      showToast(`Collab link + code ${collabCode} copied. Code is single-use.`);
       return;
     }
     const done =
       visibility === "private"
         ? t("share.private")
-        : visibility === "collab"
-          ? "Collab link copied — anyone with it can read and reply."
-          : t("share.shared");
+        : t("share.shared");
     if (!copyLink) {
       showToast(done);
       return;
     }
-    const url = conversationUrl(id);
     try {
       await navigator.clipboard.writeText(url);
       showToast(done);
@@ -508,6 +516,9 @@ let pendingAttachments: (Attachment & { dataUrl: string })[] = [];
 let lastUserText = "";
 let lastUserAttachments: (Attachment & { dataUrl: string })[] = [];
 let lastAgentRow: HTMLDivElement | null = null;
+/** Group-style avatars when this chat is collab. */
+let isCollabChat = false;
+
 
 function setHint(text: string, isError = false) {
   composerHint.textContent = text;
@@ -738,11 +749,26 @@ function createConvoItem(c: Conversation): HTMLDivElement {
 
 function renderConvoList() {
   convoList.innerHTML = "";
-  const active = conversations.filter((c) => !c.archived);
+  const isCollab = (c: Conversation) =>
+    !!c.is_collab_member || c.visibility === "collab";
+  const active = conversations.filter((c) => !c.archived && !isCollab(c));
+  const collab = conversations.filter((c) => !c.archived && isCollab(c));
   const archived = conversations.filter((c) => c.archived);
 
   for (const c of active) {
     convoList.appendChild(createConvoItem(c));
+  }
+
+  if (collab.length > 0) {
+    const header = document.createElement("div");
+    header.className = "convo-group-header convo-collab-header";
+    header.innerHTML = `<span class="menu-icon">${icons.people || icons.link || ""}</span><span>Collab</span>`;
+    convoList.appendChild(header);
+    for (const c of collab) {
+      const item = createConvoItem(c);
+      item.classList.add("convo-collab-item");
+      convoList.appendChild(item);
+    }
   }
 
   if (archived.length > 0) {
@@ -775,6 +801,8 @@ async function loadConversations() {
     ...c,
     starred: !!c.starred,
     archived: !!c.archived,
+    is_collab_member: !!c.is_collab_member,
+    collab_locked: !!c.collab_locked,
   }));
   renderConvoList();
 }
@@ -877,10 +905,68 @@ function makeIconActionBtn(icon: keyof typeof icons, title: string): HTMLButtonE
   return btn;
 }
 
-function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: string, attachments: Attachment[] = []) {
+
+function showSenderPopup(sender: import("./api").MessageSender) {
+  document.getElementById("sender-popup")?.remove();
+  const pop = document.createElement("div");
+  pop.id = "sender-popup";
+  pop.className = "sender-popup";
+  const title = sender.is_paul ? "Paul" : (sender.display_name || sender.username);
+  pop.innerHTML = `
+    <div class="sender-popup-card">
+      <div class="sender-popup-name"></div>
+      <div class="sender-popup-row"><span>Username</span><strong class="sp-user"></strong></div>
+      <div class="sender-popup-row"><span>Email</span><strong class="sp-email"></strong></div>
+      <div class="sender-popup-row"><span>User ID</span><strong class="sp-id"></strong></div>
+      <button type="button" class="secondary-btn sender-popup-close">Close</button>
+    </div>`;
+  document.body.appendChild(pop);
+  pop.querySelector(".sender-popup-name")!.textContent = title;
+  pop.querySelector(".sp-user")!.textContent = sender.username || "—";
+  pop.querySelector(".sp-email")!.textContent = sender.email || "—";
+  pop.querySelector(".sp-id")!.textContent = sender.id || "—";
+  const close = () => pop.remove();
+  pop.querySelector(".sender-popup-close")!.addEventListener("click", close);
+  pop.addEventListener("click", (e) => { if (e.target === pop) close(); });
+}
+
+function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: string, attachments: Attachment[] = [], sender?: import("./api").MessageSender | null) {
   emptyState.style.display = "none";
   const row = document.createElement("div");
   row.className = `msg-row ${kind === "thinking" ? "agent thinking" : kind}`;
+  if (isCollabChat && (kind === "user" || kind === "agent") && kind !== "thinking" as any) {
+    const head = document.createElement("button");
+    head.type = "button";
+    head.className = "msg-sender-head";
+    const av = document.createElement("span");
+    av.className = "msg-sender-avatar";
+    if (kind === "agent" || sender?.is_paul) {
+      const img = document.createElement("img");
+      img.src = "/favicon.svg";
+      img.alt = "Paul";
+      av.appendChild(img);
+    } else if (sender?.avatar) {
+      const img = document.createElement("img");
+      img.src = sender.avatar;
+      img.alt = "";
+      av.appendChild(img);
+    } else {
+      av.textContent = ((sender?.display_name || sender?.username || "?").slice(0, 1) || "?").toUpperCase();
+    }
+    const name = document.createElement("span");
+    name.className = "msg-sender-name";
+    name.textContent = kind === "agent" || sender?.is_paul ? "Paul" : (sender?.display_name || sender?.username || "User");
+    head.appendChild(av);
+    head.appendChild(name);
+    head.addEventListener("click", (e) => {
+      e.stopPropagation();
+      showSenderPopup(kind === "agent" || sender?.is_paul
+        ? { id: "paul", username: "Paul", display_name: "Paul", email: null, avatar: null, is_paul: true }
+        : sender || { id: "?", username: "User", display_name: "User", email: null, avatar: null });
+    });
+    row.appendChild(head);
+  }
+
 
   const bubble = document.createElement("div");
   bubble.className = "msg";
@@ -1030,6 +1116,7 @@ function attachRegenerateButton(row: HTMLDivElement) {
 function renderMessages(messages: Message[]) {
   messagesEl.innerHTML = "";
   lastAgentRow = null;
+  isCollabChat = false;
   replyVersions = [];
   replyVersionIndex = 0;
   if (messages.length === 0) {
@@ -1039,7 +1126,7 @@ function renderMessages(messages: Message[]) {
   }
   let row: HTMLDivElement | null = null;
   for (const m of messages) {
-    row = addMsgRow(m.role, m.content, m.attachments);
+    row = addMsgRow(m.role, m.content, m.attachments, m.sender || null);
     if (m.role === "user") {
       lastUserText = m.content;
       lastUserAttachments = [];
@@ -1057,8 +1144,30 @@ async function selectConversation(id: string) {
   chatTitle.textContent = convo?.title || t("chat.newChat");
   renderConvoList();
   messagesEl.innerHTML = "";
-  const { messages } = await api.getMessages(id);
+  const data = await api.getMessages(id);
+  const messages = data.messages;
+  isCollabChat = data.conversation?.visibility === "collab" || !!data.conversation?.is_member;
+  // Prompt for code if collab, not owner, cannot write yet
+  if (data.conversation?.visibility === "collab" && !data.conversation?.owner && !data.conversation?.can_write) {
+    const code = window.prompt(t("share.enterCollabCode") || "Enter the 4-digit collaboration code:");
+    if (code && /^\d{4}$/.test(code.trim())) {
+      try {
+        await api.joinCollab(id, code.trim());
+        const again = await api.getMessages(id);
+        isCollabChat = true;
+        renderMessages(again.messages);
+        setComposerReadOnly(!again.conversation?.can_write);
+        await loadConversations();
+        return;
+      } catch (e: any) {
+        showToast(e?.message || "Could not join collaboration");
+      }
+    }
+  }
   renderMessages(messages);
+  if (data.conversation && !data.conversation.can_write && !data.conversation.owner) {
+    setComposerReadOnly(true, "Join with the collab code to reply.");
+  }
   // Use toggleSidebar() rather than touching the class directly: it also syncs
   // the header "open sidebar" button, which otherwise stayed hidden on mobile
   // after switching chats, leaving no way to reopen the sidebar.

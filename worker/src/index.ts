@@ -1536,14 +1536,40 @@ async function handleOcr(request: Request, env: Env): Promise<Response> {
 async function handleListConversations(request: Request, env: Env): Promise<Response> {
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
+  await ensureConversationColumns(env);
 
-  const { results } = await env.DB.prepare(
-    "SELECT id, title, starred, archived, created_at, updated_at FROM conversations WHERE user_id = ? ORDER BY starred DESC, updated_at DESC"
+  const { results: owned } = await env.DB.prepare(
+    `SELECT id, title, starred, archived, visibility, collab_locked, created_at, updated_at, 0 AS is_collab_member
+     FROM conversations WHERE user_id = ?
+     ORDER BY starred DESC, updated_at DESC`
   )
     .bind(user.id)
     .all();
 
-  return json({ conversations: results });
+  // Conversations this user joined via collab invite
+  let joined: any[] = [];
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT c.id, c.title, c.starred, c.archived, c.visibility, c.collab_locked, c.created_at, c.updated_at, 1 AS is_collab_member
+       FROM conversation_members m
+       JOIN conversations c ON c.id = m.conversation_id
+       WHERE m.user_id = ? AND c.user_id != ?
+       ORDER BY c.updated_at DESC`
+    )
+      .bind(user.id, user.id)
+      .all();
+    joined = results || [];
+  } catch {
+    joined = [];
+  }
+
+  const seen = new Set((owned || []).map((c: any) => c.id));
+  const conversations = [...(owned || [])];
+  for (const c of joined) {
+    if (!seen.has(c.id)) conversations.push(c);
+  }
+
+  return json({ conversations });
 }
 
 async function handleCreateConversation(request: Request, env: Env): Promise<Response> {
@@ -1609,15 +1635,29 @@ async function ensureConversationColumns(env: Env): Promise<void> {
     "ALTER TABLE conversations ADD COLUMN starred INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE conversations ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'",
+    "ALTER TABLE conversations ADD COLUMN collab_code TEXT",
+    "ALTER TABLE conversations ADD COLUMN collab_code_used INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE conversations ADD COLUMN collab_locked INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE messages ADD COLUMN sender_user_id TEXT",
+    `CREATE TABLE IF NOT EXISTS conversation_members (
+      conversation_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      joined_at TEXT NOT NULL,
+      PRIMARY KEY (conversation_id, user_id)
+    )`,
   ];
   for (const sql of alters) {
     try {
       await env.DB.prepare(sql).run();
     } catch {
-      // Column already exists — nothing to do.
+      // Column / table already exists — nothing to do.
     }
   }
   conversationColumnsReady = true;
+}
+
+function generateCollabCode(): string {
+  return String(Math.floor(1000 + Math.random() * 9000));
 }
 
 async function handleStarConversation(request: Request, env: Env, id: string): Promise<Response> {
@@ -1756,32 +1796,78 @@ async function handleGetConversationUsage(request: Request, env: Env, id: string
 async function handleGetMessages(request: Request, env: Env, id: string): Promise<Response> {
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
+  await ensureConversationColumns(env);
 
-  const convo = await env.DB.prepare("SELECT id, user_id, title, visibility FROM conversations WHERE id = ?")
+  const convo = await env.DB.prepare(
+    "SELECT id, user_id, title, visibility, collab_locked FROM conversations WHERE id = ?"
+  )
     .bind(id)
-    .first<{ id: string; user_id: string; title: string; visibility: string }>();
+    .first<{ id: string; user_id: string; title: string; visibility: string; collab_locked: number }>();
 
-  // Distinguish "doesn't exist" from "exists but you're not allowed to see it" so the
-  // frontend can show a clear "ask the owner for access" message on shared links,
-  // rather than a generic not-found.
   if (!convo) return err("Conversation not found.", 404);
   const isOwner = convo.user_id === user.id;
-  // 'shared' = anyone with the link can read. 'collab' = anyone with the link can
-  // read AND reply, so the frontend keeps the composer enabled for them.
   const isShared = convo.visibility === "shared" || convo.visibility === "collab";
+
+  let isMember = false;
+  if (!isOwner && convo.visibility === "collab") {
+    const mem = await env.DB.prepare(
+      "SELECT 1 AS ok FROM conversation_members WHERE conversation_id = ? AND user_id = ?"
+    )
+      .bind(id, user.id)
+      .first();
+    isMember = !!mem;
+  }
+
   if (!isOwner && !isShared) {
     return err("Access forbidden. Ask the owner to share a link with access.", 403);
   }
+  // Collab: must have joined with the code (members) unless still only viewing shared link without write
+  if (!isOwner && convo.visibility === "collab" && !isMember) {
+    // Allow read once shared, but can_write only after join
+  }
 
-  const { results } = await env.DB.prepare(
-    "SELECT id, role, content, attachments, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at ASC"
-  )
-    .bind(id)
-    .all<MessageRow>();
+  let results: any[] = [];
+  try {
+    const q = await env.DB.prepare(
+      `SELECT m.id, m.role, m.content, m.attachments, m.created_at, m.sender_user_id,
+              u.username AS sender_username, u.display_name AS sender_display_name,
+              u.email AS sender_email, u.avatar AS sender_avatar
+       FROM messages m
+       LEFT JOIN users u ON u.id = m.sender_user_id
+       WHERE m.conversation_id = ?
+       ORDER BY m.created_at ASC`
+    )
+      .bind(id)
+      .all();
+    results = q.results || [];
+  } catch {
+    const q = await env.DB.prepare(
+      "SELECT id, role, content, attachments, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at ASC"
+    )
+      .bind(id)
+      .all();
+    results = q.results || [];
+  }
 
-  const messages = (results || []).map((m) => ({
-    ...m,
+  const messages = results.map((m: any) => ({
+    id: m.id,
+    role: m.role,
+    content: m.content,
     attachments: m.attachments ? JSON.parse(m.attachments) : [],
+    created_at: m.created_at,
+    sender:
+      m.role === "agent"
+        ? { id: "paul", username: "Paul", display_name: "Paul", email: null, avatar: null, is_paul: true }
+        : m.sender_user_id
+          ? {
+              id: m.sender_user_id,
+              username: m.sender_username || "user",
+              display_name: m.sender_display_name || m.sender_username || "user",
+              email: m.sender_email || null,
+              avatar: m.sender_avatar || null,
+              is_paul: false,
+            }
+          : null,
   }));
 
   return json({
@@ -1791,7 +1877,9 @@ async function handleGetMessages(request: Request, env: Env, id: string): Promis
       title: convo.title,
       owner: isOwner,
       visibility: convo.visibility,
-      can_write: isOwner || convo.visibility === "collab",
+      collab_locked: !!convo.collab_locked,
+      is_member: isOwner || isMember,
+      can_write: isOwner || (convo.visibility === "collab" && isMember),
     },
   });
 }
@@ -1801,20 +1889,85 @@ async function handleSetConversationVisibility(request: Request, env: Env, id: s
   const user = await getUserFromRequest(env, request);
   if (!user) return err("Not authenticated.", 401);
 
-  const convo = await env.DB.prepare("SELECT id FROM conversations WHERE id = ? AND user_id = ?")
+  const convo = await env.DB.prepare(
+    "SELECT id, visibility, collab_locked FROM conversations WHERE id = ? AND user_id = ?"
+  )
     .bind(id, user.id)
-    .first();
+    .first<{ id: string; visibility: string; collab_locked: number }>();
   if (!convo) return err("Conversation not found.", 404);
 
   const body = (await request.json().catch(() => null)) as { visibility?: string } | null;
   const requested = body?.visibility;
   const visibility = requested === "shared" || requested === "collab" ? requested : "private";
 
-  await env.DB.prepare("UPDATE conversations SET visibility = ?, updated_at = ? WHERE id = ?")
-    .bind(visibility, nowIso(), id)
+  // Once a third party has posted in collab, it cannot go back to "only me"
+  if (convo.collab_locked && visibility === "private") {
+    return err("This chat stays collaborative — a participant already sent a message. It cannot be set to Only me.", 400);
+  }
+
+  let collab_code: string | null = null;
+  if (visibility === "collab") {
+    collab_code = generateCollabCode();
+    await env.DB.prepare(
+      "UPDATE conversations SET visibility = ?, collab_code = ?, collab_code_used = 0, updated_at = ? WHERE id = ?"
+    )
+      .bind(visibility, collab_code, nowIso(), id)
+      .run();
+  } else {
+    await env.DB.prepare(
+      "UPDATE conversations SET visibility = ?, collab_code = NULL, collab_code_used = 0, updated_at = ? WHERE id = ?"
+    )
+      .bind(visibility, nowIso(), id)
+      .run();
+  }
+
+  return json({ ok: true, visibility, collab_code });
+}
+
+/** POST /api/conversations/:id/join  { code: "1234" } — accept collab invite */
+async function handleJoinCollab(request: Request, env: Env, id: string): Promise<Response> {
+  await ensureConversationColumns(env);
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  if (user.is_guest) return err("Save your account before joining a collaboration.", 400);
+
+  const body = (await request.json().catch(() => null)) as { code?: string } | null;
+  const code = String(body?.code || "").trim();
+  if (!/^\d{4}$/.test(code)) return err("Enter the 4-digit confirmation code.", 400);
+
+  const convo = await env.DB.prepare(
+    "SELECT id, user_id, visibility, collab_code, collab_code_used, title FROM conversations WHERE id = ?"
+  )
+    .bind(id)
+    .first<{
+      id: string;
+      user_id: string;
+      visibility: string;
+      collab_code: string | null;
+      collab_code_used: number;
+      title: string;
+    }>();
+
+  if (!convo) return err("Conversation not found.", 404);
+  if (convo.user_id === user.id) {
+    return json({ ok: true, already_owner: true, conversation_id: id });
+  }
+  if (convo.visibility !== "collab") return err("This chat is not open for collaboration.", 400);
+  if (!convo.collab_code || convo.collab_code !== code) return err("Invalid confirmation code.", 403);
+  if (convo.collab_code_used) return err("This invite code was already used. Ask the owner for a new share.", 410);
+
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO conversation_members (conversation_id, user_id, joined_at) VALUES (?, ?, ?)"
+  )
+    .bind(id, user.id, nowIso())
+    .run();
+  // Single-use code — regenerate next time owner shares
+  await env.DB.prepare("UPDATE conversations SET collab_code_used = 1, collab_code = NULL, updated_at = ? WHERE id = ?")
+    .bind(nowIso(), id)
     .run();
 
-  return json({ ok: true, visibility });
+  adminLog("info", "collab", "member joined", { conversation_id: id, user_id: user.id });
+  return json({ ok: true, conversation_id: id, title: convo.title });
 }
 
 interface ChatRequestBody {
@@ -1867,9 +2020,20 @@ async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): P
       .bind(body.conversation_id)
       .first<ConversationRow>();
     if (!convo) return err("Conversation not found.", 404);
-    // Non-owners may only post into a conversation shared for collaboration.
-    if (convo.user_id !== user.id && convo.visibility !== "collab") {
-      return err("Access forbidden. Ask the owner to share this chat for collaboration.", 403);
+    // Non-owners may only post into a collab chat after joining with the code.
+    if (convo.user_id !== user.id) {
+      if (convo.visibility !== "collab") {
+        return err("Access forbidden. Ask the owner to share this chat for collaboration.", 403);
+      }
+      await ensureConversationColumns(env);
+      const mem = await env.DB.prepare(
+        "SELECT 1 AS ok FROM conversation_members WHERE conversation_id = ? AND user_id = ?"
+      )
+        .bind(convo.id, user.id)
+        .first();
+      if (!mem) {
+        return err("Join this collaboration with the 4-digit code before sending messages.", 403);
+      }
     }
   } else {
     const id = crypto.randomUUID();
@@ -1884,14 +2048,32 @@ async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): P
 
   // Save the user's message first so it's never lost even if Mistral errors out.
   const userMsgId = crypto.randomUUID();
-  // Keep dataUrl alongside the metadata so "Uploaded files" and the per-chat
-  // Files list can offer a real download later (agent attachments already do).
   const attMeta = attachments.map((a) => ({ name: a.name, mime: a.mime, size: a.size, dataUrl: a.dataUrl }));
-  await env.DB.prepare(
-    "INSERT INTO messages (id, conversation_id, role, content, attachments, created_at) VALUES (?, ?, 'user', ?, ?, ?)"
-  )
-    .bind(userMsgId, convo.id, body.message || "", attMeta.length ? JSON.stringify(attMeta) : null, nowIso())
-    .run();
+  await ensureConversationColumns(env);
+  try {
+    await env.DB.prepare(
+      "INSERT INTO messages (id, conversation_id, role, content, attachments, created_at, sender_user_id) VALUES (?, ?, 'user', ?, ?, ?, ?)"
+    )
+      .bind(userMsgId, convo.id, body.message || "", attMeta.length ? JSON.stringify(attMeta) : null, nowIso(), user.id)
+      .run();
+  } catch {
+    await env.DB.prepare(
+      "INSERT INTO messages (id, conversation_id, role, content, attachments, created_at) VALUES (?, ?, 'user', ?, ?, ?)"
+    )
+      .bind(userMsgId, convo.id, body.message || "", attMeta.length ? JSON.stringify(attMeta) : null, nowIso())
+      .run();
+  }
+
+  // Third-party message locks collab → cannot return to "Only me"
+  if (convo.user_id !== user.id && convo.visibility === "collab") {
+    try {
+      await env.DB.prepare("UPDATE conversations SET collab_locked = 1, updated_at = ? WHERE id = ?")
+        .bind(nowIso(), convo.id)
+        .run();
+    } catch {
+      /* column may not exist yet on very old DBs */
+    }
+  }
 
   // Cross-chat memory: hand Paul what he knows about the user on every turn.
   // Injecting only on the first turn meant a question asked later in the same
@@ -2137,6 +2319,8 @@ export default {
         resp = await handleArchiveConversation(request, env, path.split("/")[3]);
       } else if (path.match(/^\/api\/conversations\/[^/]+\/visibility$/) && request.method === "PATCH") {
         resp = await handleSetConversationVisibility(request, env, path.split("/")[3]);
+      } else if (path.match(/^\/api\/conversations\/[^/]+\/join$/) && request.method === "POST") {
+        resp = await handleJoinCollab(request, env, path.split("/")[3]);
       } else if (path.match(/^\/api\/conversations\/[^/]+\/files$/) && request.method === "GET") {
         resp = await handleGetConversationFiles(request, env, path.split("/")[3]);
       } else if (path.match(/^\/api\/conversations\/[^/]+\/usage$/) && request.method === "GET") {

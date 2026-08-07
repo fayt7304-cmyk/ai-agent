@@ -5497,3 +5497,145 @@ html[dir="rtl"] .learn-more-submenu {
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+
+/* COLLAB + SCROLLBAR v9.1 */
+html, body, .messages, #messages, .chat-main, .settings-body, .settings-panels {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-secondary) 55%, transparent) transparent;
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+.messages::-webkit-scrollbar,
+#messages::-webkit-scrollbar,
+.chat-main::-webkit-scrollbar,
+.settings-body::-webkit-scrollbar,
+.settings-panels::-webkit-scrollbar,
+.convo-list::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track,
+.messages::-webkit-scrollbar-track,
+#messages::-webkit-scrollbar-track,
+.convo-list::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 4px 0;
+}
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb,
+.messages::-webkit-scrollbar-thumb,
+#messages::-webkit-scrollbar-thumb,
+.convo-list::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-secondary) 50%, transparent);
+  border-radius: 99px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+html::-webkit-scrollbar-thumb:hover,
+.messages::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text-secondary) 75%, transparent);
+}
+
+.msg-sender-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: 0 0 6px;
+  font: inherit;
+  max-width: 100%;
+}
+.msg-sender-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.msg-sender-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.msg-sender-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.msg-row.user .msg-sender-head,
+.msg-row.agent .msg-sender-head {
+  margin-inline-start: 2px;
+}
+
+.sender-popup {
+  position: fixed;
+  inset: 0;
+  z-index: 10060;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.sender-popup-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 20px;
+  min-width: min(320px, 100%);
+  max-width: 400px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sender-popup-name {
+  font-size: 17px;
+  font-weight: 650;
+  margin-bottom: 4px;
+}
+.sender-popup-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.sender-popup-row strong {
+  color: var(--text);
+  font-weight: 500;
+  text-align: end;
+  word-break: break-all;
+}
+
+.convo-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.convo-collab-header .menu-icon {
+  width: 16px;
+  height: 16px;
+  opacity: 0.85;
+}
+.convo-collab-item {
+  border-inline-start: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+}
