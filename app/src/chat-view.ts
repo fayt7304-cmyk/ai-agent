@@ -1248,7 +1248,7 @@ function applyReplyVersion(row: HTMLDivElement) {
 
 /** Remove trailing agent / error / thinking bubbles so regenerate replaces the reply. */
 function removeTrailingAssistantRows() {
-  const rows = [...messagesEl.querySelectorAll<HTMLDivElement>(".msg-row")];
+  const rows = Array.from(messagesEl.querySelectorAll<HTMLDivElement>(".msg-row"));
   for (let i = rows.length - 1; i >= 0; i--) {
     const r = rows[i];
     if (r.classList.contains("agent") || r.classList.contains("error") || r.classList.contains("thinking")) {
