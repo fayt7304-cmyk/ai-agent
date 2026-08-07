@@ -1895,6 +1895,51 @@ async function handleGetMessages(request: Request, env: Env, id: string): Promis
     members = await listCollabMembers(env, id, convo.user_id);
   }
 
+  // For DMs: resolve the other person so the UI can show username + user id (not a chat title/link).
+  let dm_peer: {
+    id: string;
+    username: string;
+    display_name: string;
+    avatar: string | null;
+  } | null = null;
+  if (isDm) {
+    try {
+      const peerId =
+        (convo as any).dm_peer_id && (convo as any).dm_peer_id !== user.id
+          ? (convo as any).dm_peer_id
+          : null;
+      let resolvedId = peerId as string | null;
+      if (!resolvedId) {
+        const other = await env.DB.prepare(
+          "SELECT user_id FROM conversation_members WHERE conversation_id = ? AND user_id != ? LIMIT 1"
+        )
+          .bind(id, user.id)
+          .first<{ user_id: string }>();
+        resolvedId = other?.user_id || null;
+      }
+      if (!resolvedId && (convo as any).user_id !== user.id) {
+        resolvedId = (convo as any).user_id;
+      }
+      if (resolvedId) {
+        const peer = await env.DB.prepare(
+          "SELECT id, username, display_name, avatar FROM users WHERE id = ?"
+        )
+          .bind(resolvedId)
+          .first<{ id: string; username: string; display_name: string | null; avatar: string | null }>();
+        if (peer) {
+          dm_peer = {
+            id: peer.id,
+            username: peer.username,
+            display_name: peer.display_name || peer.username,
+            avatar: peer.avatar,
+          };
+        }
+      }
+    } catch {
+      dm_peer = null;
+    }
+  }
+
   return json({
     messages,
     conversation: {
@@ -1909,6 +1954,7 @@ async function handleGetMessages(request: Request, env: Env, id: string): Promis
       collab_locked: !!convo.collab_locked,
       members,
       is_dm: isDm,
+      dm_peer,
     },
   });
 }

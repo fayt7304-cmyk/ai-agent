@@ -415,6 +415,12 @@ getMessages: (id: string) =>
         is_member?: boolean;
         collab_code?: string | null;
         is_dm?: boolean;
+        dm_peer?: {
+          id: string;
+          username: string;
+          display_name: string;
+          avatar: string | null;
+        } | null;
         members?: {
           id: string;
           username: string;

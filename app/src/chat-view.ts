@@ -164,9 +164,39 @@ function mountStaticIcons() {
 let isCollabChat = false;
 /** 1:1 friend DM — live updates, group-style bubbles; @paul NOT required. */
 let isDmChat = false;
+/** Peer in the open friend DM (username + id shown in header — not a convo title/link). */
+let currentDmPeer: {
+  id: string;
+  username: string;
+  display_name: string;
+  avatar: string | null;
+} | null = null;
 /** Collab or DM: sender heads, ownership layout, live WebSocket. */
 function isGroupStyleChat(): boolean {
   return isCollabChat || isDmChat;
+}
+
+/** Header for friend DMs: @username then user id — not a conversation title/link. */
+function applyDmHeader(peer?: { id: string; username: string; display_name?: string } | null) {
+  if (!peer) {
+    chatTitle.textContent = "Friend chat";
+    chatTitle.removeAttribute("title");
+    return;
+  }
+  const uname = peer.username || peer.display_name || "user";
+  chatTitle.textContent = `@${uname}`;
+  // Full identity on hover / long-press
+  chatTitle.title = `@${uname}\nUser ID: ${peer.id}`;
+  // Show username + id in the visible title area
+  chatTitle.innerHTML = "";
+  const nameEl = document.createElement("span");
+  nameEl.className = "dm-title-user";
+  nameEl.textContent = `@${uname}`;
+  const idEl = document.createElement("span");
+  idEl.className = "dm-title-id";
+  idEl.textContent = peer.id;
+  chatTitle.appendChild(nameEl);
+  chatTitle.appendChild(idEl);
 }
 /** True when the current user owns the open conversation (for null-sender fallback). */
 let isConversationOwner = false;
@@ -315,21 +345,29 @@ if (typeof document !== "undefined") {
 /**
  * Owner-only controls: Share / Manage chat / Rename / Star / Archive / Delete.
  * Non-owners (collab members, DM peers) only see Files / Usage etc.
+ * Friend DMs never show Share (not a shareable convo link).
  */
 function syncOwnerControls() {
   const owner = isConversationOwner || !currentConversationId;
   const shareBtn = document.getElementById("header-share-btn") as HTMLButtonElement | null;
   const shareMenu = document.getElementById("share-menu") as HTMLDivElement | null;
+  // No share/link UI in friend DMs
+  const canShare = owner && !isDmChat;
   if (shareBtn) {
-    shareBtn.style.display = owner ? "" : "none";
-    if (!owner) shareBtn.classList.remove("open");
+    shareBtn.style.display = canShare ? "" : "none";
+    if (!canShare) shareBtn.classList.remove("open");
   }
-  if (shareMenu && !owner) shareMenu.style.display = "none";
+  if (shareMenu && !canShare) shareMenu.style.display = "none";
 
-  // More menu owner-only rows
+  // More menu: rename/star/archive/delete — owner only; hide rename on DMs (title is the person)
   for (const id of ["more-rename", "more-star", "more-archive", "more-delete"]) {
     const el = document.getElementById(id) as HTMLElement | null;
-    if (el) el.style.display = owner ? "" : "none";
+    if (!el) continue;
+    if (id === "more-rename" && isDmChat) {
+      el.style.display = "none";
+      continue;
+    }
+    el.style.display = owner ? "" : "none";
   }
 }
 
@@ -1526,13 +1564,15 @@ async function openConversationLink(id: string) {
   try {
     const data = await api.getMessages(id);
     const { messages, conversation } = data;
-    chatTitle.textContent = conversation?.title || t("chat.newChat");
     isCollabChat = conversation?.visibility === "collab" || (!!conversation?.is_member && conversation?.visibility !== "dm");
     isDmChat = conversation?.visibility === "dm" || !!(conversation as any)?.is_dm;
     isConversationOwner = !!conversation?.owner;
     currentVisibility = (conversation?.visibility as Visibility) || "private";
     currentCollabCode = conversation?.collab_code || null;
     collabMembers = conversation?.members || [];
+    currentDmPeer = conversation?.dm_peer || null;
+    if (isDmChat) applyDmHeader(currentDmPeer);
+    else chatTitle.textContent = conversation?.title || t("chat.newChat");
     if (conversation) {
       const local = conversations.find((c) => c.id === id);
       if (local) {
@@ -2106,6 +2146,9 @@ async function selectConversation(id: string) {
   currentVisibility = (data.conversation?.visibility as Visibility) || "private";
   currentCollabCode = data.conversation?.collab_code || null;
   collabMembers = data.conversation?.members || [];
+  currentDmPeer = data.conversation?.dm_peer || null;
+  if (isDmChat) applyDmHeader(currentDmPeer);
+  else chatTitle.textContent = data.conversation?.title || convo?.title || t("chat.newChat");
   // Keep sidebar/local convo in sync with server lock + visibility
   if (data.conversation) {
     const local = conversations.find((c) => c.id === id);
@@ -2114,6 +2157,7 @@ async function selectConversation(id: string) {
       local.collab_locked = !!data.conversation.collab_locked;
       local.is_collab_member =
         !!data.conversation.is_member && !data.conversation.owner && data.conversation.visibility === "collab";
+      if (currentDmPeer) local.title = `@${currentDmPeer.username}`;
     }
   }
   syncManageChatPanel();
@@ -2160,6 +2204,7 @@ function startNewConversation() {
   setComposerReadOnly(false);
   isCollabChat = false;
   isDmChat = false;
+  currentDmPeer = null;
   isConversationOwner = true;
   currentVisibility = "private";
   currentCollabCode = null;
@@ -2559,7 +2604,8 @@ async function performSend(
 
     const isNewConvo = !currentConversationId;
     setCurrentConversation(result.conversation_id);
-    if (result.title) chatTitle.textContent = result.title;
+    if (!isDmChat && result.title) chatTitle.textContent = result.title;
+    if (isDmChat && currentDmPeer) applyDmHeader(currentDmPeer);
 
     // Paul replied (or non-collab chat)
     const replyText = result.reply;
