@@ -1654,6 +1654,14 @@ async function ensureConversationColumns(env: Env): Promise<void> {
       PRIMARY KEY (conversation_id, user_id)
     )`,
     "ALTER TABLE conversations ADD COLUMN dm_peer_id TEXT",
+    "ALTER TABLE messages ADD COLUMN reply_to_id TEXT",
+    "ALTER TABLE messages ADD COLUMN reply_to_preview TEXT",
+    `CREATE TABLE IF NOT EXISTS user_blocks (
+      blocker_id TEXT NOT NULL,
+      blocked_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (blocker_id, blocked_id)
+    )`,
     `CREATE TABLE IF NOT EXISTS friendships (
       id TEXT PRIMARY KEY,
       user_a TEXT NOT NULL,
@@ -1850,6 +1858,7 @@ async function handleGetMessages(request: Request, env: Env, id: string): Promis
   try {
     const q = await env.DB.prepare(
       `SELECT m.id, m.role, m.content, m.attachments, m.created_at, m.sender_user_id,
+              m.reply_to_id, m.reply_to_preview,
               u.username AS sender_username, u.display_name AS sender_display_name,
               u.email AS sender_email, u.avatar AS sender_avatar
        FROM messages m
@@ -1875,6 +1884,8 @@ async function handleGetMessages(request: Request, env: Env, id: string): Promis
     content: m.content,
     attachments: m.attachments ? JSON.parse(m.attachments) : [],
     created_at: m.created_at,
+    reply_to_id: m.reply_to_id || null,
+    reply_to_preview: m.reply_to_preview || null,
     sender:
       m.role === "agent"
         ? { id: "paul", username: "Paul", display_name: "Paul", email: null, avatar: null, is_paul: true }
@@ -2058,6 +2069,7 @@ async function handleCollabLive(request: Request, env: Env, id: string): Promise
       try {
         const q = await env.DB.prepare(
           `SELECT m.id, m.role, m.content, m.attachments, m.created_at, m.sender_user_id,
+                  m.reply_to_id, m.reply_to_preview,
                   u.username AS sender_username, u.display_name AS sender_display_name,
                   u.email AS sender_email, u.avatar AS sender_avatar
            FROM messages m
@@ -2083,6 +2095,8 @@ async function handleCollabLive(request: Request, env: Env, id: string): Promise
         content: m.content,
         attachments: m.attachments ? JSON.parse(m.attachments) : [],
         created_at: m.created_at,
+        reply_to_id: m.reply_to_id || null,
+        reply_to_preview: m.reply_to_preview || null,
         sender:
           m.role === "agent"
             ? { id: "paul", username: "Paul", display_name: "Paul", email: null, avatar: null, is_paul: true }
@@ -2116,10 +2130,27 @@ async function handleCollabLive(request: Request, env: Env, id: string): Promise
         .bind(id)
         .first<{ visibility: string; collab_locked: number }>();
 
+      let typing: { user_id: string; username: string }[] = [];
+      try {
+        const since = new Date(Date.now() - 4000).toISOString();
+        const tq = await env.DB.prepare(
+          "SELECT user_id, username FROM typing_state WHERE conversation_id = ? AND updated_at > ? AND user_id != ?"
+        )
+          .bind(id, since, user.id)
+          .all();
+        typing = (tq.results || []).map((r: any) => ({
+          user_id: r.user_id,
+          username: r.username,
+        }));
+      } catch {
+        typing = [];
+      }
+
       server.send(
         JSON.stringify({
           type: "messages",
           messages,
+          typing,
           conversation: {
             id,
             owner: isOwner,
@@ -2142,8 +2173,39 @@ async function handleCollabLive(request: Request, env: Env, id: string): Promise
     closed = true;
   });
   server.addEventListener("message", (ev) => {
-    // Client can send "ping" or "refresh"
-    if (String(ev.data) === "refresh") void push();
+    const raw = String(ev.data || "");
+    if (raw === "refresh") {
+      void push();
+      return;
+    }
+    // Typing indicator: persist briefly so other live clients see it on next push
+    try {
+      const data = JSON.parse(raw);
+      if (data?.type === "typing" && user.username) {
+        void (async () => {
+          try {
+            await env.DB.prepare(
+              `CREATE TABLE IF NOT EXISTS typing_state (
+                conversation_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                username TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (conversation_id, user_id)
+              )`
+            ).run();
+            await env.DB.prepare(
+              "INSERT OR REPLACE INTO typing_state (conversation_id, user_id, username, updated_at) VALUES (?, ?, ?, ?)"
+            )
+              .bind(id, user.id, user.display_name || user.username, nowIso())
+              .run();
+          } catch {
+            /* ignore */
+          }
+        })();
+      }
+    } catch {
+      /* ignore non-json */
+    }
   });
 
   // Initial snapshot + interval push
@@ -2157,6 +2219,64 @@ async function handleCollabLive(request: Request, env: Env, id: string): Promise
   }, 1500);
 
   return new Response(null, { status: 101, webSocket: client });
+}
+
+
+// ---------------------------------------------------------------------------
+// Blocks
+// ---------------------------------------------------------------------------
+
+async function handleBlockUser(request: Request, env: Env): Promise<Response> {
+  await ensureConversationColumns(env);
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  const body = (await request.json().catch(() => null)) as { user_id?: string; username?: string } | null;
+  let blockedId = String(body?.user_id || "").trim();
+  if (!blockedId && body?.username) {
+    const peer = await env.DB.prepare("SELECT id FROM users WHERE lower(username) = lower(?)")
+      .bind(String(body.username).replace(/^@/, ""))
+      .first<{ id: string }>();
+    blockedId = peer?.id || "";
+  }
+  if (!blockedId) return err("User required.", 400);
+  if (blockedId === user.id) return err("You can't block yourself.", 400);
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO user_blocks (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)"
+  )
+    .bind(user.id, blockedId, nowIso())
+    .run();
+  // Drop friendship if any
+  const [a, b] = friendshipPair(user.id, blockedId);
+  try {
+    await env.DB.prepare("DELETE FROM friendships WHERE user_a = ? AND user_b = ?").bind(a, b).run();
+  } catch { /* ignore */ }
+  return json({ ok: true, blocked: true });
+}
+
+async function handleUnblockUser(request: Request, env: Env): Promise<Response> {
+  await ensureConversationColumns(env);
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  const body = (await request.json().catch(() => null)) as { user_id?: string } | null;
+  const blockedId = String(body?.user_id || "").trim();
+  if (!blockedId) return err("User required.", 400);
+  await env.DB.prepare("DELETE FROM user_blocks WHERE blocker_id = ? AND blocked_id = ?")
+    .bind(user.id, blockedId)
+    .run();
+  return json({ ok: true, blocked: false });
+}
+
+async function isBlockedEither(env: Env, a: string, b: string): Promise<boolean> {
+  try {
+    const row = await env.DB.prepare(
+      "SELECT 1 AS ok FROM user_blocks WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?) LIMIT 1"
+    )
+      .bind(a, b, b, a)
+      .first();
+    return !!row;
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2232,6 +2352,9 @@ async function handleFriendRequest(request: Request, env: Env): Promise<Response
     .first<{ id: string; username: string; display_name: string | null; avatar: string | null; is_guest: number }>();
   if (!peer) return err("User not found.", 404);
   if (peer.id === user.id) return err("You can't add yourself.", 400);
+  if (await isBlockedEither(env, user.id, peer.id)) {
+    return err("You can't add this user.", 403);
+  }
   if (peer.is_guest) return err("That account is a guest — they need to save it first.", 400);
 
   const [user_a, user_b] = friendshipPair(user.id, peer.id);
@@ -2566,6 +2689,8 @@ interface ChatRequestBody {
   conversation_id?: string;
   message: string;
   attachments?: AttachmentIn[];
+  reply_to_id?: string;
+  reply_to_preview?: string;
 }
 
 /** Extract unique @handles from text (lowercase, no @). Supports many in one message. */
@@ -2714,19 +2839,38 @@ async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): P
   // Save the user's message first so it's never lost even if Mistral errors out.
   const userMsgId = crypto.randomUUID();
   const attMeta = attachments.map((a) => ({ name: a.name, mime: a.mime, size: a.size, dataUrl: a.dataUrl }));
+  const replyToId = body.reply_to_id ? String(body.reply_to_id).slice(0, 64) : null;
+  const replyToPreview = body.reply_to_preview ? String(body.reply_to_preview).slice(0, 200) : null;
   await ensureConversationColumns(env);
   try {
     await env.DB.prepare(
-      "INSERT INTO messages (id, conversation_id, role, content, attachments, created_at, sender_user_id) VALUES (?, ?, 'user', ?, ?, ?, ?)"
+      "INSERT INTO messages (id, conversation_id, role, content, attachments, created_at, sender_user_id, reply_to_id, reply_to_preview) VALUES (?, ?, 'user', ?, ?, ?, ?, ?, ?)"
     )
-      .bind(userMsgId, convo.id, body.message || "", attMeta.length ? JSON.stringify(attMeta) : null, nowIso(), user.id)
+      .bind(
+        userMsgId,
+        convo.id,
+        body.message || "",
+        attMeta.length ? JSON.stringify(attMeta) : null,
+        nowIso(),
+        user.id,
+        replyToId,
+        replyToPreview
+      )
       .run();
   } catch {
-    await env.DB.prepare(
-      "INSERT INTO messages (id, conversation_id, role, content, attachments, created_at) VALUES (?, ?, 'user', ?, ?, ?)"
-    )
-      .bind(userMsgId, convo.id, body.message || "", attMeta.length ? JSON.stringify(attMeta) : null, nowIso())
-      .run();
+    try {
+      await env.DB.prepare(
+        "INSERT INTO messages (id, conversation_id, role, content, attachments, created_at, sender_user_id) VALUES (?, ?, 'user', ?, ?, ?, ?)"
+      )
+        .bind(userMsgId, convo.id, body.message || "", attMeta.length ? JSON.stringify(attMeta) : null, nowIso(), user.id)
+        .run();
+    } catch {
+      await env.DB.prepare(
+        "INSERT INTO messages (id, conversation_id, role, content, attachments, created_at) VALUES (?, ?, 'user', ?, ?, ?)"
+      )
+        .bind(userMsgId, convo.id, body.message || "", attMeta.length ? JSON.stringify(attMeta) : null, nowIso())
+        .run();
+    }
   }
 
   // Third-party message locks collab → cannot return to "Only me"
@@ -3009,6 +3153,10 @@ export default {
         resp = await handleSetConversationVisibility(request, env, path.split("/")[3]);
       } else if (path.match(/^\/api\/conversations\/[^/]+\/join$/) && request.method === "POST") {
         resp = await handleJoinCollab(request, env, path.split("/")[3]);
+      } else if (path === "/api/block" && request.method === "POST") {
+        resp = await handleBlockUser(request, env);
+      } else if (path === "/api/block" && request.method === "DELETE") {
+        resp = await handleUnblockUser(request, env);
       } else if (path === "/api/friends" && request.method === "GET") {
         resp = await handleListFriends(request, env);
       } else if (path === "/api/friends/request" && request.method === "POST") {

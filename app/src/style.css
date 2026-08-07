@@ -1124,16 +1124,29 @@ select:focus-visible,
   border-radius: 20px;
   line-height: 1.65;
   white-space: pre-wrap;
-  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: normal;
   font-size: var(--base-font-size);
 }
 
-/* Claude-style user bubble: filled, high-contrast gold pill. */
+/* Claude-style user bubble: filled, high-contrast gold pill.
+   width: fit-content so short messages ("hello") stay on one line;
+   max-width caps long messages. Avoid per-letter wrap from flex min-width. */
+.msg-row.user {
+  width: fit-content;
+  max-width: min(88%, 560px);
+  min-width: 0;
+}
 .msg-row.user .msg {
   background: var(--bubble-user);
   color: var(--bubble-user-text);
   border-bottom-right-radius: 6px;
   box-shadow: var(--shadow-sm);
+  width: fit-content;
+  max-width: 100%;
+  min-width: 2.5em;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 html[dir="rtl"] .msg-row.user .msg {
@@ -5552,12 +5565,69 @@ html::-webkit-scrollbar-thumb:hover,
 .messages.is-collab .msg-row.agent {
   align-items: flex-start;
 }
-/* Other participants: left side, neutral bubble (not the gold "mine" style) */
+/* Other participants: left side — readable bubble (like a clean chat app) */
+.messages.is-collab .msg-row.collab-peer {
+  align-self: flex-start;
+  align-items: flex-start;
+  width: fit-content;
+  max-width: min(85%, 520px);
+  min-width: 0;
+}
 .messages.is-collab .msg-row.collab-peer .msg.collab-peer-msg {
-  background: color-mix(in srgb, var(--card) 88%, var(--text-secondary));
+  background: var(--card-elevated);
   color: var(--text);
   border: 1px solid var(--border);
+  border-radius: 18px;
+  border-bottom-left-radius: 6px;
+  padding: 10px 14px;
+  box-shadow: var(--shadow-sm);
   white-space: pre-wrap;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 2.5em;
+  overflow-wrap: break-word;
+  word-break: normal;
+  line-height: 1.55;
+  font-size: var(--base-font-size);
+}
+/* Paul in collab/DM group view — soft bubble, still distinct from peers */
+.messages.is-collab .msg-row.agent:not(.collab-peer) {
+  width: fit-content;
+  max-width: min(85%, 520px);
+}
+.messages.is-collab .msg-row.agent:not(.collab-peer) .msg {
+  background: color-mix(in srgb, var(--card) 70%, var(--accent-bg));
+  color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--border) 80%, var(--accent));
+  border-radius: 18px;
+  border-bottom-left-radius: 6px;
+  padding: 10px 14px;
+  box-shadow: var(--shadow-sm);
+  width: fit-content;
+  max-width: 100%;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+.messages.is-collab .msg-row.user {
+  width: fit-content;
+  max-width: min(85%, 520px);
+}
+.messages.is-collab .msg-row.user .msg {
+  border-radius: 18px;
+  border-bottom-right-radius: 6px;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 2.5em;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+html[dir="rtl"] .messages.is-collab .msg-row.collab-peer .msg.collab-peer-msg {
+  border-bottom-left-radius: 18px;
+  border-bottom-right-radius: 6px;
+}
+html[dir="rtl"] .messages.is-collab .msg-row.user .msg {
+  border-bottom-right-radius: 18px;
+  border-bottom-left-radius: 6px;
 }
 .msg-sender-head {
   display: inline-flex;
@@ -5596,9 +5666,16 @@ html::-webkit-scrollbar-thumb:hover,
   object-fit: cover;
 }
 .msg-sender-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--accent);
+  letter-spacing: 0.01em;
+}
+.messages.is-collab .msg-row.collab-peer .msg-sender-name {
+  color: var(--accent-strong, var(--accent));
+}
+.messages.is-collab .msg-row.agent .msg-sender-name {
+  color: var(--accent);
 }
 .msg-row.user .msg-sender-head,
 .msg-row.agent .msg-sender-head {
@@ -5625,41 +5702,129 @@ html::-webkit-scrollbar-thumb:hover,
   position: fixed;
   inset: 0;
   z-index: 10060;
-  background: rgba(0,0,0,0.45);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 16px;
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
 }
 .sender-popup-card {
-  background: var(--card);
+  background: var(--card-elevated);
   border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 18px 20px;
-  min-width: min(320px, 100%);
+  border-radius: 16px;
+  padding: 20px 18px 16px;
+  width: min(400px, 100%);
   max-width: 400px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  animation: sender-pop-in 0.18s ease-out;
+}
+@keyframes sender-pop-in {
+  from { transform: translateY(8px) scale(0.98); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
 }
 .sender-popup-name {
-  font-size: 17px;
-  font-weight: 650;
-  margin-bottom: 4px;
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 2px;
+  color: var(--text);
 }
 .sender-popup-row {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  align-items: baseline;
+  gap: 14px;
   font-size: 13px;
   color: var(--text-secondary);
+  padding: 6px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+.sender-popup-row:last-of-type {
+  border-bottom: none;
 }
 .sender-popup-row strong {
   color: var(--text);
-  font-weight: 500;
+  font-weight: 550;
   text-align: end;
   word-break: break-all;
+  max-width: 62%;
+  font-size: 13px;
+}
+.sender-popup-friend-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+}
+.sender-popup-friend-actions .primary,
+.sender-popup-friend-actions .secondary-btn {
+  min-height: 40px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.sp-friend-status {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.sender-popup-close {
+  width: 100%;
+  min-height: 42px;
+  border-radius: 10px;
+  margin-top: 2px;
+}
+@media (max-width: 640px) {
+  .sender-popup {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .sender-popup-card {
+    width: 100%;
+    max-width: 100%;
+    border-radius: 18px 18px 0 0;
+    padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    animation: sender-sheet-in 0.22s ease-out;
+  }
+  @keyframes sender-sheet-in {
+    from { transform: translateY(24px); opacity: 0.85; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  .sender-popup-row {
+    flex-direction: column;
+    gap: 4px;
+    align-items: flex-start;
+  }
+  .sender-popup-row strong {
+    max-width: 100%;
+    text-align: start;
+  }
+  .messages.is-collab .msg-row.collab-peer,
+  .messages.is-collab .msg-row.user,
+  .messages.is-collab .msg-row.agent:not(.collab-peer) {
+    max-width: 92%;
+    width: fit-content;
+  }
+  .messages.is-collab .msg-row.collab-peer .msg.collab-peer-msg,
+  .messages.is-collab .msg-row.agent:not(.collab-peer) .msg,
+  .messages.is-collab .msg-row.user .msg {
+    max-width: 100%;
+    width: fit-content;
+    padding: 9px 12px;
+    font-size: 15px;
+    word-break: normal;
+    overflow-wrap: break-word;
+  }
+  .msg-sender-avatar {
+    width: 26px;
+    height: 26px;
+  }
 }
 
 .convo-group-header {
@@ -5858,17 +6023,38 @@ html::-webkit-scrollbar-thumb:hover,
 }
 
 
-/* Collab @mentions */
+/* @mentions — high contrast on every bubble type */
 .msg .mention {
-  color: var(--accent);
-  font-weight: 600;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  border-radius: 4px;
-  padding: 0 3px;
+  color: #0d6e4f;
+  font-weight: 700;
+  background: rgba(13, 110, 79, 0.16);
+  border-radius: 6px;
+  padding: 1px 5px;
+  display: inline;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 .msg .mention-paul {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: #6b3a00;
+  background: rgba(212, 160, 23, 0.35);
+  font-weight: 700;
+}
+/* On gold "my" bubbles — white chip so the tag actually stands out */
+.msg-row.user .msg .mention {
+  color: #102a43;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+.msg-row.user .msg .mention-paul {
+  color: #5c3b00;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 1px rgba(92, 59, 0, 0.2);
+}
+/* Peer / left bubbles */
+.msg-row.collab-peer .msg .mention,
+.msg-row.agent .msg .mention {
+  color: #0a7a55;
+  background: color-mix(in srgb, #0a7a55 18%, transparent);
 }
 .mention-menu {
   position: absolute;
@@ -6072,3 +6258,86 @@ html::-webkit-scrollbar-thumb:hover,
   line-height: 1.2;
   gap: 0;
 }
+
+
+/* Timestamps, reply, typing, members, export */
+.msg-time {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  padding: 0 4px;
+  opacity: 0.85;
+}
+.msg-row.user .msg-time { text-align: end; }
+.msg-quote {
+  border-inline-start: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent-bg) 40%, transparent);
+  padding: 4px 8px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.msg-reply-btn {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.msg-row:hover .msg-reply-btn { opacity: 1; }
+.msg-reply-btn:hover { color: var(--accent); background: var(--accent-bg); }
+.msg-row.user .msg-reply-btn { align-self: flex-end; }
+.reply-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  margin: 0 12px 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  border-inline-start: 3px solid var(--accent);
+}
+.reply-bar-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.reply-bar-label { font-size: 11px; font-weight: 650; color: var(--accent); }
+.reply-bar-preview { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reply-bar-close {
+  border: none; background: transparent; color: var(--text-secondary);
+  cursor: pointer; font-size: 14px; padding: 4px 8px; border-radius: 6px;
+}
+.typing-indicator {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 4px 8px 10px;
+  font-style: italic;
+  align-self: flex-start;
+}
+.collab-members-chip {
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  max-width: min(280px, 40vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-inline-start: 8px;
+}
+.collab-members-chip:hover { color: var(--accent); border-color: var(--accent); }
+.danger-text { color: var(--danger) !important; }
+.dm-title-id { display: none !important; }

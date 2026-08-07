@@ -1,4 +1,4 @@
-# Paul — Your Personal AI Agent (v9.4)
+# Paul — Your Personal AI Agent (v9.5)
 
 A comprehensive chat web application powered by a Mistral AI agent, designed to run entirely on your own Cloudflare account for maximum privacy and control.
 
@@ -287,6 +287,8 @@ API: `PATCH /api/memory/:id` with `{ "title": "...", "content": "..." }`.
 ---
 
 ## 📌 Version
+
+**9.5.0** — Friend DMs (`#user=`), @paul in collab+DM, live friend requests (WS), owner-only manage, polished group/DM bubbles.
 
 **9.4.0** — Friends system, 1:1 DMs with live WebSocket, @paul tag only in collab.
 

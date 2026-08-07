@@ -40,30 +40,34 @@ function friendUserUrl(username: string) {
  * conversation we just opened).
  */
 let internalHashUpdate = false;
-function syncUrlToConversation(id: string | null) {
-  // Friend DMs use #user=username — never show #conv= for them
-  if (id && isDmChat && currentDmPeer?.username) {
-    const target = `#user=${encodeURIComponent(currentDmPeer.username)}`;
+
+/** Prefer #user=username for DMs; #conv=id otherwise. */
+function syncUrlToConversation(id: string | null, dmUsername?: string | null) {
+  const uname = (dmUsername || currentDmPeer?.username || "").trim();
+  if (id && (isDmChat || uname) && uname) {
+    const target = `#user=${encodeURIComponent(uname)}`;
     if (window.location.hash === target) return;
     internalHashUpdate = true;
-    history.replaceState(null, "", friendUserUrl(currentDmPeer.username));
+    history.replaceState(null, "", friendUserUrl(uname));
     setTimeout(() => {
       internalHashUpdate = false;
     }, 0);
     return;
   }
+  if (id && isDmChat && !uname) {
+    // DM but peer not resolved yet — don't write a misleading #conv=
+    return;
+  }
   const target = id ? `#conv=${id}` : "";
   const current = window.location.hash;
   if (current === target || (!id && current === "")) return;
-  // Don't overwrite an existing #user= hash with #conv= while opening a DM
-  if (id && current.startsWith("#user=") && isDmChat) return;
+  if (id && current.startsWith("#user=")) return;
   internalHashUpdate = true;
   if (id) {
     history.replaceState(null, "", conversationUrl(id));
   } else {
     history.replaceState(null, "", `${window.location.origin}${window.location.pathname}`);
   }
-  // Let any queued hashchange event flush before we listen again.
   setTimeout(() => {
     internalHashUpdate = false;
   }, 0);
@@ -182,6 +186,16 @@ let isCollabChat = false;
 /** 1:1 friend DM — live updates, group-style bubbles; @paul NOT required. */
 let isDmChat = false;
 /** Peer in the open friend DM (username + id shown in header — not a convo title/link). */
+let replyTarget: { id: string; preview: string; author?: string } | null = null;
+let mutedChatIds = new Set<string>(JSON.parse(localStorage.getItem("paul_muted_chats") || "[]"));
+function isChatMuted(id: string | null) {
+  return !!(id && mutedChatIds.has(id));
+}
+function toggleMuteChat(id: string) {
+  if (mutedChatIds.has(id)) mutedChatIds.delete(id);
+  else mutedChatIds.add(id);
+  localStorage.setItem("paul_muted_chats", JSON.stringify([...mutedChatIds]));
+}
 let currentDmPeer: {
   id: string;
   username: string;
@@ -198,22 +212,26 @@ function applyDmHeader(peer?: { id: string; username: string; display_name?: str
   if (!peer) {
     chatTitle.textContent = "Friend chat";
     chatTitle.removeAttribute("title");
+    chatTitle.onclick = null;
     return;
   }
   const uname = peer.username || peer.display_name || "user";
-  chatTitle.textContent = `@${uname}`;
-  // Full identity on hover / long-press
-  chatTitle.title = `@${uname}\nUser ID: ${peer.id}`;
-  // Show username + id in the visible title area
   chatTitle.innerHTML = "";
   const nameEl = document.createElement("span");
   nameEl.className = "dm-title-user";
   nameEl.textContent = `@${uname}`;
-  const idEl = document.createElement("span");
-  idEl.className = "dm-title-id";
-  idEl.textContent = peer.id;
   chatTitle.appendChild(nameEl);
-  chatTitle.appendChild(idEl);
+  chatTitle.title = `Tap for profile · User ID: ${peer.id}`;
+  chatTitle.style.cursor = "pointer";
+  chatTitle.onclick = () => {
+    showSenderPopup({
+      id: peer.id,
+      username: peer.username,
+      display_name: peer.display_name || peer.username,
+      email: null,
+      avatar: null,
+    });
+  };
 }
 /** True when the current user owns the open conversation (for null-sender fallback). */
 let isConversationOwner = false;
@@ -303,6 +321,7 @@ function startCollabLive() {
         const data = JSON.parse(String(ev.data));
         if (data?.type === "messages" && Array.isArray(data.messages)) {
           applyLiveMessages(data.messages, data.conversation || null);
+          updateTypingIndicator(Array.isArray(data.typing) ? data.typing : []);
         }
       } catch {
         /* ignore bad frames */
@@ -366,25 +385,41 @@ if (typeof document !== "undefined") {
  */
 function syncOwnerControls() {
   const owner = isConversationOwner || !currentConversationId;
+  const usageBtn = document.getElementById("header-usage-btn") as HTMLButtonElement | null;
+  const filesBtn = document.getElementById("header-files-btn") as HTMLButtonElement | null;
   const shareBtn = document.getElementById("header-share-btn") as HTMLButtonElement | null;
+  const moreBtn = document.getElementById("header-more-btn") as HTMLButtonElement | null;
   const shareMenu = document.getElementById("share-menu") as HTMLDivElement | null;
-  // No share/link UI in friend DMs
-  const canShare = owner && !isDmChat;
+  const moreMenu = document.getElementById("more-menu") as HTMLDivElement | null;
+
+  // Friend DM: hide Usage / Files / Share / More entirely
+  if (isDmChat) {
+    if (usageBtn) usageBtn.style.display = "none";
+    if (filesBtn) filesBtn.style.display = "none";
+    if (shareBtn) {
+      shareBtn.style.display = "none";
+      shareBtn.classList.remove("open");
+    }
+    if (moreBtn) moreBtn.style.display = "none";
+    if (shareMenu) shareMenu.style.display = "none";
+    if (moreMenu) moreMenu.style.display = "none";
+    return;
+  }
+
+  if (usageBtn) usageBtn.style.display = "";
+  if (filesBtn) filesBtn.style.display = "";
+  if (moreBtn) moreBtn.style.display = "";
+
+  const canShare = owner;
   if (shareBtn) {
     shareBtn.style.display = canShare ? "" : "none";
     if (!canShare) shareBtn.classList.remove("open");
   }
   if (shareMenu && !canShare) shareMenu.style.display = "none";
 
-  // More menu: rename/star/archive/delete — owner only; hide rename on DMs (title is the person)
   for (const id of ["more-rename", "more-star", "more-archive", "more-delete"]) {
     const el = document.getElementById(id) as HTMLElement | null;
-    if (!el) continue;
-    if (id === "more-rename" && isDmChat) {
-      el.style.display = "none";
-      continue;
-    }
-    el.style.display = owner ? "" : "none";
+    if (el) el.style.display = owner ? "" : "none";
   }
 }
 
@@ -838,9 +873,9 @@ let currentChatReadOnly = false;
  * Single place where the open conversation changes, so the address bar always
  * matches what's on screen (refresh reopens the same chat, never a blank one).
  */
-function setCurrentConversation(id: string | null) {
+function setCurrentConversation(id: string | null, dmUsername?: string | null) {
   currentConversationId = id;
-  syncUrlToConversation(id);
+  syncUrlToConversation(id, dmUsername);
 }
 let pendingAttachments: (Attachment & { dataUrl: string })[] = [];
 let lastUserText = "";
@@ -1684,7 +1719,8 @@ function syncCollabComposerHint() {
  */
 async function openConversationLink(id: string) {
   stopCollabLive();
-  setCurrentConversation(id);
+  // Delay URL write until we know if this is a friend DM (#user=) or normal (#conv=)
+  currentConversationId = id;
   renderConvoList();
   messagesEl.innerHTML = "";
   chatTitle.textContent = "…";
@@ -1697,9 +1733,15 @@ async function openConversationLink(id: string) {
     currentVisibility = (conversation?.visibility as Visibility) || "private";
     currentCollabCode = conversation?.collab_code || null;
     collabMembers = conversation?.members || [];
+    renderCollabMembersChip(collabMembers);
     currentDmPeer = conversation?.dm_peer || null;
-    if (isDmChat) applyDmHeader(currentDmPeer);
-    else chatTitle.textContent = conversation?.title || t("chat.newChat");
+    if (isDmChat) {
+      applyDmHeader(currentDmPeer);
+      if (currentDmPeer?.username) syncUrlToConversation(id, currentDmPeer.username);
+    } else {
+      chatTitle.textContent = conversation?.title || t("chat.newChat");
+      syncUrlToConversation(id);
+    }
     if (conversation) {
       const local = conversations.find((c) => c.id === id);
       if (local) {
@@ -1963,6 +2005,21 @@ function showSenderPopup(sender: import("./api").MessageSender) {
         label.className = "sp-friend-status";
         label.textContent = "Friends";
         actions.appendChild(label);
+        const unf = document.createElement("button");
+        unf.type = "button";
+        unf.className = "secondary-btn";
+        unf.textContent = "Unfriend";
+        unf.addEventListener("click", async () => {
+          try {
+            await api.removeFriend(st.friendship!.id);
+            await loadFriends();
+            paint();
+            showToast("Removed from friends");
+          } catch (e: any) {
+            showToast(e?.message || "Failed");
+          }
+        });
+        actions.appendChild(unf);
       } else if (st.status === "pending_out") {
         const pending = document.createElement("button");
         pending.type = "button";
@@ -2049,6 +2106,24 @@ function showSenderPopup(sender: import("./api").MessageSender) {
         });
         actions.appendChild(add);
       }
+      const block = document.createElement("button");
+      block.type = "button";
+      block.className = "secondary-btn danger-text";
+      block.textContent = "Block";
+      block.addEventListener("click", async () => {
+        const ok = confirm(`Block @${sender.username}? They won't be able to message you.`);
+        if (!ok) return;
+        try {
+          await api.blockUser({ user_id: sender.id, username: sender.username });
+          await loadFriends();
+          close();
+          showToast("User blocked");
+          renderConvoList();
+        } catch (e: any) {
+          showToast(e?.message || "Could not block");
+        }
+      });
+      actions.appendChild(block);
     };
 
     void loadFriends().then(paint);
@@ -2067,6 +2142,105 @@ function isMyUserMessage(kind: string, sender?: import("./api").MessageSender | 
   // Legacy messages without sender_user_id: treat as mine only if I own the chat
   if (!sender?.id && isConversationOwner) return true;
   return false;
+}
+
+
+function updateTypingIndicator(typing: { user_id: string; username: string }[]) {
+  let el = document.getElementById("typing-indicator") as HTMLDivElement | null;
+  if (!typing.length) {
+    el?.remove();
+    return;
+  }
+  const names = typing.map((x) => x.username).filter(Boolean);
+  if (!names.length) {
+    el?.remove();
+    return;
+  }
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "typing-indicator";
+    el.className = "typing-indicator";
+    messagesEl.appendChild(el);
+  }
+  const label = names.length === 1 ? `${names[0]} is typing…` : `${names.slice(0, 2).join(", ")} are typing…`;
+  el.textContent = label;
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function sendTypingPulse() {
+  if (!isGroupStyleChat() || !collabWs || collabWs.readyState !== WebSocket.OPEN) return;
+  try {
+    collabWs.send(JSON.stringify({ type: "typing" }));
+  } catch { /* ignore */ }
+}
+
+function formatMsgTime(iso?: string | null): string {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const now = new Date();
+    const sameDay = d.toDateString() === now.toDateString();
+    return sameDay
+      ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "";
+  }
+}
+
+function setReplyTarget(id: string, preview: string, author?: string) {
+  replyTarget = { id, preview: preview.slice(0, 120), author };
+  let bar = document.getElementById("reply-bar") as HTMLDivElement | null;
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "reply-bar";
+    bar.className = "reply-bar";
+    const form = document.getElementById("chat-form");
+    form?.parentElement?.insertBefore(bar, form);
+  }
+  bar.innerHTML = `<div class="reply-bar-body"><span class="reply-bar-label">Replying${author ? " to " + author : ""}</span><span class="reply-bar-preview"></span></div><button type="button" class="reply-bar-close" aria-label="Cancel">✕</button>`;
+  bar.querySelector(".reply-bar-preview")!.textContent = preview.slice(0, 80);
+  bar.querySelector(".reply-bar-close")!.addEventListener("click", clearReplyTarget);
+  chatInput.focus();
+}
+
+function clearReplyTarget() {
+  replyTarget = null;
+  document.getElementById("reply-bar")?.remove();
+}
+
+function exportCurrentChat() {
+  const rows = Array.from(messagesEl.querySelectorAll<HTMLDivElement>(".msg-row"));
+  const lines: string[] = [`Paul chat export — ${new Date().toISOString()}`, ""];
+  for (const row of rows) {
+    if (row.classList.contains("thinking")) continue;
+    const name = row.querySelector(".msg-sender-name")?.textContent || (row.classList.contains("user") ? "You" : row.classList.contains("agent") ? "Paul" : "Message");
+    const body = row.querySelector(".msg")?.textContent || "";
+    const time = row.querySelector(".msg-time")?.textContent || "";
+    lines.push(`[${time}] ${name}: ${body}`);
+  }
+  const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `paul-chat-${(currentConversationId || "export").slice(0, 8)}.txt`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast("Chat exported");
+}
+
+function renderCollabMembersChip(members: { username: string; display_name: string; is_owner?: boolean }[]) {
+  document.getElementById("collab-members-chip")?.remove();
+  if (!isCollabChat || !members.length) return;
+  const chip = document.createElement("button");
+  chip.type = "button";
+  chip.id = "collab-members-chip";
+  chip.className = "collab-members-chip";
+  const names = members.slice(0, 4).map((m) => m.display_name || m.username);
+  const extra = members.length > 4 ? ` +${members.length - 4}` : "";
+  chip.textContent = `${members.length} people · ${names.join(", ")}${extra}`;
+  chip.title = members.map((m) => `${m.display_name || m.username}${m.is_owner ? " (owner)" : ""}`).join("\n");
+  chatTitle.parentElement?.insertBefore(chip, chatTitle.nextSibling);
 }
 
 function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: string, attachments: Attachment[] = [], sender?: import("./api").MessageSender | null) {
@@ -2124,12 +2298,41 @@ function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: strin
   bubble.className = "msg" + (otherUser ? " collab-peer-msg" : "");
   if (kind === "agent") {
     bubble.innerHTML = renderMarkdown(content);
-  } else if (isGroupStyleChat() && /(^|[^\w])@[a-zA-Z]/.test(content)) {
+  } else if (isGroupStyleChat() && content.includes("@")) {
     bubble.innerHTML = formatMentionsHtml(content);
   } else {
     bubble.textContent = content;
   }
   row.appendChild(bubble);
+
+  // Timestamp (callers may set data-created-at before/after)
+  const timeEl = document.createElement("div");
+  timeEl.className = "msg-time";
+  timeEl.textContent = formatMsgTime(row.dataset.createdAt) || (kind === "thinking" ? "" : formatMsgTime(new Date().toISOString()));
+  if (timeEl.textContent) row.appendChild(timeEl);
+
+  // Quoted reply preview
+  if (row.dataset.replyPreview) {
+    const q = document.createElement("div");
+    q.className = "msg-quote";
+    q.textContent = row.dataset.replyPreview;
+    bubble.prepend(q);
+  }
+
+  // Reply action on group-style chats
+  if (isGroupStyleChat() && kind !== "thinking" && kind !== "error") {
+    const replyBtn = document.createElement("button");
+    replyBtn.type = "button";
+    replyBtn.className = "msg-reply-btn";
+    replyBtn.textContent = "Reply";
+    replyBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const author = sender?.display_name || sender?.username || (kind === "agent" ? "Paul" : "message");
+      const mid = row.dataset.msgId || crypto.randomUUID();
+      setReplyTarget(mid, content, author);
+    });
+    row.appendChild(replyBtn);
+  }
 
   if (attachments.length) {
     const chipsWrap = document.createElement("div");
@@ -2283,7 +2486,22 @@ function renderMessages(messages: Message[]) {
   }
   let row: HTMLDivElement | null = null;
   for (const m of messages) {
-    row = addMsgRow(m.role, m.content, m.attachments, m.sender || null);
+    row = addMsgRow(m.role as any, m.content, m.attachments, m.sender || null);
+    if (m.id) row.dataset.msgId = m.id;
+    if (m.created_at) {
+      row.dataset.createdAt = m.created_at;
+      const te = row.querySelector(".msg-time");
+      if (te) te.textContent = formatMsgTime(m.created_at);
+    }
+    if (m.reply_to_preview) {
+      row.dataset.replyPreview = m.reply_to_preview;
+      if (!row.querySelector(".msg-quote")) {
+        const q = document.createElement("div");
+        q.className = "msg-quote";
+        q.textContent = m.reply_to_preview;
+        row.querySelector(".msg")?.prepend(q);
+      }
+    }
     if (m.role === "user") {
       lastUserText = m.content;
       lastUserAttachments = [];
@@ -2296,7 +2514,8 @@ function renderMessages(messages: Message[]) {
 
 async function selectConversation(id: string) {
   stopCollabLive();
-  setCurrentConversation(id);
+  // Don't write #conv= yet — may be a friend DM (#user=)
+  currentConversationId = id;
   setComposerReadOnly(false);
   const convo = conversations.find((c) => c.id === id);
   chatTitle.textContent = convo?.title || t("chat.newChat");
@@ -2312,13 +2531,14 @@ async function selectConversation(id: string) {
   currentVisibility = (data.conversation?.visibility as Visibility) || "private";
   currentCollabCode = data.conversation?.collab_code || null;
   collabMembers = data.conversation?.members || [];
+  renderCollabMembersChip(collabMembers);
   currentDmPeer = data.conversation?.dm_peer || null;
   if (isDmChat) applyDmHeader(currentDmPeer);
   else chatTitle.textContent = data.conversation?.title || convo?.title || t("chat.newChat");
   if (isDmChat && currentDmPeer?.username) {
-    internalHashUpdate = true;
-    history.replaceState(null, "", friendUserUrl(currentDmPeer.username));
-    setTimeout(() => { internalHashUpdate = false; }, 0);
+    syncUrlToConversation(id, currentDmPeer.username);
+  } else if (!isDmChat) {
+    syncUrlToConversation(id);
   }
 
   // Keep sidebar/local convo in sync with server lock + visibility
@@ -2771,11 +2991,17 @@ async function performSend(
       conversation_id: currentConversationId || undefined,
       message: text,
       attachments,
+      reply_to_id: replyTarget?.id,
+      reply_to_preview: replyTarget ? `${replyTarget.author ? replyTarget.author + ": " : ""}${replyTarget.preview}` : undefined,
     });
+    clearReplyTarget();
     thinking?.remove();
 
     const isNewConvo = !currentConversationId;
-    setCurrentConversation(result.conversation_id);
+    setCurrentConversation(
+      result.conversation_id,
+      isDmChat && currentDmPeer?.username ? currentDmPeer.username : null
+    );
     if (!isDmChat && result.title) chatTitle.textContent = result.title;
     if (isDmChat && currentDmPeer) applyDmHeader(currentDmPeer);
 
@@ -3115,12 +3341,24 @@ export function initChatView(user: User) {
     if (!attachMenu.contains(e.target as Node) && e.target !== attachBtn) closeAttachMenu();
   });
 
+  document.getElementById("more-export")?.addEventListener("click", () => {
+    document.getElementById("more-menu")!.style.display = "none";
+    exportCurrentChat();
+  });
+  document.getElementById("more-mute")?.addEventListener("click", () => {
+    document.getElementById("more-menu")!.style.display = "none";
+    if (!currentConversationId) return;
+    toggleMuteChat(currentConversationId);
+    showToast(isChatMuted(currentConversationId) ? "Chat muted" : "Chat unmuted");
+  });
+
   setupMic();
 
   chatInput.addEventListener("input", () => {
     chatInput.style.height = "auto";
     chatInput.style.height = `${chatInput.scrollHeight}px`;
     onComposerMentionInput();
+    sendTypingPulse();
   });
 
   chatInput.addEventListener("keydown", (e) => {

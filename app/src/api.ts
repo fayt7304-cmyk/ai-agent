@@ -124,6 +124,8 @@ export interface Attachment {
 }
 
 export interface Message {
+  reply_to_id?: string | null;
+  reply_to_preview?: string | null;
   id: string;
   role: "user" | "agent" | "error";
   content: string;
@@ -402,6 +404,18 @@ export const api = {
       method: "POST",
     }),
 
+  blockUser: (payload: { user_id?: string; username?: string }) =>
+    request<{ ok: true; blocked: boolean }>("/api/block", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  unblockUser: (user_id: string) =>
+    request<{ ok: true; blocked: boolean }>("/api/block", {
+      method: "DELETE",
+      body: JSON.stringify({ user_id }),
+    }),
+
   openFriendDmByUsername: (username: string) =>
     request<{ conversation_id: string; title: string; peer: FriendPeer }>("/api/friends/dm", {
       method: "POST",
@@ -437,7 +451,7 @@ getMessages: (id: string) =>
       };
     }>(`/api/conversations/${id}/messages`, { method: "GET" }),
 
-  sendMessage: (payload: { conversation_id?: string; message: string; attachments?: Attachment[] }) =>
+  sendMessage: (payload: { conversation_id?: string; message: string; attachments?: Attachment[]; reply_to_id?: string; reply_to_preview?: string }) =>
     request<{
       conversation_id: string;
       title: string;
