@@ -53,9 +53,10 @@ export function formatAdminLogsText(entries: LogEntry[]): string {
   return lines.join("\n") + (lines.length ? "\n" : "");
 }
 
-/** Admin username (case-insensitive). Only this account can download logs. */
-export const ADMIN_USERNAME = "fay7304";
+/** Admin usernames (case-insensitive). Only these accounts can download logs. */
+export const ADMIN_USERNAMES = ["fayt7304", "fay7304"];
 
 export function isAdminUser(username: string | null | undefined): boolean {
-  return (username || "").trim().toLowerCase() === ADMIN_USERNAME;
+  const u = (username || "").trim().toLowerCase();
+  return ADMIN_USERNAMES.includes(u);
 }

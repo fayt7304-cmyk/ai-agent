@@ -209,12 +209,8 @@ function wireHeaderActions() {
       return;
     }
     const url = conversationUrl(id);
-    if (visibility === "collab" && collabCode) {
-      const payload = `${url}\nCode: ${collabCode}`;
-      try {
-        await navigator.clipboard.writeText(payload);
-      } catch { /* ignore */ }
-      showToast(`Collab link + code ${collabCode} copied. Code is single-use.`);
+    if (visibility === "collab") {
+      showCollabShareModal(url, collabCode || "????");
       return;
     }
     const done =
@@ -906,6 +902,84 @@ function makeIconActionBtn(icon: keyof typeof icons, title: string): HTMLButtonE
 }
 
 
+
+function showCollabShareModal(url: string, code: string) {
+  document.getElementById("collab-share-modal")?.remove();
+  const overlay = document.createElement("div");
+  overlay.id = "collab-share-modal";
+  overlay.className = "sender-popup";
+  overlay.innerHTML = `
+    <div class="sender-popup-card collab-share-card">
+      <div class="sender-popup-name">Collaboration invite</div>
+      <p class="collab-share-hint">Share this link and the 4-digit code. The code works once — share again to get a new code.</p>
+      <label class="collab-share-label">Link</label>
+      <input type="text" class="collab-share-input" id="collab-share-url" readonly />
+      <label class="collab-share-label">Code</label>
+      <div class="collab-share-code" id="collab-share-code"></div>
+      <div class="collab-share-actions">
+        <button type="button" class="secondary-btn" id="collab-copy-btn">Copy link + code</button>
+        <button type="button" class="primary" id="collab-close-btn">Done</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const urlInput = overlay.querySelector("#collab-share-url") as HTMLInputElement;
+  const codeEl = overlay.querySelector("#collab-share-code") as HTMLElement;
+  urlInput.value = url;
+  codeEl.textContent = code;
+  const close = () => overlay.remove();
+  overlay.querySelector("#collab-close-btn")!.addEventListener("click", close);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector("#collab-copy-btn")!.addEventListener("click", async () => {
+    const payload = `${url}\nCode: ${code}`;
+    try {
+      await navigator.clipboard.writeText(payload);
+      showToast("Link and code copied");
+    } catch {
+      urlInput.select();
+      showToast("Copy manually — code is " + code);
+    }
+  });
+}
+
+function showCollabJoinModal(conversationId: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    document.getElementById("collab-join-modal")?.remove();
+    const overlay = document.createElement("div");
+    overlay.id = "collab-join-modal";
+    overlay.className = "sender-popup";
+    overlay.innerHTML = `
+      <div class="sender-popup-card collab-share-card">
+        <div class="sender-popup-name">Join collaboration</div>
+        <p class="collab-share-hint">Enter the 4-digit code from the person who shared this chat.</p>
+        <input type="text" class="collab-share-input" id="collab-join-code" maxlength="4" inputmode="numeric" placeholder="1234" />
+        <div class="collab-share-actions">
+          <button type="button" class="secondary-btn" id="collab-join-cancel">Cancel</button>
+          <button type="button" class="primary" id="collab-join-ok">Join</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector("#collab-join-code") as HTMLInputElement;
+    input.focus();
+    const finish = (code: string | null) => {
+      overlay.remove();
+      resolve(code);
+    };
+    overlay.querySelector("#collab-join-cancel")!.addEventListener("click", () => finish(null));
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) finish(null); });
+    overlay.querySelector("#collab-join-ok")!.addEventListener("click", () => {
+      const c = input.value.trim();
+      if (!/^\\d{4}$/.test(c)) {
+        showToast("Enter a 4-digit code");
+        return;
+      }
+      finish(c);
+    });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") (overlay.querySelector("#collab-join-ok") as HTMLButtonElement).click();
+    });
+  });
+}
+
 function showSenderPopup(sender: import("./api").MessageSender) {
   document.getElementById("sender-popup")?.remove();
   const pop = document.createElement("div");
@@ -1149,15 +1223,16 @@ async function selectConversation(id: string) {
   isCollabChat = data.conversation?.visibility === "collab" || !!data.conversation?.is_member;
   // Prompt for code if collab, not owner, cannot write yet
   if (data.conversation?.visibility === "collab" && !data.conversation?.owner && !data.conversation?.can_write) {
-    const code = window.prompt(t("share.enterCollabCode") || "Enter the 4-digit collaboration code:");
-    if (code && /^\d{4}$/.test(code.trim())) {
+    const code = await showCollabJoinModal(id);
+    if (code) {
       try {
-        await api.joinCollab(id, code.trim());
+        await api.joinCollab(id, code);
         const again = await api.getMessages(id);
         isCollabChat = true;
         renderMessages(again.messages);
-        setComposerReadOnly(!again.conversation?.can_write);
+        setComposerReadOnly(!again.conversation?.can_write, again.conversation?.can_write ? "" : "Join with the collab code to reply.");
         await loadConversations();
+        showToast("Joined collaboration");
         return;
       } catch (e: any) {
         showToast(e?.message || "Could not join collaboration");
@@ -1379,7 +1454,13 @@ async function performSend(
 
   if (showUserBubble) {
     const attachmentsForDisplay: Attachment[] = attachments.map((a) => ({ name: a.name, mime: a.mime, size: a.size }));
-    addMsgRow("user", text, attachmentsForDisplay);
+    addMsgRow("user", text, attachmentsForDisplay, isCollabChat && currentUser ? {
+      id: currentUser.id,
+      username: currentUser.username,
+      display_name: currentUser.display_name || currentUser.username,
+      email: currentUser.email || null,
+      avatar: currentUser.avatar || null,
+    } : null);
     // New user turn → reset version history
     replyVersions = [];
     replyVersionIndex = 0;
@@ -1416,7 +1497,7 @@ async function performSend(
       replyVersionIndex = 0;
     }
 
-    const agentRow = addMsgRow("agent", replyText, replyAtt);
+    const agentRow = addMsgRow("agent", replyText, replyAtt, { id: "paul", username: "Paul", display_name: "Paul", email: null, avatar: null, is_paul: true });
     attachRegenerateButton(agentRow);
     updateReplyVersionNav(agentRow);
 

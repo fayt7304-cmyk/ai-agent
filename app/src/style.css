@@ -5639,3 +5639,49 @@ html::-webkit-scrollbar-thumb:hover,
 .convo-collab-item {
   border-inline-start: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
 }
+
+
+.collab-share-hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0 0 8px;
+  line-height: 1.4;
+}
+.collab-share-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+.collab-share-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+.collab-share-code {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.35em;
+  text-align: center;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.collab-share-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.collab-share-actions .primary,
+.collab-share-actions .secondary-btn {
+  min-height: 40px;
+}

@@ -487,15 +487,21 @@ function resolveTab(tab: string): string {
 }
 
 
-const ADMIN_USERNAME = "fay7304";
+const ADMIN_USERNAMES = ["fayt7304", "fay7304"];
 const adminLogsSection = document.getElementById("admin-logs-section") as HTMLDivElement | null;
 const adminLogsDownloadBtn = document.getElementById("admin-logs-download-btn") as HTMLButtonElement | null;
 const adminLogsClearBtn = document.getElementById("admin-logs-clear-btn") as HTMLButtonElement | null;
 
+function isAdminUsername(name: string | null | undefined): boolean {
+  return ADMIN_USERNAMES.includes((name || "").trim().toLowerCase());
+}
+
 function refreshAdminLogsVisibility(user: User) {
   if (!adminLogsSection) return;
-  const isAdmin = (user.username || "").trim().toLowerCase() === ADMIN_USERNAME;
-  adminLogsSection.style.display = isAdmin ? "" : "none";
+  const isAdmin = isAdminUsername(user.username);
+  adminLogsSection.style.display = isAdmin ? "block" : "none";
+  if (isAdmin) adminLogsSection.removeAttribute("hidden");
+  else adminLogsSection.setAttribute("hidden", "");
 }
 
 adminLogsDownloadBtn?.addEventListener("click", async () => {
