@@ -1662,6 +1662,30 @@ async function ensureConversationColumns(env: Env): Promise<void> {
       created_at TEXT NOT NULL,
       PRIMARY KEY (blocker_id, blocked_id)
     )`,
+    "ALTER TABLE users ADD COLUMN last_seen_at TEXT",
+    `CREATE TABLE IF NOT EXISTS conversation_reads (
+      conversation_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      last_read_at TEXT NOT NULL,
+      last_message_id TEXT,
+      PRIMARY KEY (conversation_id, user_id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS collab_audit (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      actor_user_id TEXT,
+      actor_username TEXT,
+      action TEXT NOT NULL,
+      detail TEXT,
+      created_at TEXT NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS knowledge_docs (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      tags TEXT,
+      updated_at TEXT NOT NULL
+    )`,
     `CREATE TABLE IF NOT EXISTS friendships (
       id TEXT PRIMARY KEY,
       user_a TEXT NOT NULL,
@@ -1951,6 +1975,20 @@ async function handleGetMessages(request: Request, env: Env, id: string): Promis
     }
   }
 
+  // Presence + read receipts
+  await touchPresence(env, user.id);
+  const lastMsgId = messages.length ? messages[messages.length - 1].id : null;
+  await markConversationRead(env, id, user.id, lastMsgId);
+  let peer_read: { last_read_at: string; last_message_id: string | null } | null = null;
+  let peer_last_seen: string | null = null;
+  if (isDm && dm_peer?.id) {
+    peer_read = await getPeerRead(env, id, dm_peer.id);
+    try {
+      const u = await env.DB.prepare("SELECT last_seen_at FROM users WHERE id = ?").bind(dm_peer.id).first<{ last_seen_at: string | null }>();
+      peer_last_seen = u?.last_seen_at || null;
+    } catch { peer_last_seen = null; }
+  }
+
   return json({
     messages,
     conversation: {
@@ -1966,6 +2004,8 @@ async function handleGetMessages(request: Request, env: Env, id: string): Promis
       members,
       is_dm: isDm,
       dm_peer,
+      peer_read,
+      peer_last_seen,
     },
   });
 }
@@ -2047,6 +2087,8 @@ async function handleCollabLive(request: Request, env: Env, id: string): Promise
   if (!isOwner && !isShared && !(convo.visibility === "dm" && isMember)) {
     return err("Access forbidden.", 403);
   }
+
+    await touchPresence(env, user.id);
 
   const pair = new WebSocketPair();
   const client = pair[0];
@@ -2221,6 +2263,121 @@ async function handleCollabLive(request: Request, env: Env, id: string): Promise
   return new Response(null, { status: 101, webSocket: client });
 }
 
+
+
+async function touchPresence(env: Env, userId: string): Promise<void> {
+  try {
+    await env.DB.prepare("UPDATE users SET last_seen_at = ? WHERE id = ?").bind(nowIso(), userId).run();
+  } catch { /* column may not exist */ }
+}
+
+async function markConversationRead(env: Env, conversationId: string, userId: string, lastMessageId?: string | null): Promise<void> {
+  try {
+    await env.DB.prepare(
+      `INSERT INTO conversation_reads (conversation_id, user_id, last_read_at, last_message_id)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(conversation_id, user_id) DO UPDATE SET last_read_at = excluded.last_read_at, last_message_id = excluded.last_message_id`
+    )
+      .bind(conversationId, userId, nowIso(), lastMessageId || null)
+      .run();
+  } catch { /* ignore */ }
+}
+
+async function getPeerRead(env: Env, conversationId: string, peerId: string): Promise<{ last_read_at: string; last_message_id: string | null } | null> {
+  try {
+    return await env.DB.prepare(
+      "SELECT last_read_at, last_message_id FROM conversation_reads WHERE conversation_id = ? AND user_id = ?"
+    )
+      .bind(conversationId, peerId)
+      .first<{ last_read_at: string; last_message_id: string | null }>();
+  } catch {
+    return null;
+  }
+}
+
+async function writeAudit(
+  env: Env,
+  conversationId: string,
+  actor: { id?: string; username?: string } | null,
+  action: string,
+  detail?: string
+): Promise<void> {
+  try {
+    await env.DB.prepare(
+      "INSERT INTO collab_audit (id, conversation_id, actor_user_id, actor_username, action, detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    )
+      .bind(crypto.randomUUID(), conversationId, actor?.id || null, actor?.username || null, action, detail || null, nowIso())
+      .run();
+  } catch { /* ignore */ }
+}
+
+async function ensureKnowledgeSeed(env: Env): Promise<void> {
+  try {
+    const n = await env.DB.prepare("SELECT COUNT(*) AS c FROM knowledge_docs").first<{ c: number }>();
+    if ((n?.c || 0) > 0) return;
+    const docs = [
+      {
+        id: "marble-types",
+        title: "Marble types & finishes",
+        content:
+          "AFM Arbre works with natural marble and engineered stone. Popular choices: Carrara (soft grey veins), Calacatta (bold veins), Emperador, Nero Marquina. Finishes: polished (glossy), honed (matte), brushed. Sealing recommended for kitchen/bath.",
+        tags: "marble stone finish kitchen",
+      },
+      {
+        id: "quote-process",
+        title: "How to get a quote",
+        content:
+          "To get a quote: share dimensions (length x depth x thickness), room type (kitchen, bathroom, floor), preferred stone/color, and a photo if possible. Use the Get a quote form in Paul or ask @paul. Lead times vary by stock and fabrication.",
+        tags: "quote price order lead",
+      },
+      {
+        id: "care",
+        title: "Marble care",
+        content:
+          "Clean with pH-neutral stone cleaner. Avoid acid (vinegar, lemon) and bleach. Wipe spills quickly. Reseal periodically. Use trivets and coasters.",
+        tags: "care clean maintenance seal",
+      },
+    ];
+    const ts = nowIso();
+    for (const d of docs) {
+      await env.DB.prepare(
+        "INSERT OR IGNORE INTO knowledge_docs (id, title, content, tags, updated_at) VALUES (?, ?, ?, ?, ?)"
+      )
+        .bind(d.id, d.title, d.content, d.tags, ts)
+        .run();
+    }
+  } catch { /* ignore */ }
+}
+
+/** Simple keyword RAG over knowledge_docs — returns snippets + source titles for citations. */
+async function retrieveKnowledge(env: Env, query: string): Promise<{ snippets: string; sources: string[] }> {
+  await ensureKnowledgeSeed(env);
+  const words = (query || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 2)
+    .slice(0, 8);
+  if (!words.length) return { snippets: "", sources: [] };
+  try {
+    const all = await env.DB.prepare("SELECT id, title, content, tags FROM knowledge_docs").all();
+    const scored: { title: string; content: string; score: number }[] = [];
+    for (const row of all.results || []) {
+      const r = row as any;
+      const hay = `${r.title} ${r.tags || ""} ${r.content}`.toLowerCase();
+      let score = 0;
+      for (const w of words) if (hay.includes(w)) score += 1;
+      if (score > 0) scored.push({ title: r.title, content: r.content, score });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    const top = scored.slice(0, 3);
+    if (!top.length) return { snippets: "", sources: [] };
+    const snippets = top.map((s, i) => `[Source ${i + 1}: ${s.title}]\n${s.content}`).join("\n\n");
+    return { snippets, sources: top.map((s) => s.title) };
+  } catch {
+    return { snippets: "", sources: [] };
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Blocks
@@ -2682,6 +2839,7 @@ async function handleJoinCollab(request: Request, env: Env, id: string): Promise
     .run();
 
   adminLog("info", "collab", "member joined", { conversation_id: id, user_id: user.id });
+  await writeAudit(env, id, { id: user.id, username: user.username }, "member_joined", user.username);
   return json({ ok: true, conversation_id: id, title: convo.title });
 }
 
@@ -2761,6 +2919,37 @@ async function listCollabMembers(
     /* table may not exist */
   }
   return members;
+}
+
+
+async function handleGetAudit(request: Request, env: Env, id: string): Promise<Response> {
+  await ensureConversationColumns(env);
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  const convo = await env.DB.prepare("SELECT id, user_id, visibility FROM conversations WHERE id = ?")
+    .bind(id)
+    .first<{ id: string; user_id: string; visibility: string }>();
+  if (!convo) return err("Not found.", 404);
+  if (convo.user_id !== user.id) {
+    const mem = await env.DB.prepare(
+      "SELECT 1 AS ok FROM conversation_members WHERE conversation_id = ? AND user_id = ?"
+    )
+      .bind(id, user.id)
+      .first();
+    if (!mem) return err("Access forbidden.", 403);
+  }
+  let events: any[] = [];
+  try {
+    const q = await env.DB.prepare(
+      "SELECT id, actor_user_id, actor_username, action, detail, created_at FROM collab_audit WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 100"
+    )
+      .bind(id)
+      .all();
+    events = q.results || [];
+  } catch {
+    events = [];
+  }
+  return json({ events });
 }
 
 async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
@@ -2873,6 +3062,11 @@ async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): P
     }
   }
 
+  // @all in collab — log audit notification
+  if ((convo as any).visibility === "collab" && /(^|[^\w])@all\b/i.test(body.message || "")) {
+    await writeAudit(env, convo.id, { id: user.id, username: user.username }, "at_all", (body.message || "").slice(0, 120));
+  }
+
   // Third-party message locks collab → cannot return to "Only me"
   if (convo.user_id !== user.id && convo.visibility === "collab") {
     try {
@@ -2888,6 +3082,7 @@ async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): P
   // Plain messages stay human-to-human. (Private 1:1 with Paul always answers.)
   const vis = String((convo as any).visibility || "private");
   const needsPaulTag = vis === "collab" || vis === "dm";
+  let knowledgeSources: string[] = [];
   const mentionHandles = parseMentionHandles(body.message || "");
   const mentionsPaul = mentionHandles.some((h) => h === "paul");
   if (needsPaulTag && !mentionsPaul) {
@@ -2912,7 +3107,13 @@ async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): P
   // Strip ALL @handles from what Paul sees so tags don't pollute the prompt
   // (keeps multi-mention messages readable: "@paul @alice what's the quote?")
   const cleanMessage = stripMentionHandles(body.message || "");
-  const outgoingMessage = buildMemoryPreamble(memoryRows) + (cleanMessage || body.message || "");
+  // Lightweight RAG over marble knowledge
+  const rag = await retrieveKnowledge(env, cleanMessage || body.message || "");
+  const ragPreamble = rag.snippets
+    ? `\n\n[Business knowledge — cite these when relevant]\n${rag.snippets}\n\n`
+    : "";
+  const outgoingMessage = buildMemoryPreamble(memoryRows) + ragPreamble + (cleanMessage || body.message || "");
+  knowledgeSources = rag.sources;
 
   try {
     const result = await callMistral({
@@ -2962,11 +3163,19 @@ async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): P
       .bind(result.mistralConversationId, newTitle, nowIso(), convo.id)
       .run();
 
+    let replyText = result.reply || "";
+    if (knowledgeSources && knowledgeSources.length && replyText && !/\(empty response\)/.test(replyText)) {
+      // Append citations if the model didn't already
+      if (!/sources?:/i.test(replyText) && !/\[Source/i.test(replyText)) {
+        replyText += "\n\nSources: " + knowledgeSources.join("; ");
+      }
+    }
     return json({
       conversation_id: convo.id,
       title: newTitle,
-      reply: result.reply,
+      reply: replyText,
       attachments: agentAttachments,
+      sources: knowledgeSources || [],
     });
   } catch (e: any) {
     const errorMsgId = crypto.randomUUID();
@@ -3182,6 +3391,8 @@ export default {
       } else if (path.match(/^\/api\/conversations\/[^/]+\/live$/) && request.method === "GET") {
         // WebSocket live feed for collab chats (token via ?token= for cross-origin WS)
         return handleCollabLive(request, env, path.split("/")[3]);
+      } else if (path.match(/^\/api\/conversations\/[^/]+\/audit$/) && request.method === "GET") {
+        resp = await handleGetAudit(request, env, path.split("/")[3]);
       } else if (path === "/api/chat" && request.method === "POST") {
         resp = await handleChat(request, env, ctx);
       } else if (path === "/api/leads" && request.method === "POST") {

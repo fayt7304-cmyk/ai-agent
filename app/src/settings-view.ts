@@ -548,7 +548,20 @@ adminLogsClearBtn?.addEventListener("click", async () => {
   }
 });
 
+function coerceLanguageIfIncomplete() {
+  try {
+    const lang = localStorage.getItem("paul_lang") || localStorage.getItem("language") || document.documentElement.lang || "en";
+    if (lang === "ar") {
+      localStorage.setItem("paul_lang", "en");
+      document.documentElement.lang = "en";
+      document.documentElement.removeAttribute("dir");
+    }
+  } catch { /* ignore */ }
+}
+
 export function openSettings(tabOrUser: string | User = "general", userOrMessage?: User | string, message?: string) {
+  coerceLanguageIfIncomplete();
+
   let tab = "general";
   let user: User | undefined;
   let msg = "";

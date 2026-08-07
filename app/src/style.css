@@ -6341,3 +6341,55 @@ html[dir="rtl"] .messages.is-collab .msg-row.user .msg {
 .collab-members-chip:hover { color: var(--accent); border-color: var(--accent); }
 .danger-text { color: var(--danger) !important; }
 .dm-title-id { display: none !important; }
+
+.msg-sources {
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 4px 6px 0;
+  font-style: italic;
+}
+.msg-read-receipt {
+  font-size: 11px;
+  color: var(--accent);
+  text-align: end;
+  padding: 0 4px;
+  font-weight: 600;
+}
+.presence-chip {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-inline-start: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card);
+}
+.presence-chip.is-online {
+  color: #0a7a55;
+  border-color: color-mix(in srgb, #0a7a55 40%, var(--border));
+}
+.presence-chip.is-online::before {
+  content: "";
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #0a7a55;
+  margin-inline-end: 5px;
+  vertical-align: middle;
+}
+.mention-all {
+  color: #6b3a00 !important;
+  background: rgba(216, 175, 96, 0.35) !important;
+  font-weight: 700;
+}
+.audit-list { max-height: 50vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.audit-row {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--card) 80%, var(--bg));
+  border: 1px solid var(--border);
+  font-size: 13px;
+}
+.audit-row strong { margin-inline-end: 6px; }
+.audit-when { float: right; font-size: 11px; color: var(--text-secondary); }
+.audit-detail { margin-top: 4px; color: var(--text-secondary); font-size: 12px; }

@@ -416,6 +416,12 @@ export const api = {
       body: JSON.stringify({ user_id }),
     }),
 
+  getAudit: (id: string) =>
+    request<{ events: { id: string; actor_username: string | null; action: string; detail: string | null; created_at: string }[] }>(
+      `/api/conversations/${id}/audit`,
+      { method: "GET" }
+    ),
+
   openFriendDmByUsername: (username: string) =>
     request<{ conversation_id: string; title: string; peer: FriendPeer }>("/api/friends/dm", {
       method: "POST",
@@ -435,6 +441,8 @@ getMessages: (id: string) =>
         is_member?: boolean;
         collab_code?: string | null;
         is_dm?: boolean;
+        peer_read?: { last_read_at: string; last_message_id: string | null } | null;
+        peer_last_seen?: string | null;
         dm_peer?: {
           id: string;
           username: string;
@@ -459,6 +467,7 @@ getMessages: (id: string) =>
       attachments?: Attachment[];
       /** Collab: message saved but Paul was not tagged with @paul */
       paul_skipped?: boolean;
+      sources?: string[];
     }>("/api/chat", {
       method: "POST",
       body: JSON.stringify(payload),

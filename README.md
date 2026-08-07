@@ -1,10 +1,21 @@
-# Paul — Your Personal AI Agent (v9.5)
+# Paul — Your Personal AI Agent (v9.7)
 
 A comprehensive chat web application powered by a Mistral AI agent, designed to run entirely on your own Cloudflare account for maximum privacy and control.
 
 ---
 
-## 🚀 What's New in v9
+## 🚀 What's New in v9.7 — Stability & clarity
+
+Focus: make what was already built feel finished. No new big features.
+
+| Fix / polish | Description |
+| :--- | :--- |
+| **URL routing for DMs** | Switching from a friend DM (`#user=…`) back to a normal Paul chat now correctly writes `#conv=…`. Refresh no longer drops you back into the previous friend DM. |
+| **Access forbidden** | Private / missing conversations hide the composer and quick actions (no “Message Paul…” under the lock screen). |
+| **Empty / error states** | “No friends yet”, offline toast, loading skeletons for sidebar + messages already present; forbidden state cleaned up. |
+| **Settings** | Account, language, and theme live in one place (General / Account / Privacy). |
+
+### From v9.6 and earlier
 
 This version (v9) ships server-side tools, high-quality voice, memory self-edit, and UI polish for mobile + desktop (including Arabic / RTL).
 
@@ -287,6 +298,8 @@ API: `PATCH /api/memory/:id` with `{ "title": "...", "content": "..." }`.
 ---
 
 ## 📌 Version
+
+**9.6.0** — Read receipts, presence, @all, RAG citations, stream reveal, activity log.
 
 **9.5.0** — Friend DMs (`#user=`), @paul in collab+DM, live friend requests (WS), owner-only manage, polished group/DM bubbles.
 

@@ -43,8 +43,8 @@ let internalHashUpdate = false;
 
 /** Prefer #user=username for DMs; #conv=id otherwise. */
 function syncUrlToConversation(id: string | null, dmUsername?: string | null) {
-  const uname = (dmUsername || currentDmPeer?.username || "").trim();
-  if (id && (isDmChat || uname) && uname) {
+  const uname = (dmUsername || (isDmChat ? currentDmPeer?.username : null) || "").trim();
+  if (id && isDmChat && uname) {
     const target = `#user=${encodeURIComponent(uname)}`;
     if (window.location.hash === target) return;
     internalHashUpdate = true;
@@ -61,7 +61,8 @@ function syncUrlToConversation(id: string | null, dmUsername?: string | null) {
   const target = id ? `#conv=${id}` : "";
   const current = window.location.hash;
   if (current === target || (!id && current === "")) return;
-  if (id && current.startsWith("#user=")) return;
+  // Leaving a DM (#user=) for a normal chat must update the bar to #conv=
+  // (previously a guard here blocked that and left stale #user= after refresh).
   internalHashUpdate = true;
   if (id) {
     history.replaceState(null, "", conversationUrl(id));
@@ -208,6 +209,46 @@ function isGroupStyleChat(): boolean {
 }
 
 /** Header for friend DMs: @username then user id — not a conversation title/link. */
+function isOnline(lastSeen?: string | null): boolean {
+  if (!lastSeen) return false;
+  const t = new Date(lastSeen).getTime();
+  return Number.isFinite(t) && Date.now() - t < 90_000;
+}
+
+function applyPresence(lastSeen?: string | null) {
+  document.getElementById("presence-chip")?.remove();
+  if (!isDmChat) return;
+  const chip = document.createElement("span");
+  chip.id = "presence-chip";
+  chip.className = "presence-chip" + (isOnline(lastSeen) ? " is-online" : "");
+  if (isOnline(lastSeen)) chip.textContent = "Online";
+  else if (lastSeen) {
+    try {
+      chip.textContent = "Last seen " + new Date(lastSeen).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    } catch {
+      chip.textContent = "Offline";
+    }
+  } else chip.textContent = "Offline";
+  chatTitle.parentElement?.appendChild(chip);
+}
+
+function applyPeerRead(peerRead?: { last_read_at: string; last_message_id: string | null } | null) {
+  document.querySelectorAll(".msg-read-receipt").forEach((el) => el.remove());
+  if (!isDmChat || !peerRead?.last_message_id) return;
+  const rows = Array.from(messagesEl.querySelectorAll<HTMLDivElement>(".msg-row.user"));
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i];
+    if (row.dataset.msgId === peerRead.last_message_id || i === rows.length - 1) {
+      // mark last own message as seen if peer has read anything at/after
+      const rec = document.createElement("div");
+      rec.className = "msg-read-receipt";
+      rec.textContent = "Seen";
+      row.appendChild(rec);
+      break;
+    }
+  }
+}
+
 function applyDmHeader(peer?: { id: string; username: string; display_name?: string } | null) {
   if (!peer) {
     chatTitle.textContent = "Friend chat";
@@ -223,6 +264,8 @@ function applyDmHeader(peer?: { id: string; username: string; display_name?: str
   chatTitle.appendChild(nameEl);
   chatTitle.title = `Tap for profile · User ID: ${peer.id}`;
   chatTitle.style.cursor = "pointer";
+  // Online / last-seen filled by applyPresence
+
   chatTitle.onclick = () => {
     showSenderPopup({
       id: peer.id,
@@ -519,6 +562,7 @@ function wireHeaderActions() {
       syncManageChatPanel();
       renderConvoList();
       messagesEl.classList.toggle("is-collab", isGroupStyleChat());
+  applyPeerRead((window as any).__peerRead || null);
       if (visibility === "collab") startCollabLive();
       else stopCollabLive();
     } catch (e: any) {
@@ -1639,6 +1683,13 @@ function renderConvoList() {
 }
 
 async function loadConversations() {
+  const listEl = document.getElementById("convo-list");
+  if (listEl && !listEl.querySelector(".convo-item") && !listEl.querySelector(".convo-list-skeleton")) {
+    listEl.innerHTML = '<div class="convo-list-skeleton" aria-hidden="true">' +
+      Array.from({ length: 6 }, () => '<div class="skel-row"></div>').join("") +
+      "</div>";
+  }
+
   const { conversations: list } = await api.listConversations();
   // Normalize starred/archived from 0/1 integers to booleans
   conversations = list.map((c: any) => ({
@@ -1678,16 +1729,21 @@ function setComposerReadOnly(readOnly: boolean, reason = "") {
   const form = document.getElementById("chat-form") as HTMLElement | null;
   let notice = document.getElementById("readonly-notice") as HTMLDivElement | null;
   if (form) form.style.display = readOnly ? "none" : "";
+  if (quickActionsEl) quickActionsEl.style.display = readOnly ? "none" : "";
   if (readOnly) {
-    if (!notice) {
-      notice = document.createElement("div");
-      notice.id = "readonly-notice";
-      notice.className = "readonly-notice";
-      form?.parentElement?.appendChild(notice);
+    if (reason) {
+      if (!notice) {
+        notice = document.createElement("div");
+        notice.id = "readonly-notice";
+        notice.className = "readonly-notice";
+        form?.parentElement?.appendChild(notice);
+      }
+      notice.innerHTML = `<span class="menu-icon">${icons.lock}</span><span></span>`;
+      notice.querySelector("span:last-child")!.textContent = reason;
+      notice.style.display = "flex";
+    } else if (notice) {
+      notice.style.display = "none";
     }
-    notice.innerHTML = `<span class="menu-icon">${icons.lock}</span><span></span>`;
-    notice.querySelector("span:last-child")!.textContent = reason;
-    notice.style.display = "flex";
   } else if (notice) {
     notice.style.display = "none";
   }
@@ -1796,9 +1852,13 @@ async function openConversationLink(id: string) {
     startCollabLive();
   } catch (e) {
     stopCollabLive();
+    isCollabChat = false;
+    isDmChat = false;
+    currentDmPeer = null;
     setCurrentConversation(null);
     chatTitle.textContent = t("chat.newChat");
-    setComposerReadOnly(false);
+    // Forbidden / missing chat: hide the composer entirely (no "Message Paul…")
+    setComposerReadOnly(true, "");
     if (e instanceof ApiError && e.status === 403) {
       renderAccessForbidden("This conversation is private. Ask the owner to share a link with access.");
     } else {
@@ -2210,6 +2270,43 @@ function clearReplyTarget() {
   document.getElementById("reply-bar")?.remove();
 }
 
+
+async function showAuditModal() {
+  if (!currentConversationId) return;
+  try {
+    const { events } = await api.getAudit(currentConversationId);
+    document.getElementById("audit-modal")?.remove();
+    const overlay = document.createElement("div");
+    overlay.id = "audit-modal";
+    overlay.className = "sender-popup";
+    const rows = (events || [])
+      .map((e) => {
+        const who = e.actor_username || "System";
+        const when = formatMsgTime(e.created_at);
+        const action = String(e.action || "").replace(/_/g, " ");
+        const detail = e.detail ? `<div class="audit-detail">${escapeHtml(String(e.detail))}</div>` : "";
+        return `<div class="audit-row"><strong>${escapeHtml(who)}</strong> <span>${escapeHtml(action)}</span><span class="audit-when">${escapeHtml(when)}</span>${detail}</div>`;
+      })
+      .join("") || `<div class="audit-row">No events yet.</div>`;
+    overlay.innerHTML = `<div class="sender-popup-card"><div class="sender-popup-name">Activity log</div><div class="audit-list">${rows}</div><button type="button" class="secondary-btn sender-popup-close" id="audit-close">Close</button></div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector("#audit-close")!.addEventListener("click", () => overlay.remove());
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
+  } catch (e: any) {
+    showToast(e?.message || "Could not load activity");
+  }
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function exportCurrentChat() {
   const rows = Array.from(messagesEl.querySelectorAll<HTMLDivElement>(".msg-row"));
   const lines: string[] = [`Paul chat export — ${new Date().toISOString()}`, ""];
@@ -2241,6 +2338,15 @@ function renderCollabMembersChip(members: { username: string; display_name: stri
   chip.textContent = `${members.length} people · ${names.join(", ")}${extra}`;
   chip.title = members.map((m) => `${m.display_name || m.username}${m.is_owner ? " (owner)" : ""}`).join("\n");
   chatTitle.parentElement?.insertBefore(chip, chatTitle.nextSibling);
+}
+
+
+function showMessagesSkeleton() {
+  messagesEl.innerHTML = '<div class="messages-skeleton" aria-hidden="true">' +
+    Array.from({ length: 5 }, (_, i) =>
+      `<div class="skel-msg ${i % 2 ? "skel-right" : "skel-left"}"><div class="skel-bubble"></div></div>`
+    ).join("") + "</div>";
+  emptyState.style.display = "none";
 }
 
 function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: string, attachments: Attachment[] = [], sender?: import("./api").MessageSender | null) {
@@ -2479,6 +2585,7 @@ function renderMessages(messages: Message[]) {
   replyVersionIndex = 0;
   knownMessageIds = new Set(messages.map((m) => m.id).filter(Boolean) as string[]);
   messagesEl.classList.toggle("is-collab", isGroupStyleChat());
+  applyPeerRead((window as any).__peerRead || null);
   if (messages.length === 0) {
     messagesEl.appendChild(emptyState);
     emptyState.style.display = "flex";
@@ -2516,6 +2623,7 @@ async function selectConversation(id: string) {
   stopCollabLive();
   // Don't write #conv= yet — may be a friend DM (#user=)
   currentConversationId = id;
+  showMessagesSkeleton();
   setComposerReadOnly(false);
   const convo = conversations.find((c) => c.id === id);
   chatTitle.textContent = convo?.title || t("chat.newChat");
@@ -2533,8 +2641,12 @@ async function selectConversation(id: string) {
   collabMembers = data.conversation?.members || [];
   renderCollabMembersChip(collabMembers);
   currentDmPeer = data.conversation?.dm_peer || null;
-  if (isDmChat) applyDmHeader(currentDmPeer);
-  else chatTitle.textContent = data.conversation?.title || convo?.title || t("chat.newChat");
+  if (isDmChat) {
+    applyDmHeader(currentDmPeer);
+    applyPresence(data.conversation?.peer_last_seen);
+  } else chatTitle.textContent = data.conversation?.title || convo?.title || t("chat.newChat");
+  // after messages rendered below we apply peer_read
+  (window as any).__peerRead = data.conversation?.peer_read || null;
   if (isDmChat && currentDmPeer?.username) {
     syncUrlToConversation(id, currentDmPeer.username);
   } else if (!isDmChat) {
@@ -2592,8 +2704,7 @@ async function selectConversation(id: string) {
 
 function startNewConversation() {
   stopCollabLive();
-  setCurrentConversation(null);
-  setComposerReadOnly(false);
+  // Clear DM/collab state before URL sync so we never leave a stale #user=
   isCollabChat = false;
   isDmChat = false;
   currentDmPeer = null;
@@ -2602,6 +2713,8 @@ function startNewConversation() {
   currentCollabCode = null;
   collabMembers = [];
   hideMentionMenu();
+  setCurrentConversation(null);
+  setComposerReadOnly(false);
   chatTitle.textContent = t("chat.newChat");
   lastUserText = "";
   lastUserAttachments = [];
@@ -2812,9 +2925,10 @@ function messageMentionsPaul(text: string): boolean {
 function formatMentionsHtml(text: string): string {
   const esc = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  return esc(text).replace(/(^|[^\w])(@[a-zA-Z][\w.-]{0,31})\b/g, (_all, pre, tag) => {
+  return esc(text).replace(/(^|[^\w])(@(?:all|[a-zA-Z][\w.-]{0,31}))\b/gi, (_all, pre, tag) => {
     const handle = String(tag).slice(1).toLowerCase();
-    const cls = handle === "paul" ? "mention mention-paul" : "mention";
+    const cls =
+      handle === "paul" ? "mention mention-paul" : handle === "all" ? "mention mention-all" : "mention";
     return `${pre}<span class="${cls}">${tag}</span>`;
   });
 }
@@ -2842,6 +2956,9 @@ function hideMentionMenu() {
 function mentionCandidates(query: string): { handle: string; label: string }[] {
   const q = query.toLowerCase();
   const items: { handle: string; label: string }[] = [{ handle: "paul", label: "Paul (AI)" }];
+  if (isCollabChat) {
+    items.push({ handle: "all", label: "Everyone in this chat" });
+  }
   // Member @tags only in collab groups (not 1:1 friend DMs)
   if (isCollabChat) {
     for (const m of collabMembers) {
@@ -3016,7 +3133,8 @@ async function performSend(
         replyVersions = [{ content: replyText, attachments: replyAtt }];
         replyVersionIndex = 0;
       }
-      const agentRow = addMsgRow("agent", replyText, replyAtt, {
+      // Lightweight "streaming" reveal for polish
+      const agentRow = addMsgRow("agent", "", replyAtt, {
         id: "paul",
         username: "Paul",
         display_name: "Paul",
@@ -3024,8 +3142,29 @@ async function performSend(
         avatar: null,
         is_paul: true,
       });
-      attachRegenerateButton(agentRow);
-      updateReplyVersionNav(agentRow);
+      const bubble = agentRow.querySelector(".msg") as HTMLElement;
+      let i = 0;
+      const full = replyText;
+      const step = Math.max(1, Math.floor(full.length / 40));
+      const tick = () => {
+        i = Math.min(full.length, i + step);
+        if (bubble) bubble.innerHTML = renderMarkdown(full.slice(0, i));
+        if (i < full.length) requestAnimationFrame(tick);
+        else {
+          if (bubble) bubble.innerHTML = renderMarkdown(full);
+          const sources = (result as any).sources as string[] | undefined;
+          if (sources?.length) {
+            const src = document.createElement("div");
+            src.className = "msg-sources";
+            src.textContent = "Sources: " + sources.join(" · ");
+            agentRow.appendChild(src);
+          }
+          attachRegenerateButton(agentRow);
+          updateReplyVersionNav(agentRow);
+        }
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      };
+      requestAnimationFrame(tick);
     }
 
     if (isNewConvo) {
@@ -3257,7 +3396,14 @@ function closeAttachMenu() {
   attachMenu.style.display = "none";
 }
 
+function wireConnectivityToasts() {
+  window.addEventListener("offline", () => showToast("You're offline — messages may not send"));
+  window.addEventListener("online", () => showToast("Back online"));
+}
+
 export function initChatView(user: User) {
+  wireConnectivityToasts();
+
   currentUser = user;
   mountStaticIcons();
   sidebarUsername.textContent = user.display_name || user.username;
@@ -3341,6 +3487,10 @@ export function initChatView(user: User) {
     if (!attachMenu.contains(e.target as Node) && e.target !== attachBtn) closeAttachMenu();
   });
 
+  document.getElementById("more-audit")?.addEventListener("click", () => {
+    document.getElementById("more-menu")!.style.display = "none";
+    void showAuditModal();
+  });
   document.getElementById("more-export")?.addEventListener("click", () => {
     document.getElementById("more-menu")!.style.display = "none";
     exportCurrentChat();
