@@ -42,6 +42,14 @@ function close() {
   phoneInput.value = "";
   emailInput.value = "";
   messageInput.value = "";
+  const lengthEl = document.getElementById("lead-length") as HTMLInputElement | null;
+  const widthEl = document.getElementById("lead-width") as HTMLInputElement | null;
+  const thickEl = document.getElementById("lead-thickness") as HTMLInputElement | null;
+  const roomEl = document.getElementById("lead-room") as HTMLInputElement | null;
+  if (lengthEl) lengthEl.value = "";
+  if (widthEl) widthEl.value = "";
+  if (thickEl) thickEl.value = "";
+  if (roomEl) roomEl.value = "";
   clearPhoto();
 }
 
@@ -88,6 +96,10 @@ export function initLeadView() {
     leadSuccess.textContent = "";
     submitBtn.disabled = true;
     try {
+      const lengthEl = document.getElementById("lead-length") as HTMLInputElement | null;
+      const widthEl = document.getElementById("lead-width") as HTMLInputElement | null;
+      const thickEl = document.getElementById("lead-thickness") as HTMLInputElement | null;
+      const roomEl = document.getElementById("lead-room") as HTMLInputElement | null;
       await api.submitLead({
         conversation_id: currentConversationId || undefined,
         name: nameInput.value.trim() || undefined,
@@ -96,6 +108,10 @@ export function initLeadView() {
         message: messageInput.value.trim() || undefined,
         has_photo: !!photoDataUrl,
         photo_data_url: photoDataUrl || undefined,
+        length: lengthEl?.value.trim() || undefined,
+        width: widthEl?.value.trim() || undefined,
+        thickness: thickEl?.value.trim() || undefined,
+        room_type: roomEl?.value.trim() || undefined,
       });
       leadSuccess.textContent = t("lead.successMessage");
       setTimeout(close, 1500);

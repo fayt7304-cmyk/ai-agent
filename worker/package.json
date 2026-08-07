@@ -1,6 +1,6 @@
 {
   "name": "mistral-agent-chat-worker",
-  "version": "9.7.0",
+  "version": "10.1.0",
   "private": true,
   "scripts": {
     "dev": "wrangler dev",

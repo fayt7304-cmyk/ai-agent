@@ -110,6 +110,70 @@ function dataUrlToObjectUrl(dataUrl: string): string {
   }
 }
 
+/** Full-screen media viewer on the same page (images & videos — never opens a new tab). */
+function openMediaLightbox(opts: {
+  type: "image" | "video";
+  src: string;
+  name?: string;
+  fallback?: string;
+}) {
+  document.getElementById("media-lightbox")?.remove();
+  const overlay = document.createElement("div");
+  overlay.id = "media-lightbox";
+  overlay.className = "media-lightbox";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.innerHTML = `
+    <div class="media-lightbox-toolbar">
+      <span class="media-lightbox-name"></span>
+      <button type="button" class="media-lightbox-close" aria-label="Close">✕</button>
+    </div>
+    <div class="media-lightbox-body"></div>`;
+  (overlay.querySelector(".media-lightbox-name") as HTMLElement).textContent = opts.name || "";
+  const body = overlay.querySelector(".media-lightbox-body") as HTMLElement;
+  if (opts.type === "image") {
+    const img = document.createElement("img");
+    img.src = opts.src;
+    img.alt = opts.name || "";
+    img.addEventListener(
+      "error",
+      () => {
+        if (opts.fallback && img.src !== opts.fallback) img.src = opts.fallback;
+      },
+      { once: true }
+    );
+    body.appendChild(img);
+  } else {
+    const vid = document.createElement("video");
+    vid.src = opts.src;
+    vid.controls = true;
+    vid.autoplay = true;
+    vid.playsInline = true;
+    body.appendChild(vid);
+  }
+  const close = () => {
+    const v = overlay.querySelector("video");
+    if (v) {
+      try {
+        v.pause();
+      } catch {
+        /* ignore */
+      }
+    }
+    overlay.remove();
+    document.removeEventListener("keydown", onKey);
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") close();
+  };
+  overlay.querySelector(".media-lightbox-close")!.addEventListener("click", close);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay || e.target === body) close();
+  });
+  document.addEventListener("keydown", onKey);
+  document.body.appendChild(overlay);
+}
+
 const sidebar = document.getElementById("sidebar") as HTMLDivElement;
 const sidebarToggle = document.getElementById("sidebar-toggle") as HTMLButtonElement;
 const sidebarOpenBtn = document.getElementById("sidebar-open-btn") as HTMLButtonElement;
@@ -336,6 +400,19 @@ function applyLiveMessages(
   const hasNew = incomingIds.some((mid) => !knownMessageIds.has(mid));
   if (!hasNew && incomingIds.length === knownMessageIds.size) return;
   if (isReplying) return;
+
+  // Browser notification when tab is hidden and someone else sent a message
+  if (document.hidden && hasNew) {
+    const newest = [...messages].reverse().find((m) => m.id && !knownMessageIds.has(m.id!));
+    if (newest && newest.role === "user" && newest.sender?.id !== currentUser?.id) {
+      const who = newest.sender?.display_name || newest.sender?.username || "Friend";
+      const preview = (newest.content || (newest.attachments?.length ? "Sent a photo" : "New message")).slice(0, 120);
+      notifyNewMessage(who, preview);
+      // Bump sidebar unread for this chat if not the active focus
+      const local = conversations.find((c) => c.id === currentConversationId);
+      if (local) local.unread_count = (local.unread_count || 0) + 1;
+    }
+  }
 
   const nearBottom =
     messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 120;
@@ -807,19 +884,37 @@ async function openUsageModal() {
   const tokensEl = document.getElementById("usage-credits");
   const messagesCountEl = document.getElementById("usage-messages");
   const timeEl = document.getElementById("usage-time");
+  const remainingEl = document.getElementById("usage-remaining");
 
   // Placeholders are em dashes, never invented numbers.
   const setAll = (value: string) => {
     if (tokensEl) tokensEl.textContent = value;
     if (messagesCountEl) messagesCountEl.textContent = value;
     if (timeEl) timeEl.textContent = value;
+    if (remainingEl) remainingEl.textContent = value;
   };
 
   setAll("…");
   usageModal.style.display = "flex";
 
+  // Daily plan quota (account-level)
+  try {
+    const quota = await api.getUsageQuota();
+    if (remainingEl) {
+      if (quota.unlimited || quota.daily_limit == null) {
+        remainingEl.textContent = "Unlimited";
+      } else {
+        remainingEl.textContent = `${quota.remaining} / ${quota.daily_limit}`;
+      }
+    }
+  } catch {
+    if (remainingEl) remainingEl.textContent = "—";
+  }
+
   if (!currentConversationId) {
-    setAll("—");
+    if (tokensEl) tokensEl.textContent = "—";
+    if (messagesCountEl) messagesCountEl.textContent = "—";
+    if (timeEl) timeEl.textContent = "—";
     return;
   }
 
@@ -831,7 +926,9 @@ async function openUsageModal() {
     }
     if (timeEl) timeEl.textContent = usage.time_worked;
   } catch {
-    setAll("—");
+    if (tokensEl) tokensEl.textContent = "—";
+    if (messagesCountEl) messagesCountEl.textContent = "—";
+    if (timeEl) timeEl.textContent = "—";
   }
 }
 
@@ -1156,9 +1253,47 @@ function createConvoItem(c: Conversation): HTMLDivElement {
     openConvoMenu(dots, c, startRename);
   });
 
+  // Unread badge (DMs / collab / any chat with messages from others)
+  const unread = Number(c.unread_count || 0);
+  if (unread > 0 && c.id !== currentConversationId) {
+    item.classList.add("has-unread");
+    const badge = document.createElement("span");
+    badge.className = "convo-unread-badge";
+    badge.textContent = unread > 99 ? "99+" : String(unread);
+    item.appendChild(badge);
+  }
+
   item.appendChild(title);
   item.appendChild(dots);
-  item.addEventListener("click", () => selectConversation(c.id));
+  item.addEventListener("click", () => {
+    // Optimistic URL write before network — keeps the bar in sync immediately
+    // when switching DM ↔ normal chat (was lagging until getMessages returned).
+    const isDm = !!(c.is_dm || c.visibility === "dm");
+    if (isDm) {
+      const peer =
+        friendsList.find((f) => f.peer.id === c.dm_peer_id)?.peer ||
+        (c.title?.startsWith("@") ? { username: c.title.slice(1) } : null);
+      const uname = peer?.username || (c.title?.startsWith("@") ? c.title.slice(1) : "");
+      if (uname) {
+        isDmChat = true;
+        currentDmPeer = peer
+          ? {
+              id: (peer as any).id || c.dm_peer_id || "",
+              username: uname,
+              display_name: (peer as any).display_name || uname,
+              avatar: (peer as any).avatar ?? null,
+            }
+          : { id: c.dm_peer_id || "", username: uname, display_name: uname, avatar: null };
+        syncUrlToConversation(c.id, uname);
+      }
+    } else {
+      isDmChat = false;
+      currentDmPeer = null;
+      syncUrlToConversation(c.id);
+    }
+    c.unread_count = 0;
+    void selectConversation(c.id);
+  });
   return item;
 }
 
@@ -1700,6 +1835,7 @@ async function loadConversations() {
     collab_locked: !!c.collab_locked,
     is_dm: !!c.is_dm || c.visibility === "dm",
     is_owner: c.is_owner === undefined ? !c.is_collab_member : !!c.is_owner,
+    unread_count: Number(c.unread_count || 0),
   }));
   await loadFriends();
   renderConvoList();
@@ -2204,6 +2340,145 @@ function isMyUserMessage(kind: string, sender?: import("./api").MessageSender | 
   return false;
 }
 
+async function startEditMessage(row: HTMLDivElement) {
+  const id = row.dataset.msgId;
+  if (!id) return;
+  const bubble = row.querySelector(".msg") as HTMLElement | null;
+  const current = (bubble?.innerText || "").trim();
+  const next = await showPrompt({
+    title: "Edit message",
+    message: "Change your message text.",
+    value: current,
+    confirmLabel: "Save",
+    maxLength: 20000,
+  });
+  if (next === null) return;
+  const content = String(next).trim();
+  if (!content || content === current) return;
+  try {
+    const res = await api.editMessage(id, content);
+    if (bubble) {
+      // Keep markdown/render simple for user text
+      bubble.textContent = res.content;
+    }
+    row.dataset.editedAt = res.edited_at;
+    let mark = row.querySelector(".msg-edited-mark") as HTMLElement | null;
+    if (!mark) {
+      mark = document.createElement("span");
+      mark.className = "msg-edited-mark";
+      mark.textContent = "edited";
+      row.appendChild(mark);
+    }
+    showToast("Message updated");
+  } catch (e: any) {
+    showToast(e?.message || "Could not edit message");
+  }
+}
+
+async function softDeleteMessage(row: HTMLDivElement) {
+  const id = row.dataset.msgId;
+  if (!id) return;
+  const ok = await showConfirm({
+    title: "Delete message?",
+    message: "This removes the message for everyone in the chat.",
+    confirmLabel: "Delete",
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    await api.deleteMessage(id);
+    row.classList.add("msg-deleted");
+    const bubble = row.querySelector(".msg") as HTMLElement | null;
+    if (bubble) bubble.textContent = "Message deleted";
+    row.querySelector(".msg-attachments")?.remove();
+    row.querySelector(".msg-own-actions")?.remove();
+    row.querySelector(".msg-edited-mark")?.remove();
+    showToast("Message deleted");
+  } catch (e: any) {
+    showToast(e?.message || "Could not delete message");
+  }
+}
+
+/** Ctrl/⌘+F filter over messages in the open conversation. */
+function openConversationSearch() {
+  let bar = document.getElementById("conv-search-bar") as HTMLDivElement | null;
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "conv-search-bar";
+    bar.className = "conv-search-bar";
+    bar.innerHTML = `
+      <input type="search" id="conv-search-input" placeholder="Search in conversation…" autocomplete="off" />
+      <span class="conv-search-count" id="conv-search-count"></span>
+      <button type="button" id="conv-search-close" aria-label="Close">✕</button>`;
+    const host = document.querySelector(".chat-main") || document.body;
+    host.insertBefore(bar, host.firstChild);
+    const input = bar.querySelector("#conv-search-input") as HTMLInputElement;
+    const countEl = bar.querySelector("#conv-search-count") as HTMLSpanElement;
+    const apply = () => {
+      const q = input.value.trim().toLowerCase();
+      let hits = 0;
+      let total = 0;
+      messagesEl.querySelectorAll<HTMLElement>(".msg-row").forEach((row) => {
+        total++;
+        const text = (row.querySelector(".msg")?.textContent || "").toLowerCase();
+        const match = !q || text.includes(q);
+        row.classList.toggle("conv-search-hide", !match);
+        row.classList.toggle("conv-search-hit", !!(q && match));
+        if (match && q) hits++;
+      });
+      countEl.textContent = q ? `${hits} / ${total}` : "";
+    };
+    input.addEventListener("input", apply);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeConversationSearch();
+    });
+    bar.querySelector("#conv-search-close")!.addEventListener("click", closeConversationSearch);
+  }
+  bar.style.display = "flex";
+  const input = bar.querySelector("#conv-search-input") as HTMLInputElement;
+  input.focus();
+  input.select();
+}
+
+function closeConversationSearch() {
+  const bar = document.getElementById("conv-search-bar");
+  if (bar) bar.style.display = "none";
+  messagesEl.querySelectorAll(".msg-row").forEach((row) => {
+    row.classList.remove("conv-search-hide", "conv-search-hit");
+  });
+  const countEl = document.getElementById("conv-search-count");
+  if (countEl) countEl.textContent = "";
+}
+
+async function ensureNotificationPermission() {
+  if (typeof Notification === "undefined") return;
+  if (Notification.permission === "granted" || Notification.permission === "denied") return;
+  // Don't force-prompt on load; wait for first background-worthy event
+}
+
+function notifyNewMessage(title: string, body: string) {
+  if (typeof Notification === "undefined") return;
+  if (!document.hidden) return;
+  if (Notification.permission === "default") {
+    void Notification.requestPermission();
+    return;
+  }
+  if (Notification.permission !== "granted") return;
+  try {
+    const n = new Notification(title, {
+      body: body.slice(0, 140),
+      icon: "/icons/icon-192.png",
+      tag: "paul-chat",
+    });
+    n.onclick = () => {
+      window.focus();
+      n.close();
+    };
+  } catch {
+    /* ignore */
+  }
+}
+
 
 function updateTypingIndicator(typing: { user_id: string; username: string }[]) {
   let el = document.getElementById("typing-indicator") as HTMLDivElement | null;
@@ -2440,22 +2715,43 @@ function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: strin
     row.appendChild(replyBtn);
   }
 
+  // Soft edit / delete own messages (any chat type)
+  if (kind === "user" && isMyUserMessage(kind, sender) && row.dataset.msgId && !row.classList.contains("msg-deleted")) {
+    const ownActions = document.createElement("div");
+    ownActions.className = "msg-own-actions";
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "msg-reply-btn";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      void startEditMessage(row);
+    });
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "msg-reply-btn msg-delete-btn";
+    delBtn.textContent = "Delete";
+    delBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      void softDeleteMessage(row);
+    });
+    ownActions.appendChild(editBtn);
+    ownActions.appendChild(delBtn);
+    row.appendChild(ownActions);
+  }
+
   if (attachments.length) {
     const chipsWrap = document.createElement("div");
     chipsWrap.className = "msg-attachments";
     for (const a of attachments) {
       if (a.mime.startsWith("image/") && a.dataUrl) {
         const objectUrl = dataUrlToObjectUrl(a.dataUrl);
-        const link = document.createElement("a");
-        link.href = objectUrl;
-        link.target = "_blank";
-        link.rel = "noopener";
+        // Inline thumbnail — click opens lightbox on the same page (no new tab)
         const img = document.createElement("img");
-        img.className = "msg-image";
+        img.className = "msg-image msg-image-clickable";
         img.src = objectUrl;
         img.alt = a.name;
-        // If even the Blob URL fails to load for some reason, fall back to the raw
-        // data URL once before giving up — better than a permanently broken image.
+        img.title = a.name;
         img.addEventListener(
           "error",
           () => {
@@ -2463,8 +2759,34 @@ function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: strin
           },
           { once: true }
         );
-        link.appendChild(img);
-        chipsWrap.appendChild(link);
+        img.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          openMediaLightbox({ type: "image", src: objectUrl, name: a.name, fallback: a.dataUrl });
+        });
+        chipsWrap.appendChild(img);
+      } else if (a.mime.startsWith("video/") && a.dataUrl) {
+        const objectUrl = dataUrlToObjectUrl(a.dataUrl);
+        const wrap = document.createElement("div");
+        wrap.className = "msg-video-wrap";
+        const vid = document.createElement("video");
+        vid.className = "msg-video";
+        vid.src = objectUrl;
+        vid.controls = true;
+        vid.preload = "metadata";
+        vid.title = a.name;
+        const expand = document.createElement("button");
+        expand.type = "button";
+        expand.className = "msg-video-expand";
+        expand.textContent = "Expand";
+        expand.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          openMediaLightbox({ type: "video", src: objectUrl, name: a.name, fallback: a.dataUrl });
+        });
+        wrap.appendChild(vid);
+        wrap.appendChild(expand);
+        chipsWrap.appendChild(wrap);
       } else {
         // Uploaded files show as a card: icon tile, file name, then type + size.
         const isDownloadable = Boolean(a.dataUrl);
@@ -2593,14 +2915,31 @@ function renderMessages(messages: Message[]) {
   }
   let row: HTMLDivElement | null = null;
   for (const m of messages) {
-    row = addMsgRow(m.role as any, m.content, m.attachments, m.sender || null);
+    const isDeleted = !!m.deleted_at;
+    row = addMsgRow(
+      m.role as any,
+      isDeleted ? "Message deleted" : m.content,
+      isDeleted ? [] : m.attachments,
+      m.sender || null
+    );
     if (m.id) row.dataset.msgId = m.id;
+    if (isDeleted) {
+      row.classList.add("msg-deleted");
+      row.querySelector(".msg-own-actions")?.remove();
+    }
+    if (m.edited_at && !isDeleted) {
+      row.dataset.editedAt = m.edited_at;
+      const mark = document.createElement("span");
+      mark.className = "msg-edited-mark";
+      mark.textContent = "edited";
+      row.appendChild(mark);
+    }
     if (m.created_at) {
       row.dataset.createdAt = m.created_at;
       const te = row.querySelector(".msg-time");
       if (te) te.textContent = formatMsgTime(m.created_at);
     }
-    if (m.reply_to_preview) {
+    if (m.reply_to_preview && !isDeleted) {
       row.dataset.replyPreview = m.reply_to_preview;
       if (!row.querySelector(".msg-quote")) {
         const q = document.createElement("div");
@@ -2609,7 +2948,7 @@ function renderMessages(messages: Message[]) {
         row.querySelector(".msg")?.prepend(q);
       }
     }
-    if (m.role === "user") {
+    if (m.role === "user" && !isDeleted) {
       lastUserText = m.content;
       lastUserAttachments = [];
     }
@@ -2622,10 +2961,12 @@ function renderMessages(messages: Message[]) {
 async function selectConversation(id: string) {
   stopCollabLive();
   // Don't write #conv= yet — may be a friend DM (#user=)
+  // (Optimistic URL is written by the sidebar click handler when possible.)
   currentConversationId = id;
   showMessagesSkeleton();
   setComposerReadOnly(false);
   const convo = conversations.find((c) => c.id === id);
+  if (convo) convo.unread_count = 0;
   chatTitle.textContent = convo?.title || t("chat.newChat");
   renderConvoList();
   messagesEl.innerHTML = "";
@@ -3462,11 +3803,18 @@ export function initChatView(user: User) {
       toggleSidebar(false);
       sidebarSearchRow.style.display = "flex";
       sidebarSearchInput.focus();
+    } else if (e.key.toLowerCase() === "f") {
+      // In-conversation search (Ctrl/⌘+F) — filter messages in the open chat
+      e.preventDefault();
+      openConversationSearch();
     } else if (e.key === ".") {
       e.preventDefault();
       toggleSidebar();
     }
   });
+
+  // Browser notifications for live DMs / collab when the tab is in the background
+  void ensureNotificationPermission();
 
   attachBtn.addEventListener("click", (e) => {
     e.stopPropagation();

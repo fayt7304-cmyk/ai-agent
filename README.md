@@ -1,19 +1,53 @@
-# Paul — Your Personal AI Agent (v9.7)
+# Paul — Your Personal AI Agent (v10.1)
 
 A comprehensive chat web application powered by a Mistral AI agent, designed to run entirely on your own Cloudflare account for maximum privacy and control.
 
 ---
 
-## 🚀 What's New in v9.7 — Stability & clarity
+## 🚀 What's New in v10.1 — Full vector RAG
 
-Focus: make what was already built feel finished. No new big features.
+| Feature | Description |
+| :--- | :--- |
+| **Workers AI embeddings** | Catalog docs embedded with `@cf/baai/bge-base-en-v1.5` (fallback `bge-small`) via the existing `AI` binding. |
+| **Vector retrieval** | Queries ranked by **cosine similarity** against stored vectors in D1 (`knowledge_docs.embedding`). |
+| **Hybrid boost** | Light keyword boost so exact product names still rank high. |
+| **Keyword fallback** | If AI is down or a doc has no embedding, falls back to keyword scoring. |
+| **Re-embed all** | Admin button re-indexes the whole catalog. |
+| **CMS status** | Each entry shows `vector ✓` / `no vector`; header shows AI readiness. |
+
+### Roadmap (later)
+
+| Version | Item |
+| :--- | :--- |
+| **10.2** | True Durable Objects presence |
+| **10.3** | Voice notes / calls |
+| **10.4** | Native apps / PWA shell |
+| **10.5** | Multi-agent marketplace |
+
+### From v10
+
+Catalog CMS layout fix, quote dimensions, usage remaining, admin users, inline media.
+
+### From v9.9 — Business / marble value
+
+
+### From v9.8 — Social chat depth
+
+| Feature | Description |
+| :--- | :--- |
+| **Unread badges** | Sidebar counts for DMs / collab. |
+| **Browser notifications** | Background peer messages. |
+| **Edit / delete own message** | Soft edit + soft delete. |
+| **Search in conversation** | Ctrl/⌘+F. |
+| **Block list UI** | Settings → Privacy. |
+| **Faster DM ↔ chat URL** | Optimistic hash on sidebar click. |
+
+### From v9.7 — Stability & clarity
 
 | Fix / polish | Description |
 | :--- | :--- |
-| **URL routing for DMs** | Switching from a friend DM (`#user=…`) back to a normal Paul chat now correctly writes `#conv=…`. Refresh no longer drops you back into the previous friend DM. |
-| **Access forbidden** | Private / missing conversations hide the composer and quick actions (no “Message Paul…” under the lock screen). |
-| **Empty / error states** | “No friends yet”, offline toast, loading skeletons for sidebar + messages already present; forbidden state cleaned up. |
-| **Settings** | Account, language, and theme live in one place (General / Account / Privacy). |
+| **URL routing for DMs** | Switching from a friend DM (`#user=…`) back to a normal Paul chat now correctly writes `#conv=…`. |
+| **Access forbidden** | Private / missing conversations hide the composer and quick actions. |
 
 ### From v9.6 and earlier
 

@@ -67,6 +67,8 @@ export interface Conversation {
   dm_peer_id?: string | null;
   /** True when the current user owns this conversation. */
   is_owner?: boolean | number;
+  /** Unread messages from others since last open (v9.8). */
+  unread_count?: number;
   created_at: string;
   updated_at: string;
 }
@@ -131,6 +133,8 @@ export interface Message {
   content: string;
   attachments: Attachment[];
   created_at: string;
+  edited_at?: string | null;
+  deleted_at?: string | null;
   sender?: MessageSender | null;
 }
 
@@ -373,6 +377,53 @@ export const api = {
   getConversationUsage: (id: string) =>
     request<ConversationUsage>(`/api/conversations/${id}/usage`, { method: "GET" }),
 
+  getUsageQuota: () =>
+    request<{
+      daily_limit: number | null;
+      used_today: number;
+      remaining: number | null;
+      unlimited: boolean;
+    }>("/api/usage/quota", { method: "GET" }),
+
+  listKnowledge: () =>
+    request<{
+      docs: {
+        id: string;
+        title: string;
+        content: string;
+        tags: string | null;
+        updated_at: string;
+        has_embedding?: boolean;
+      }[];
+      vector_ready?: boolean;
+    }>("/api/knowledge", { method: "GET" }),
+
+  upsertKnowledge: (payload: { id?: string; title: string; content: string; tags?: string }) =>
+    request<{ ok: true; id: string; title: string; updated_at: string; embedded?: boolean }>("/api/knowledge", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  deleteKnowledge: (id: string) =>
+    request<{ ok: true }>(`/api/knowledge/${id}`, { method: "DELETE" }),
+
+  reindexKnowledge: () =>
+    request<{ ok: true; embedded: number; failed: number }>("/api/knowledge/reindex", { method: "POST" }),
+
+  listAdminUsers: () =>
+    request<{
+      users: {
+        id: string;
+        username: string;
+        email: string | null;
+        display_name: string | null;
+        is_guest: number;
+        created_at: string;
+        last_seen_at?: string | null;
+        deletion_requested_at?: string | null;
+      }[];
+    }>("/api/admin/users", { method: "GET" }),
+
   joinCollab: (id: string, code: string) =>
     request<{ ok: true; conversation_id: string; title?: string }>(`/api/conversations/${id}/join`, {
       method: "POST",
@@ -414,6 +465,28 @@ export const api = {
     request<{ ok: true; blocked: boolean }>("/api/block", {
       method: "DELETE",
       body: JSON.stringify({ user_id }),
+    }),
+
+  listBlocks: () =>
+    request<{
+      blocked: {
+        id: string;
+        username: string;
+        display_name: string | null;
+        avatar: string | null;
+        blocked_at: string;
+      }[];
+    }>("/api/blocks", { method: "GET" }),
+
+  editMessage: (id: string, content: string) =>
+    request<{ ok: true; id: string; content: string; edited_at: string }>(`/api/messages/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ content }),
+    }),
+
+  deleteMessage: (id: string) =>
+    request<{ ok: true; id: string; deleted: boolean; deleted_at?: string }>(`/api/messages/${id}`, {
+      method: "DELETE",
     }),
 
   getAudit: (id: string) =>
@@ -481,6 +554,10 @@ getMessages: (id: string) =>
     message?: string;
     has_photo?: boolean;
     photo_data_url?: string;
+    length?: string;
+    width?: string;
+    thickness?: string;
+    room_type?: string;
   }) =>
     request<{ ok: true; lead_id: string }>("/api/leads", {
       method: "POST",

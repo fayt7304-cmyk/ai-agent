@@ -1348,6 +1348,174 @@ async function handleAdminLogsClear(request: Request, env: Env): Promise<Respons
   return json({ ok: true, cleared });
 }
 
+/** GET /api/admin/users — basic user list for admins */
+async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return json({ error: "Not authenticated" }, 401);
+  if (!isAdminUser(user.username)) return json({ error: "Forbidden" }, 403);
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT id, username, email, display_name, is_guest, created_at, last_seen_at, deletion_requested_at
+       FROM users ORDER BY created_at DESC LIMIT 200`
+    ).all();
+    return json({ users: results || [] });
+  } catch {
+    const { results } = await env.DB.prepare(
+      `SELECT id, username, email, display_name, is_guest, created_at FROM users ORDER BY created_at DESC LIMIT 200`
+    ).all();
+    return json({ users: results || [] });
+  }
+}
+
+/** GET /api/usage/quota — daily message limit remaining for the signed-in user */
+async function handleUsageQuota(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  const dailyLimit = env.MAX_MESSAGES_PER_DAY ? parseInt(env.MAX_MESSAGES_PER_DAY, 10) : 0;
+  let used = 0;
+  if (dailyLimit > 0) {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const row = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM messages m
+       JOIN conversations c ON c.id = m.conversation_id
+       WHERE c.user_id = ? AND m.role = 'user' AND m.created_at > ?`
+    )
+      .bind(user.id, since)
+      .first<{ n: number }>();
+    used = row?.n || 0;
+  }
+  return json({
+    daily_limit: dailyLimit || null,
+    used_today: used,
+    remaining: dailyLimit > 0 ? Math.max(0, dailyLimit - used) : null,
+    unlimited: !dailyLimit,
+  });
+}
+
+/** Catalog / knowledge docs (admin write, any signed-in read) — v10.1 vector embeddings */
+async function handleListKnowledge(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  await ensureKnowledgeSeed(env);
+  await ensureConversationColumns(env);
+  try {
+    const { results } = await env.DB.prepare(
+      "SELECT id, title, content, tags, updated_at, embedding FROM knowledge_docs ORDER BY updated_at DESC"
+    ).all();
+    const docs = (results || []).map((r: any) => ({
+      id: r.id,
+      title: r.title,
+      content: r.content,
+      tags: r.tags,
+      updated_at: r.updated_at,
+      has_embedding: !!(r.embedding && String(r.embedding).length > 10),
+    }));
+    return json({ docs, vector_ready: !!env.AI });
+  } catch {
+    try {
+      const { results } = await env.DB.prepare(
+        "SELECT id, title, content, tags, updated_at FROM knowledge_docs ORDER BY updated_at DESC"
+      ).all();
+      return json({
+        docs: (results || []).map((r: any) => ({ ...r, has_embedding: false })),
+        vector_ready: !!env.AI,
+      });
+    } catch {
+      return json({ docs: [], vector_ready: !!env.AI });
+    }
+  }
+}
+
+async function handleUpsertKnowledge(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  if (!isAdminUser(user.username)) return err("Forbidden.", 403);
+  await ensureKnowledgeSeed(env);
+  await ensureConversationColumns(env);
+  const body = (await request.json().catch(() => null)) as {
+    id?: string;
+    title?: string;
+    content?: string;
+    tags?: string;
+  } | null;
+  const title = body?.title?.trim().slice(0, 200);
+  const content = body?.content?.trim().slice(0, 50_000);
+  if (!title || !content) return err("Title and content are required.", 400);
+  const id = (body?.id || crypto.randomUUID()).slice(0, 64);
+  const tags = (body?.tags || "").trim().slice(0, 500);
+  const ts = nowIso();
+
+  // Embed title + tags + content for vector retrieval
+  const embedText = `${title}\n${tags}\n${content}`.slice(0, 8000);
+  const vector = await embedTextWithWorkersAI(env, embedText);
+  const embeddingJson = vector ? JSON.stringify(vector) : null;
+
+  try {
+    await env.DB.prepare(
+      `INSERT INTO knowledge_docs (id, title, content, tags, updated_at, embedding) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET title = excluded.title, content = excluded.content, tags = excluded.tags, updated_at = excluded.updated_at, embedding = excluded.embedding`
+    )
+      .bind(id, title, content, tags, ts, embeddingJson)
+      .run();
+  } catch {
+    await env.DB.prepare(
+      `INSERT INTO knowledge_docs (id, title, content, tags, updated_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET title = excluded.title, content = excluded.content, tags = excluded.tags, updated_at = excluded.updated_at`
+    )
+      .bind(id, title, content, tags, ts)
+      .run();
+  }
+  adminLog("info", "knowledge", "doc upserted", {
+    id,
+    title,
+    by: user.username,
+    embedded: !!vector,
+    dims: vector?.length || 0,
+  });
+  return json({ ok: true, id, title, updated_at: ts, embedded: !!vector });
+}
+
+async function handleDeleteKnowledge(request: Request, env: Env, id: string): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  if (!isAdminUser(user.username)) return err("Forbidden.", 403);
+  await env.DB.prepare("DELETE FROM knowledge_docs WHERE id = ?").bind(id).run();
+  adminLog("info", "knowledge", "doc deleted", { id, by: user.username });
+  return json({ ok: true });
+}
+
+/** POST /api/knowledge/reindex — re-embed all catalog docs (admin) */
+async function handleReindexKnowledge(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  if (!isAdminUser(user.username)) return err("Forbidden.", 403);
+  await ensureConversationColumns(env);
+  if (!env.AI) return err("Workers AI binding required for vector reindex.", 501);
+
+  const { results } = await env.DB.prepare("SELECT id, title, content, tags FROM knowledge_docs").all();
+  let ok = 0;
+  let fail = 0;
+  for (const row of results || []) {
+    const r = row as any;
+    const text = `${r.title}\n${r.tags || ""}\n${r.content || ""}`.slice(0, 8000);
+    const vector = await embedTextWithWorkersAI(env, text);
+    if (!vector) {
+      fail++;
+      continue;
+    }
+    try {
+      await env.DB.prepare("UPDATE knowledge_docs SET embedding = ? WHERE id = ?")
+        .bind(JSON.stringify(vector), r.id)
+        .run();
+      ok++;
+    } catch {
+      fail++;
+    }
+  }
+  adminLog("info", "knowledge", "reindex", { ok, fail, by: user.username });
+  return json({ ok: true, embedded: ok, failed: fail });
+}
+
 /**
  * GET /api/tools/health — lightweight status for OCR / bg-remove / TTS / chat tools.
  * Used by the Tools UI to show a note when a feature isn't configured (501-class).
@@ -1577,7 +1745,59 @@ async function handleListConversations(request: Request, env: Env): Promise<Resp
     if (!seen.has(c.id)) conversations.push(c);
   }
 
-  return json({ conversations });
+  // Unread counts: messages from others after this user's last_read_at
+  // (soft-deleted messages excluded once column exists).
+  const unreadMap = new Map<string, number>();
+  try {
+    const ids = conversations.map((c: any) => c.id);
+    if (ids.length) {
+      // Batch read cursors
+      const placeholders = ids.map(() => "?").join(",");
+      const { results: reads } = await env.DB.prepare(
+        `SELECT conversation_id, last_read_at FROM conversation_reads
+         WHERE user_id = ? AND conversation_id IN (${placeholders})`
+      )
+        .bind(user.id, ...ids)
+        .all<{ conversation_id: string; last_read_at: string }>();
+      const readAt = new Map((reads || []).map((r) => [r.conversation_id, r.last_read_at]));
+
+      for (const c of conversations as any[]) {
+        const since = readAt.get(c.id) || "1970-01-01T00:00:00.000Z";
+        try {
+          const row = await env.DB.prepare(
+            `SELECT COUNT(*) AS n FROM messages
+             WHERE conversation_id = ?
+               AND created_at > ?
+               AND (sender_user_id IS NULL OR sender_user_id != ?)
+               AND (deleted_at IS NULL)`
+          )
+            .bind(c.id, since, user.id)
+            .first<{ n: number }>();
+          unreadMap.set(c.id, row?.n || 0);
+        } catch {
+          // deleted_at column may be missing on very old DBs
+          const row = await env.DB.prepare(
+            `SELECT COUNT(*) AS n FROM messages
+             WHERE conversation_id = ?
+               AND created_at > ?
+               AND (sender_user_id IS NULL OR sender_user_id != ?)`
+          )
+            .bind(c.id, since, user.id)
+            .first<{ n: number }>();
+          unreadMap.set(c.id, row?.n || 0);
+        }
+      }
+    }
+  } catch {
+    /* ignore unread failures */
+  }
+
+  const withUnread = conversations.map((c: any) => ({
+    ...c,
+    unread_count: unreadMap.get(c.id) || 0,
+  }));
+
+  return json({ conversations: withUnread });
 }
 
 async function handleCreateConversation(request: Request, env: Env): Promise<Response> {
@@ -1696,6 +1916,9 @@ async function ensureConversationColumns(env: Env): Promise<void> {
       updated_at TEXT NOT NULL,
       UNIQUE(user_a, user_b)
     )`,
+    "ALTER TABLE messages ADD COLUMN edited_at TEXT",
+    "ALTER TABLE messages ADD COLUMN deleted_at TEXT",
+    "ALTER TABLE knowledge_docs ADD COLUMN embedding TEXT",
   ];
   for (const sql of alters) {
     try {
@@ -1882,7 +2105,7 @@ async function handleGetMessages(request: Request, env: Env, id: string): Promis
   try {
     const q = await env.DB.prepare(
       `SELECT m.id, m.role, m.content, m.attachments, m.created_at, m.sender_user_id,
-              m.reply_to_id, m.reply_to_preview,
+              m.reply_to_id, m.reply_to_preview, m.edited_at, m.deleted_at,
               u.username AS sender_username, u.display_name AS sender_display_name,
               u.email AS sender_email, u.avatar AS sender_avatar
        FROM messages m
@@ -1894,36 +2117,57 @@ async function handleGetMessages(request: Request, env: Env, id: string): Promis
       .all();
     results = q.results || [];
   } catch {
-    const q = await env.DB.prepare(
-      "SELECT id, role, content, attachments, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at ASC"
-    )
-      .bind(id)
-      .all();
-    results = q.results || [];
+    try {
+      const q = await env.DB.prepare(
+        `SELECT m.id, m.role, m.content, m.attachments, m.created_at, m.sender_user_id,
+                m.reply_to_id, m.reply_to_preview,
+                u.username AS sender_username, u.display_name AS sender_display_name,
+                u.email AS sender_email, u.avatar AS sender_avatar
+         FROM messages m
+         LEFT JOIN users u ON u.id = m.sender_user_id
+         WHERE m.conversation_id = ?
+         ORDER BY m.created_at ASC`
+      )
+        .bind(id)
+        .all();
+      results = q.results || [];
+    } catch {
+      const q = await env.DB.prepare(
+        "SELECT id, role, content, attachments, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at ASC"
+      )
+        .bind(id)
+        .all();
+      results = q.results || [];
+    }
   }
 
-  const messages = results.map((m: any) => ({
-    id: m.id,
-    role: m.role,
-    content: m.content,
-    attachments: m.attachments ? JSON.parse(m.attachments) : [],
-    created_at: m.created_at,
-    reply_to_id: m.reply_to_id || null,
-    reply_to_preview: m.reply_to_preview || null,
-    sender:
-      m.role === "agent"
-        ? { id: "paul", username: "Paul", display_name: "Paul", email: null, avatar: null, is_paul: true }
-        : m.sender_user_id
-          ? {
-              id: m.sender_user_id,
-              username: m.sender_username || "user",
-              display_name: m.sender_display_name || m.sender_username || "user",
-              email: m.sender_email || null,
-              avatar: m.sender_avatar || null,
-              is_paul: false,
-            }
-          : null,
-  }));
+  const messages = results.map((m: any) => {
+    const deleted = !!m.deleted_at;
+    return {
+      id: m.id,
+      role: m.role,
+      content: deleted ? "" : m.content,
+      attachments: deleted ? [] : m.attachments ? JSON.parse(m.attachments) : [],
+      created_at: m.created_at,
+      edited_at: m.edited_at || null,
+      deleted_at: m.deleted_at || null,
+      reply_to_id: m.reply_to_id || null,
+      reply_to_preview: m.reply_to_preview || null,
+      sender:
+        m.role === "agent"
+          ? { id: "paul", username: "Paul", display_name: "Paul", email: null, avatar: null, is_paul: true }
+          : m.sender_user_id
+            ? {
+                id: m.sender_user_id,
+                username: m.sender_username || "user",
+                display_name: m.sender_display_name || m.sender_username || "user",
+                email: m.sender_email || null,
+                avatar: m.sender_avatar || null,
+                is_paul: false,
+              }
+            : null,
+    };
+  });
 
   let members: Awaited<ReturnType<typeof listCollabMembers>> = [];
   if (convo.visibility === "collab") {
@@ -2349,30 +2593,117 @@ async function ensureKnowledgeSeed(env: Env): Promise<void> {
   } catch { /* ignore */ }
 }
 
-/** Simple keyword RAG over knowledge_docs — returns snippets + source titles for citations. */
+/** Workers AI embedding model — bge-base-en-v1.5 (768-d). Falls back to small if needed. */
+const EMBED_MODELS = ["@cf/baai/bge-base-en-v1.5", "@cf/baai/bge-small-en-v1.5"] as const;
+
+async function embedTextWithWorkersAI(env: Env, text: string): Promise<number[] | null> {
+  if (!env.AI || !text.trim()) return null;
+  const input = text.replace(/\s+/g, " ").trim().slice(0, 8000);
+  for (const model of EMBED_MODELS) {
+    try {
+      const result: any = await env.AI.run(model, { text: [input] });
+      // Workers AI returns { data: number[][] } or { shape, data }
+      const data = result?.data ?? result;
+      if (Array.isArray(data) && Array.isArray(data[0])) return data[0] as number[];
+      if (Array.isArray(data) && typeof data[0] === "number") return data as number[];
+    } catch (e) {
+      adminLog("warn", "embed", `model ${model} failed`, { err: String((e as any)?.message || e).slice(0, 200) });
+    }
+  }
+  return null;
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (!a.length || a.length !== b.length) return 0;
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  const denom = Math.sqrt(na) * Math.sqrt(nb);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+/**
+ * v10.1 vector RAG over knowledge_docs:
+ * 1) Embed the query with Workers AI
+ * 2) Rank docs by cosine similarity against stored embeddings
+ * 3) Fall back to keyword scoring when AI/embeddings unavailable
+ */
 async function retrieveKnowledge(env: Env, query: string): Promise<{ snippets: string; sources: string[] }> {
   await ensureKnowledgeSeed(env);
-  const words = (query || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((w) => w.length > 2)
-    .slice(0, 8);
-  if (!words.length) return { snippets: "", sources: [] };
+  await ensureConversationColumns(env);
+  const q = (query || "").trim();
+  if (!q) return { snippets: "", sources: [] };
+
   try {
-    const all = await env.DB.prepare("SELECT id, title, content, tags FROM knowledge_docs").all();
+    const all = await env.DB.prepare(
+      "SELECT id, title, content, tags, embedding FROM knowledge_docs"
+    ).all();
+    const rows = (all.results || []) as any[];
+    if (!rows.length) return { snippets: "", sources: [] };
+
     const scored: { title: string; content: string; score: number }[] = [];
-    for (const row of all.results || []) {
-      const r = row as any;
-      const hay = `${r.title} ${r.tags || ""} ${r.content}`.toLowerCase();
-      let score = 0;
-      for (const w of words) if (hay.includes(w)) score += 1;
-      if (score > 0) scored.push({ title: r.title, content: r.content, score });
+
+    // --- Vector path ---
+    const queryVec = await embedTextWithWorkersAI(env, q);
+    if (queryVec) {
+      for (const r of rows) {
+        let emb: number[] | null = null;
+        if (r.embedding) {
+          try {
+            emb = JSON.parse(r.embedding);
+          } catch {
+            emb = null;
+          }
+        }
+        if (emb && Array.isArray(emb) && emb.length === queryVec.length) {
+          const sim = cosineSimilarity(queryVec, emb);
+          // Mild keyword boost so exact product names still rank high
+          const hay = `${r.title} ${r.tags || ""} ${r.content}`.toLowerCase();
+          const words = q
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, " ")
+            .split(/\s+/)
+            .filter((w) => w.length > 2);
+          let kw = 0;
+          for (const w of words) if (hay.includes(w)) kw += 0.05;
+          scored.push({ title: r.title, content: r.content, score: sim + kw });
+        }
+      }
     }
+
+    // --- Keyword fallback if vector scored nothing ---
+    if (!scored.length) {
+      const words = q
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, " ")
+        .split(/\s+/)
+        .filter((w) => w.length > 2)
+        .slice(0, 10);
+      if (!words.length) return { snippets: "", sources: [] };
+      for (const r of rows) {
+        const hay = `${r.title} ${r.tags || ""} ${r.content}`.toLowerCase();
+        let score = 0;
+        for (const w of words) if (hay.includes(w)) score += 1;
+        if (score > 0) scored.push({ title: r.title, content: r.content, score });
+      }
+    }
+
     scored.sort((a, b) => b.score - a.score);
-    const top = scored.slice(0, 3);
+    // Keep docs above a weak similarity floor when using vectors
+    const filtered = queryVec
+      ? scored.filter((s) => s.score >= 0.25).slice(0, 4)
+      : scored.slice(0, 3);
+    const top = filtered.length ? filtered : scored.slice(0, 3);
     if (!top.length) return { snippets: "", sources: [] };
-    const snippets = top.map((s, i) => `[Source ${i + 1}: ${s.title}]\n${s.content}`).join("\n\n");
+
+    const snippets = top
+      .map((s, i) => `[Source ${i + 1}: ${s.title}]\n${String(s.content).slice(0, 2500)}`)
+      .join("\n\n");
     return { snippets, sources: top.map((s) => s.title) };
   } catch {
     return { snippets: "", sources: [] };
@@ -2380,8 +2711,103 @@ async function retrieveKnowledge(env: Env, query: string): Promise<{ snippets: s
 }
 
 // ---------------------------------------------------------------------------
+// Soft edit / delete own messages (v9.8)
+// ---------------------------------------------------------------------------
+
+async function handleEditMessage(request: Request, env: Env, messageId: string): Promise<Response> {
+  await ensureConversationColumns(env);
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  const body = (await request.json().catch(() => null)) as { content?: string } | null;
+  const content = (body?.content ?? "").trim();
+  if (!content) return err("Content is required.", 400);
+  if (content.length > 20_000) return err("Message is too long.", 400);
+
+  const msg = await env.DB.prepare(
+    "SELECT id, conversation_id, role, sender_user_id, deleted_at FROM messages WHERE id = ?"
+  )
+    .bind(messageId)
+    .first<{ id: string; conversation_id: string; role: string; sender_user_id: string | null; deleted_at: string | null }>();
+  if (!msg) return err("Message not found.", 404);
+  if (msg.deleted_at) return err("Message was deleted.", 410);
+  if (msg.role !== "user" || msg.sender_user_id !== user.id) {
+    return err("You can only edit your own messages.", 403);
+  }
+
+  const ts = nowIso();
+  try {
+    await env.DB.prepare("UPDATE messages SET content = ?, edited_at = ? WHERE id = ?")
+      .bind(content, ts, messageId)
+      .run();
+  } catch {
+    return err("Could not edit message (schema).", 500);
+  }
+  await env.DB.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?")
+    .bind(ts, msg.conversation_id)
+    .run();
+  return json({ ok: true, id: messageId, content, edited_at: ts });
+}
+
+async function handleDeleteMessage(request: Request, env: Env, messageId: string): Promise<Response> {
+  await ensureConversationColumns(env);
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+
+  const msg = await env.DB.prepare(
+    "SELECT id, conversation_id, role, sender_user_id, deleted_at FROM messages WHERE id = ?"
+  )
+    .bind(messageId)
+    .first<{ id: string; conversation_id: string; role: string; sender_user_id: string | null; deleted_at: string | null }>();
+  if (!msg) return err("Message not found.", 404);
+  if (msg.deleted_at) return json({ ok: true, id: messageId, deleted: true });
+  if (msg.role !== "user" || msg.sender_user_id !== user.id) {
+    return err("You can only delete your own messages.", 403);
+  }
+
+  const ts = nowIso();
+  try {
+    await env.DB.prepare("UPDATE messages SET deleted_at = ?, content = '', attachments = NULL WHERE id = ?")
+      .bind(ts, messageId)
+      .run();
+  } catch {
+    // Fallback without attachments clear
+    try {
+      await env.DB.prepare("UPDATE messages SET deleted_at = ?, content = '' WHERE id = ?")
+        .bind(ts, messageId)
+        .run();
+    } catch {
+      return err("Could not delete message (schema).", 500);
+    }
+  }
+  await env.DB.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?")
+    .bind(ts, msg.conversation_id)
+    .run();
+  return json({ ok: true, id: messageId, deleted: true, deleted_at: ts });
+}
+
+// ---------------------------------------------------------------------------
 // Blocks
 // ---------------------------------------------------------------------------
+
+async function handleListBlocks(request: Request, env: Env): Promise<Response> {
+  await ensureConversationColumns(env);
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT u.id, u.username, u.display_name, u.avatar, b.created_at AS blocked_at
+       FROM user_blocks b
+       JOIN users u ON u.id = b.blocked_id
+       WHERE b.blocker_id = ?
+       ORDER BY b.created_at DESC`
+    )
+      .bind(user.id)
+      .all();
+    return json({ blocked: results || [] });
+  } catch {
+    return json({ blocked: [] });
+  }
+}
 
 async function handleBlockUser(request: Request, env: Env): Promise<Response> {
   await ensureConversationColumns(env);
@@ -3199,6 +3625,11 @@ interface LeadRequestBody {
   has_photo?: boolean;
   /** data:<mime>;base64,<data> — the actual (client-compressed) photo, sent as an email attachment. */
   photo_data_url?: string;
+  /** Quote dimensions (cm or free text units). */
+  length?: string;
+  width?: string;
+  thickness?: string;
+  room_type?: string;
 }
 
 const MAX_LEAD_PHOTO_BYTES = 8 * 1024 * 1024; // 8MB decoded — client already compresses to well under this
@@ -3213,7 +3644,13 @@ async function handleCreateLead(request: Request, env: Env): Promise<Response> {
   const name = body.name?.trim().slice(0, 120) || null;
   const phone = body.phone?.trim().slice(0, 60) || null;
   const email = body.email?.trim().slice(0, 200) || null;
-  const message = body.message?.trim().slice(0, 4000) || null;
+  const dims: string[] = [];
+  if (body.length?.trim()) dims.push(`L: ${body.length.trim()}`);
+  if (body.width?.trim()) dims.push(`W: ${body.width.trim()}`);
+  if (body.thickness?.trim()) dims.push(`T: ${body.thickness.trim()}`);
+  if (body.room_type?.trim()) dims.push(`Room: ${body.room_type.trim()}`);
+  const dimLine = dims.length ? `[Dimensions] ${dims.join(" · ")}\n` : "";
+  const message = `${dimLine}${body.message?.trim() || ""}`.trim().slice(0, 4000) || null;
   if (!name && !phone && !email && !message) {
     return err("Please fill in at least one field.");
   }
@@ -3343,6 +3780,18 @@ export default {
         resp = await handleAdminLogsGet(request, env);
       } else if (path === "/api/admin/logs" && request.method === "DELETE") {
         resp = await handleAdminLogsClear(request, env);
+      } else if (path === "/api/admin/users" && request.method === "GET") {
+        resp = await handleAdminUsers(request, env);
+      } else if (path === "/api/usage/quota" && request.method === "GET") {
+        resp = await handleUsageQuota(request, env);
+      } else if (path === "/api/knowledge" && request.method === "GET") {
+        resp = await handleListKnowledge(request, env);
+      } else if (path === "/api/knowledge" && request.method === "POST") {
+        resp = await handleUpsertKnowledge(request, env);
+      } else if (path === "/api/knowledge/reindex" && request.method === "POST") {
+        resp = await handleReindexKnowledge(request, env);
+      } else if (path.match(/^\/api\/knowledge\/[^/]+$/) && request.method === "DELETE") {
+        resp = await handleDeleteKnowledge(request, env, path.split("/")[3]);
       } else if (path === "/api/uploads" && request.method === "GET") {
         // List uploads/attachments for the current user
         resp = await handleListUploads(request, env);
@@ -3362,6 +3811,8 @@ export default {
         resp = await handleSetConversationVisibility(request, env, path.split("/")[3]);
       } else if (path.match(/^\/api\/conversations\/[^/]+\/join$/) && request.method === "POST") {
         resp = await handleJoinCollab(request, env, path.split("/")[3]);
+      } else if (path === "/api/blocks" && request.method === "GET") {
+        resp = await handleListBlocks(request, env);
       } else if (path === "/api/block" && request.method === "POST") {
         resp = await handleBlockUser(request, env);
       } else if (path === "/api/block" && request.method === "DELETE") {
@@ -3393,6 +3844,10 @@ export default {
         return handleCollabLive(request, env, path.split("/")[3]);
       } else if (path.match(/^\/api\/conversations\/[^/]+\/audit$/) && request.method === "GET") {
         resp = await handleGetAudit(request, env, path.split("/")[3]);
+      } else if (path.match(/^\/api\/messages\/[^/]+$/) && request.method === "PATCH") {
+        resp = await handleEditMessage(request, env, path.split("/")[3]);
+      } else if (path.match(/^\/api\/messages\/[^/]+$/) && request.method === "DELETE") {
+        resp = await handleDeleteMessage(request, env, path.split("/")[3]);
       } else if (path === "/api/chat" && request.method === "POST") {
         resp = await handleChat(request, env, ctx);
       } else if (path === "/api/leads" && request.method === "POST") {

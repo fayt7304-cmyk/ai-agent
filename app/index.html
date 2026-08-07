@@ -252,6 +252,10 @@
               <div class="usage-label" data-i18n="usage.activeTime">Active time</div>
               <div class="usage-value" id="usage-time">—</div>
             </div>
+            <div class="usage-stat usage-stat-wide">
+              <div class="usage-label">Daily plan remaining</div>
+              <div class="usage-value" id="usage-remaining">—</div>
+            </div>
           </div>
         </div>
       </div>
@@ -609,7 +613,7 @@
             </div>
           </div>
 
-          <!-- Admin only (username fay7304) -->
+          <!-- Admin only -->
           <div id="admin-logs-section" style="display:none;">
             <h3 class="settings-subheading" data-i18n="settings.adminLogs">Admin logs</h3>
             <div class="settings-card">
@@ -623,6 +627,40 @@
                   <button type="button" id="admin-logs-clear-btn" class="secondary-btn" data-i18n="settings.adminLogsClear">Clear buffer</button>
                 </div>
               </div>
+            </div>
+
+            <h3 class="settings-subheading">Catalog (RAG)</h3>
+            <div class="settings-card catalog-cms">
+              <p class="catalog-cms-intro">Product sheets &amp; price bands Paul cites in answers. Paste text from catalogs here.</p>
+              <label class="catalog-field">
+                <span class="catalog-label">Title</span>
+                <input type="text" id="knowledge-title" class="catalog-input" placeholder="e.g. Carrara price band" autocomplete="off">
+              </label>
+              <label class="catalog-field">
+                <span class="catalog-label">Tags</span>
+                <input type="text" id="knowledge-tags" class="catalog-input" placeholder="marble price kitchen…" autocomplete="off">
+              </label>
+              <label class="catalog-field">
+                <span class="catalog-label">Content / sheet text</span>
+                <textarea id="knowledge-content" class="catalog-textarea" rows="6" placeholder="Paste full product sheet or price band text…"></textarea>
+              </label>
+              <div class="catalog-actions">
+                <button type="button" id="knowledge-save-btn" class="primary">Save to catalog</button>
+                <button type="button" id="knowledge-refresh-btn" class="secondary-btn">Refresh list</button>
+                <button type="button" id="knowledge-reindex-btn" class="secondary-btn">Re-embed all</button>
+              </div>
+              <div id="knowledge-vector-status" class="catalog-cms-intro">Vector RAG status…</div>
+              <div class="catalog-list-head">Saved entries</div>
+              <div id="knowledge-list" class="knowledge-list"></div>
+            </div>
+
+            <h3 class="settings-subheading">Users</h3>
+            <div class="settings-card catalog-cms">
+              <div class="catalog-actions catalog-actions-top">
+                <p class="catalog-cms-intro" style="margin:0;flex:1;">Recent accounts (up to 200).</p>
+                <button type="button" id="admin-users-refresh-btn" class="secondary-btn">Refresh</button>
+              </div>
+              <div id="admin-users-list" class="admin-users-list"></div>
             </div>
           </div>
         </section>
@@ -653,6 +691,20 @@
               </div>
             </div>
             <div id="uploads-list" class="file-list"></div>
+          </div>
+
+          <h3 class="settings-subheading">Blocked users</h3>
+          <div class="settings-card">
+            <div class="settings-card-row">
+              <div>
+                <div class="settings-card-title">Block list</div>
+                <div class="settings-card-desc">People you've blocked can't message you or send friend requests.</div>
+              </div>
+              <button type="button" id="refresh-blocks-btn" class="secondary-btn">Refresh</button>
+            </div>
+            <div id="blocked-users-list" class="blocked-users-list">
+              <p class="settings-muted" id="blocked-users-empty">No blocked users.</p>
+            </div>
           </div>
 
           <h3 class="settings-subheading" data-i18n="settings.groupDangerZone">Danger zone</h3>
@@ -800,8 +852,17 @@
         <input type="email" id="lead-email" placeholder="Your email" data-i18n-placeholder="lead.emailPh">
       </section>
       <section class="settings-section">
+        <label class="settings-label">Dimensions (optional)</label>
+        <div class="lead-dims-row">
+          <input type="text" id="lead-length" placeholder="Length" inputmode="decimal">
+          <input type="text" id="lead-width" placeholder="Width" inputmode="decimal">
+          <input type="text" id="lead-thickness" placeholder="Thickness" inputmode="decimal">
+        </div>
+        <input type="text" id="lead-room" placeholder="Room type (kitchen, bath, floor…)" style="margin-top:8px;">
+      </section>
+      <section class="settings-section">
         <label class="settings-label" for="lead-message" data-i18n="lead.message">Tell us about your project</label>
-        <textarea id="lead-message" rows="3" placeholder="e.g. Kitchen countertop, ~3m, need a quote" data-i18n-placeholder="lead.messagePh"></textarea>
+        <textarea id="lead-message" rows="3" placeholder="e.g. Kitchen countertop, need a quote" data-i18n-placeholder="lead.messagePh"></textarea>
       </section>
       <section class="settings-section">
         <label class="settings-label" data-i18n="lead.photo">Photo (optional)</label>

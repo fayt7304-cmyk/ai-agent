@@ -500,8 +500,13 @@ function refreshAdminLogsVisibility(user: User) {
   if (!adminLogsSection) return;
   const isAdmin = isAdminUsername(user.username);
   adminLogsSection.style.display = isAdmin ? "block" : "none";
-  if (isAdmin) adminLogsSection.removeAttribute("hidden");
-  else adminLogsSection.setAttribute("hidden", "");
+  if (isAdmin) {
+    adminLogsSection.removeAttribute("hidden");
+    void loadKnowledgeList();
+    void loadAdminUsers();
+  } else {
+    adminLogsSection.setAttribute("hidden", "");
+  }
 }
 
 adminLogsDownloadBtn?.addEventListener("click", async () => {
@@ -547,6 +552,130 @@ adminLogsClearBtn?.addEventListener("click", async () => {
     settingsError.textContent = e?.message || "Clear failed";
   }
 });
+
+async function loadKnowledgeList() {
+  const list = document.getElementById("knowledge-list");
+  if (!list) return;
+  list.innerHTML = `<p class="settings-muted">Loading…</p>`;
+  try {
+    const { docs, vector_ready } = await api.listKnowledge();
+    const status = document.getElementById("knowledge-vector-status");
+    if (status) {
+      status.textContent = vector_ready
+        ? "Vector RAG: Workers AI embeddings active"
+        : "Vector RAG: AI binding missing — keyword fallback only";
+    }
+    if (!docs.length) {
+      list.innerHTML = `<p class="settings-muted">No catalog docs yet.</p>`;
+      return;
+    }
+    list.innerHTML = "";
+    for (const d of docs) {
+      const row = document.createElement("div");
+      row.className = "knowledge-row";
+      const title = document.createElement("div");
+      title.className = "knowledge-row-title";
+      title.textContent = d.title;
+      const meta = document.createElement("div");
+      meta.className = "knowledge-row-meta";
+      const emb = d.has_embedding ? " · vector ✓" : " · no vector";
+      meta.textContent = `${(d.tags || "").trim() || "—"}${emb}`;
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "secondary-btn";
+      del.textContent = "Delete";
+      del.addEventListener("click", async () => {
+        try {
+          await api.deleteKnowledge(d.id);
+          row.remove();
+        } catch (e: any) {
+          settingsError.textContent = e?.message || "Delete failed";
+        }
+      });
+      row.appendChild(title);
+      row.appendChild(meta);
+      row.appendChild(del);
+      list.appendChild(row);
+    }
+  } catch (e: any) {
+    list.innerHTML = `<p class="settings-muted">${e?.message || "Failed to load"}</p>`;
+  }
+}
+
+document.getElementById("knowledge-refresh-btn")?.addEventListener("click", () => void loadKnowledgeList());
+document.getElementById("knowledge-reindex-btn")?.addEventListener("click", async () => {
+  const btn = document.getElementById("knowledge-reindex-btn") as HTMLButtonElement | null;
+  if (btn) btn.disabled = true;
+  try {
+    const res = await api.reindexKnowledge();
+    settingsSuccess.textContent = `Reindexed: ${res.embedded} embedded, ${res.failed} failed.`;
+    void loadKnowledgeList();
+    setTimeout(() => {
+      settingsSuccess.textContent = "";
+    }, 3000);
+  } catch (e: any) {
+    settingsError.textContent = e?.message || "Reindex failed";
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+});
+document.getElementById("knowledge-save-btn")?.addEventListener("click", async () => {
+  const title = (document.getElementById("knowledge-title") as HTMLInputElement)?.value.trim();
+  const content = (document.getElementById("knowledge-content") as HTMLTextAreaElement)?.value.trim();
+  const tags = (document.getElementById("knowledge-tags") as HTMLInputElement)?.value.trim();
+  if (!title || !content) {
+    settingsError.textContent = "Title and content required";
+    return;
+  }
+  try {
+    const res = await api.upsertKnowledge({ title, content, tags });
+    settingsSuccess.textContent = res.embedded
+      ? "Saved & embedded — Paul can cite it with vector search."
+      : "Saved (keyword only — AI embed unavailable).";
+    (document.getElementById("knowledge-title") as HTMLInputElement).value = "";
+    (document.getElementById("knowledge-content") as HTMLTextAreaElement).value = "";
+    (document.getElementById("knowledge-tags") as HTMLInputElement).value = "";
+    void loadKnowledgeList();
+    setTimeout(() => {
+      settingsSuccess.textContent = "";
+    }, 3000);
+  } catch (e: any) {
+    settingsError.textContent = e?.message || "Save failed";
+  }
+});
+
+async function loadAdminUsers() {
+  const list = document.getElementById("admin-users-list");
+  if (!list) return;
+  list.innerHTML = `<p class="settings-muted">Loading…</p>`;
+  try {
+    const { users } = await api.listAdminUsers();
+    if (!users.length) {
+      list.innerHTML = `<p class="settings-muted">No users.</p>`;
+      return;
+    }
+    list.innerHTML = "";
+    for (const u of users) {
+      const row = document.createElement("div");
+      row.className = "admin-user-row";
+      const name = document.createElement("div");
+      name.className = "admin-user-name";
+      name.textContent = `${u.display_name || u.username}${u.is_guest ? " (guest)" : ""}`;
+      const meta = document.createElement("div");
+      meta.className = "admin-user-meta";
+      meta.textContent = `@${u.username} · ${u.email || "no email"} · ${u.created_at?.slice(0, 10) || ""}`;
+      row.appendChild(name);
+      row.appendChild(meta);
+      list.appendChild(row);
+    }
+  } catch (e: any) {
+    list.innerHTML = `<p class="settings-muted">${e?.message || "Forbidden or failed"}</p>`;
+  }
+}
+
+document.getElementById("admin-users-refresh-btn")?.addEventListener("click", () => void loadAdminUsers());
+
+/* Admin catalog + users load when Settings opens for admin accounts */
 
 function coerceLanguageIfIncomplete() {
   try {
@@ -667,8 +796,53 @@ export function initSettingsView(onUserUpdated: (user: User) => void) {
       showTab(tab);
       if (tab === "account") loadActiveSessions();
       if (tab === "memory") void loadMemory();
+      if (tab === "privacy") void loadBlockedUsers();
     });
   });
+
+  document.getElementById("refresh-blocks-btn")?.addEventListener("click", () => void loadBlockedUsers());
+
+  async function loadBlockedUsers() {
+    const list = document.getElementById("blocked-users-list");
+    if (!list) return;
+    list.innerHTML = `<p class="settings-muted">Loading…</p>`;
+    try {
+      const { blocked } = await api.listBlocks();
+      if (!blocked.length) {
+        list.innerHTML = `<p class="settings-muted" id="blocked-users-empty">No blocked users.</p>`;
+        return;
+      }
+      list.innerHTML = "";
+      for (const b of blocked) {
+        const row = document.createElement("div");
+        row.className = "blocked-user-row";
+        const name = b.display_name || b.username;
+        row.innerHTML = `
+          <div class="blocked-user-info">
+            <div class="blocked-user-name"></div>
+            <div class="blocked-user-handle"></div>
+          </div>
+          <button type="button" class="secondary-btn blocked-unblock-btn">Unblock</button>`;
+        (row.querySelector(".blocked-user-name") as HTMLElement).textContent = name;
+        (row.querySelector(".blocked-user-handle") as HTMLElement).textContent = `@${b.username}`;
+        row.querySelector("button")!.addEventListener("click", async () => {
+          try {
+            await api.unblockUser(b.id);
+            row.remove();
+            if (!list.querySelector(".blocked-user-row")) {
+              list.innerHTML = `<p class="settings-muted" id="blocked-users-empty">No blocked users.</p>`;
+            }
+          } catch (e: any) {
+            settingsError.textContent = e?.message || "Could not unblock";
+          }
+        });
+        list.appendChild(row);
+      }
+    } catch (e: any) {
+      list.innerHTML = `<p class="settings-muted"></p>`;
+      (list.firstChild as HTMLElement).textContent = e?.message || "Could not load block list";
+    }
+  }
 
   // The Copy button next to the user ID was rendered but never wired up.
   copyUserIdBtn.addEventListener("click", async () => {
