@@ -1002,7 +1002,7 @@
       <div id="tools-health" class="tools-health note" style="display:none;" role="status"></div>
         <div class="tools-menu" id="tools-menu">
         <button class="tool-card" data-tool-tab="convert">
-          <span class="tool-card-icon">🖼️</span>
+          <span class="tool-card-icon" data-tool-icon="image"></span>
           <span class="tool-card-text">
             <span class="tool-card-label" data-i18n="tools.convert.label">Convert Image</span>
             <span class="tool-card-sub" data-i18n="tools.convert.sub">Change between PNG, JPG, and WebP</span>
@@ -1010,7 +1010,7 @@
 
         </button>
         <button class="tool-card" data-tool-tab="bgremove">
-          <span class="tool-card-icon">✂️</span>
+          <span class="tool-card-icon" data-tool-icon="scissors"></span>
           <span class="tool-card-text">
             <span class="tool-card-label" data-i18n="tools.bgremove.label">Remove Background</span>
             <span class="tool-card-sub" data-i18n="tools.bgremove.sub">Erase the background from a photo</span>
@@ -1018,7 +1018,7 @@
 
         </button>
         <button class="tool-card" data-tool-tab="ocr">
-          <span class="tool-card-icon">🔤</span>
+          <span class="tool-card-icon" data-tool-icon="text"></span>
           <span class="tool-card-text">
             <span class="tool-card-label" data-i18n="tools.ocr.label">Image to Text</span>
             <span class="tool-card-sub" data-i18n="tools.ocr.sub">Pull the text out of a picture</span>
@@ -1026,7 +1026,7 @@
 
         </button>
         <button class="tool-card" data-tool-tab="pdf2word">
-          <span class="tool-card-icon">📄</span>
+          <span class="tool-card-icon" data-tool-icon="doc"></span>
           <span class="tool-card-text">
             <span class="tool-card-label" data-i18n="tools.pdf2word.label">PDF to Word</span>
             <span class="tool-card-sub" data-i18n="tools.pdf2word.sub">Turn a PDF into an editable Word doc</span>
@@ -1034,20 +1034,40 @@
 
         </button>
         <button class="tool-card" data-tool-tab="docx">
-          <span class="tool-card-icon">📝</span>
+          <span class="tool-card-icon" data-tool-icon="doc"></span>
           <span class="tool-card-text">
             <span class="tool-card-label" data-i18n="tools.docx.label">Text to Word</span>
             <span class="tool-card-sub" data-i18n="tools.docx.sub">Paste text, export it as a Word doc</span>
           </span>
 
         </button>
-        <button class="tool-card" data-tool-tab="uconvert">
-          <span class="tool-card-icon">🧮</span>
+        <button class="tool-card" data-tool-tab="uconvert" data-uconvert-open="convert">
+          <span class="tool-card-icon" data-tool-icon="ruler"></span>
           <span class="tool-card-text">
-            <span class="tool-card-label" data-i18n="tools.uconvert.label">Converter & Calculator</span>
-            <span class="tool-card-sub" data-i18n="tools.uconvert.sub">Units, materials, calculator, weather</span>
+            <span class="tool-card-label">Units</span>
+            <span class="tool-card-sub">Length, area, volume, currency</span>
           </span>
-
+        </button>
+        <button class="tool-card" data-tool-tab="uconvert" data-uconvert-open="material">
+          <span class="tool-card-icon" data-tool-icon="slab"></span>
+          <span class="tool-card-text">
+            <span class="tool-card-label">Material estimate</span>
+            <span class="tool-card-sub">Width × length → m² with waste</span>
+          </span>
+        </button>
+        <button class="tool-card" data-tool-tab="uconvert" data-uconvert-open="calculator">
+          <span class="tool-card-icon" data-tool-icon="calc"></span>
+          <span class="tool-card-text">
+            <span class="tool-card-label">Calculator</span>
+            <span class="tool-card-sub">Quick numbers for site work</span>
+          </span>
+        </button>
+        <button class="tool-card" data-tool-tab="uconvert" data-uconvert-open="weather">
+          <span class="tool-card-icon" data-tool-icon="weather"></span>
+          <span class="tool-card-text">
+            <span class="tool-card-label">Weather</span>
+            <span class="tool-card-sub">Site-day conditions</span>
+          </span>
         </button>
       </div>
 
@@ -1063,11 +1083,13 @@
 
       <!-- Format converter -->
       <div class="tool-pane" id="tool-convert">
+        <p class="tool-limit-note">PNG, JPG, or WebP · max 15 MB · conversion runs on your device</p>
         <div class="dropzone" id="convert-drop">
           <div id="convert-drop-text" data-i18n="tool.dropImage">Drop an image here, or click to choose a file</div>
           <input type="file" id="convert-file" accept="image/*">
         </div>
         <div class="preview" id="convert-preview" style="display:none;"><img id="convert-img"></div>
+        <div class="status" id="convert-status"></div>
         <div class="controls" id="convert-controls" style="display:none;">
           <select id="convert-format">
             <option value="image/png">PNG</option>
@@ -1080,12 +1102,23 @@
 
       <!-- Background remover -->
       <div class="tool-pane" id="tool-bgremove" style="display:none;">
+        <p class="tool-limit-note">Max 15 MB · needs server Images binding</p>
         <div class="note" data-i18n="tool.bg.note">Processed on the server (Cloudflare Images) — no large model download in your browser. Requires sign-in.</div>
         <div class="dropzone" id="bg-drop">
           <div id="bg-drop-text" data-i18n="tool.dropImage">Drop an image here, or click to choose a file</div>
           <input type="file" id="bg-file" accept="image/*">
         </div>
-        <div class="preview" id="bg-preview" style="display:none;"><img id="bg-img"></div>
+        <div class="preview bg-compare" id="bg-preview" style="display:none;">
+          <div class="bg-compare-col">
+            <span class="bg-compare-label">Before</span>
+            <img id="bg-img-before" alt="Original">
+          </div>
+          <div class="bg-compare-col" id="bg-after-wrap" style="display:none;">
+            <span class="bg-compare-label">After</span>
+            <img id="bg-img-after" alt="Background removed">
+          </div>
+          <img id="bg-img" alt="" style="display:none;">
+        </div>
         <div class="controls" id="bg-controls" style="display:none;">
           <button class="primary" id="bg-remove" data-i18n="tool.bg.remove">Remove background</button>
           <button id="bg-download" style="display:none;" data-i18n="tool.bg.download">Download result</button>
@@ -1095,6 +1128,7 @@
 
       <!-- Image to text (OCR) -->
       <div class="tool-pane" id="tool-ocr" style="display:none;">
+        <p class="tool-limit-note">Max 15 MB · text is extracted on the server</p>
         <div class="note" data-i18n="tool.ocr.note">Powered by Mistral OCR — reads normal text and math notation (formulas come back as LaTeX source).</div>
         <div class="dropzone" id="ocr-drop">
           <div id="ocr-drop-text" data-i18n="tool.dropImage">Drop an image here, or click to choose a file</div>
@@ -1110,11 +1144,13 @@
           <button id="ocr-copy" data-i18n="tool.ocr.copy">Copy text</button>
           <button id="ocr-download-txt" data-i18n="tool.ocr.downloadTxt">Download .txt</button>
           <button id="ocr-download-docx" data-i18n="tool.ocr.downloadDocx">Download .docx</button>
+          <button type="button" id="ocr-send-paul" class="primary">Send to Paul</button>
         </div>
       </div>
 
       <!-- PDF to Word -->
       <div class="tool-pane" id="tool-pdf2word" style="display:none;">
+        <p class="tool-limit-note">Max 25 MB · needs OCR configured on the server</p>
         <div class="note" data-i18n="tool.pdf.note">Powered by Mistral OCR — preserves headings and paragraph structure, including math as LaTeX. Complex multi-column layouts may not be perfectly preserved.</div>
         <div class="dropzone" id="pdf-drop">
           <div id="pdf-drop-text" data-i18n="tool.dropPdf">Drop a PDF here, or click to choose a file</div>
@@ -1128,10 +1164,14 @@
 
       <!-- Markdown to docx -->
       <div class="tool-pane" id="tool-docx" style="display:none;">
-        <p class="hint" data-i18n="tool.docx.hint">Paste markdown (e.g. from an OCR result above) and export it as a Word document.</p>
+        <p class="hint" data-i18n="tool.docx.hint">Paste text or markdown, optionally add a title, then export or send to Paul.</p>
+        <input type="text" id="docx-title" class="tool-title-input" placeholder="Document title (optional)" maxlength="120">
         <textarea id="docx-input" rows="8" placeholder="# Heading&#10;Some **bold** text…"></textarea>
-        <button id="docx-run-btn" class="primary" data-i18n="tool.docx.export">Export .docx</button>
-        <div class="tool-status" id="docx-status"></div>
+        <div class="controls">
+          <button id="docx-run-btn" class="primary" data-i18n="tool.docx.export">Export .docx</button>
+          <button type="button" id="docx-send-paul" class="secondary-btn">Send to Paul</button>
+        </div>
+        <div class="status tool-status" id="docx-status"></div>
       </div>
 
       <!-- Universal Converter -->
@@ -1168,6 +1208,7 @@
             <div class="value" id="conv-result">—</div>
             <div class="label" data-i18n="uconvert.result">Result</div>
           </div>
+          <button type="button" class="secondary-btn tool-copy-paul" id="conv-send-paul" data-copy-from="conv-result">Send to Paul</button>
           <div class="status" id="conv-status"></div>
         </div>
 
@@ -1181,7 +1222,7 @@
             </div>
             <div class="field">
               <label for="mat-width-unit" data-i18n="uconvert.unit">Unit</label>
-              <select id="mat-width-unit"><option value="m">m</option><option value="ft">ft</option></select>
+              <select id="mat-width-unit"><option value="cm">cm</option><option value="m" selected>m</option><option value="ft">ft</option></select>
             </div>
           </div>
           <div class="grid2">
@@ -1191,7 +1232,7 @@
             </div>
             <div class="field">
               <label for="mat-length-unit" data-i18n="uconvert.unit">Unit</label>
-              <select id="mat-length-unit"><option value="m">m</option><option value="ft">ft</option></select>
+              <select id="mat-length-unit"><option value="cm">cm</option><option value="m" selected>m</option><option value="ft">ft</option></select>
             </div>
           </div>
           <div class="field" style="margin-bottom: 1rem;">
@@ -1200,6 +1241,7 @@
           </div>
           <div class="result">
             <div class="value" id="mat-result">—</div>
+            <button type="button" class="secondary-btn tool-copy-paul" id="mat-send-paul" data-copy-from="mat-result">Send to Paul</button>
             <div class="label" data-i18n="material.areaNeeded">Area needed</div>
           </div>
         </div>

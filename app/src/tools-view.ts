@@ -8,6 +8,7 @@ import { initMaterialEstimate } from "./lib/material";
 import { initCalculator } from "./lib/calculator";
 import { initWeather, loadWeather } from "./lib/weather";
 import { t } from "./lib/i18n";
+import { icons } from "./lib/icons";
 
 const overlay = document.getElementById("tools-overlay") as HTMLDivElement;
 const closeBtn = document.getElementById("tools-close-btn") as HTMLButtonElement;
@@ -49,14 +50,33 @@ function showMenu() {
 }
 
 // Opens one tool full-width, with a back arrow to return to the grid.
-function switchTab(tab: string) {
-  title.textContent = t(toolLabelKeys[tab]) || t("tools.title");
+const toolTitles: Record<string, string> = {
+  convert: "Convert image",
+  bgremove: "Remove background",
+  ocr: "Image to text",
+  pdf2word: "PDF to Word",
+  docx: "Text to Word",
+  uconvert: "Site tools",
+};
+
+function openUconvertSub(sub: string) {
+  const uconvertTabs = document.getElementById("uconvert-tabs");
+  const btn = uconvertTabs?.querySelector<HTMLButtonElement>(`[data-uconvert-tab="${sub}"]`);
+  btn?.click();
+}
+
+function switchTab(tab: string, uconvertSub?: string) {
+  title.textContent = toolTitles[tab] || t(toolLabelKeys[tab]) || t("tools.title");
   backBtn.style.display = "inline-flex";
   menu.style.display = "none";
   tabs.querySelectorAll<HTMLButtonElement>("button").forEach((b) => b.classList.toggle("active", b.dataset.toolTab === tab));
   Object.entries(panes).forEach(([key, el]) => {
     el.style.display = key === tab ? "flex" : "none";
   });
+  if (tab === "uconvert" && uconvertSub) {
+    // Defer so pane is visible before tab click
+    requestAnimationFrame(() => openUconvertSub(uconvertSub));
+  }
 }
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -68,6 +88,35 @@ function downloadBlob(blob: Blob, filename: string) {
   a.href = URL.createObjectURL(blob);
   a.download = filename;
   a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
+}
+
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+const MAX_PDF_BYTES = 25 * 1024 * 1024;
+
+function setStatus(el: HTMLElement | null, message: string, kind: "idle" | "working" | "ok" | "error" = "idle") {
+  if (!el) return;
+  el.textContent = message;
+  el.classList.remove("working", "ok", "error");
+  if (kind === "working") el.classList.add("working");
+  if (kind === "ok") el.classList.add("ok");
+  if (kind === "error") el.classList.add("error");
+}
+
+function validateFileSize(file: File, maxBytes: number, label: string): string | null {
+  if (file.size > maxBytes) {
+    const mb = (maxBytes / (1024 * 1024)).toFixed(0);
+    return `${label} is too large (max ${mb} MB).`;
+  }
+  return null;
+}
+
+/** Put text into the chat composer and close tools (everyday “send to Paul”). */
+function sendTextToPaul(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+  window.dispatchEvent(new CustomEvent("paul:tools-insert", { detail: { text: trimmed } }));
+  close();
 }
 
 // A drag/drop + click-to-choose file zone shared by all the file-based tools.
@@ -94,20 +143,43 @@ function setupDropzone(dropId: string, fileId: string, onFile: (file: File) => v
 function initConvertTool() {
   let loadedImage: HTMLImageElement | null = null;
 
+  const status = () => document.getElementById("convert-status");
+
   setupDropzone("convert-drop", "convert-file", async (file) => {
-    const img = await loadImage(file);
-    loadedImage = img;
-    byId<HTMLImageElement>("convert-img").src = img.src;
-    byId("convert-preview").style.display = "block";
-    byId("convert-controls").style.display = "flex";
-    byId("convert-drop-text").textContent = file.name;
+    const err = validateFileSize(file, MAX_IMAGE_BYTES, "Image");
+    if (err) {
+      setStatus(status(), err, "error");
+      return;
+    }
+    setStatus(status(), "Loading…", "working");
+    try {
+      const img = await loadImage(file);
+      loadedImage = img;
+      byId<HTMLImageElement>("convert-img").src = img.src;
+      byId("convert-preview").style.display = "block";
+      byId("convert-controls").style.display = "flex";
+      byId("convert-drop-text").textContent = file.name;
+      setStatus(status(), "Ready — choose a format and download.", "ok");
+    } catch (e: any) {
+      setStatus(status(), e?.message || "Could not read image.", "error");
+    }
   });
 
   byId<HTMLButtonElement>("convert-download").addEventListener("click", async () => {
     if (!loadedImage) return;
-    const format = byId<HTMLSelectElement>("convert-format").value as ImageMimeType;
-    const blob = await convertImage(loadedImage, format);
-    downloadBlob(blob, "converted." + extensionFor(format));
+    const btn = byId<HTMLButtonElement>("convert-download");
+    btn.disabled = true;
+    setStatus(status(), "Converting…", "working");
+    try {
+      const format = byId<HTMLSelectElement>("convert-format").value as ImageMimeType;
+      const blob = await convertImage(loadedImage, format);
+      downloadBlob(blob, "converted." + extensionFor(format));
+      setStatus(status(), "Downloaded.", "ok");
+    } catch (e: any) {
+      setStatus(status(), e?.message || "Convert failed.", "error");
+    } finally {
+      btn.disabled = false;
+    }
   });
 }
 
@@ -117,14 +189,27 @@ function initBgRemoveTool() {
   let resultBlob: Blob | null = null;
 
   setupDropzone("bg-drop", "bg-file", (file) => {
+    const err = validateFileSize(file, MAX_IMAGE_BYTES, "Image");
+    if (err) {
+      setStatus(byId("bg-status"), err, "error");
+      return;
+    }
     currentFile = file;
     resultBlob = null;
-    byId<HTMLImageElement>("bg-img").src = URL.createObjectURL(file);
+    const url = URL.createObjectURL(file);
+    byId<HTMLImageElement>("bg-img").src = url;
+    const before = document.getElementById("bg-img-before") as HTMLImageElement | null;
+    if (before) {
+      before.src = url;
+      before.style.display = "block";
+    }
+    const afterWrap = document.getElementById("bg-after-wrap");
+    if (afterWrap) afterWrap.style.display = "none";
     byId("bg-preview").style.display = "block";
     byId("bg-controls").style.display = "flex";
     byId("bg-drop-text").textContent = file.name;
     byId("bg-download").style.display = "none";
-    byId("bg-status").textContent = "";
+    setStatus(byId("bg-status"), "Ready — remove background when you like.", "ok");
   });
 
   byId<HTMLButtonElement>("bg-remove").addEventListener("click", async () => {
@@ -132,20 +217,22 @@ function initBgRemoveTool() {
     const status = byId<HTMLDivElement>("bg-status");
     const btn = byId<HTMLButtonElement>("bg-remove");
     btn.disabled = true;
-    status.classList.add("working");
-    status.textContent = t("tool.bg.loadingModel");
+    setStatus(status, t("tool.bg.loadingModel") || "Working…", "working");
 
     try {
       resultBlob = await removeBackground(currentFile, (pct) => {
-        status.textContent = t("tool.bg.processing").replace("{pct}", String(pct));
+        setStatus(status, (t("tool.bg.processing") || "Processing… {pct}%").replace("{pct}", String(pct)), "working");
       });
-      byId<HTMLImageElement>("bg-img").src = URL.createObjectURL(resultBlob);
+      const outUrl = URL.createObjectURL(resultBlob);
+      byId<HTMLImageElement>("bg-img").src = outUrl;
+      const after = document.getElementById("bg-img-after") as HTMLImageElement | null;
+      if (after) after.src = outUrl;
+      const afterWrap = document.getElementById("bg-after-wrap");
+      if (afterWrap) afterWrap.style.display = "block";
       byId("bg-download").style.display = "inline-block";
-      status.textContent = t("tool.bg.done");
-      status.classList.remove("working");
+      setStatus(status, t("tool.bg.done") || "Done — download your PNG.", "ok");
     } catch (err: any) {
-      status.textContent = t("tool.bg.error") + err.message;
-      status.classList.remove("working");
+      setStatus(status, (t("tool.bg.error") || "Error: ") + (err?.message || "failed"), "error");
     } finally {
       btn.disabled = false;
     }
@@ -161,6 +248,11 @@ function initOcrTool() {
   let currentFile: File | null = null;
 
   setupDropzone("ocr-drop", "ocr-file", (file) => {
+    const err = validateFileSize(file, MAX_IMAGE_BYTES, "Image");
+    if (err) {
+      setStatus(byId("ocr-status"), err, "error");
+      return;
+    }
     currentFile = file;
     byId<HTMLImageElement>("ocr-img").src = URL.createObjectURL(file);
     byId("ocr-preview").style.display = "block";
@@ -168,7 +260,7 @@ function initOcrTool() {
     byId("ocr-drop-text").textContent = file.name;
     byId<HTMLTextAreaElement>("ocr-output").style.display = "none";
     byId("ocr-output-controls").style.display = "none";
-    byId("ocr-status").textContent = "";
+    setStatus(byId("ocr-status"), "Ready — extract text when you like.", "ok");
   });
 
   byId<HTMLButtonElement>("ocr-run").addEventListener("click", async () => {
@@ -185,11 +277,9 @@ function initOcrTool() {
       output.value = text || "(no text detected)";
       output.style.display = "block";
       byId("ocr-output-controls").style.display = "flex";
-      status.textContent = t("tool.ocr.done");
-      status.classList.remove("working");
+      setStatus(status, t("tool.ocr.done") || "Done — copy, download, or send to Paul.", "ok");
     } catch (err: any) {
-      status.textContent = t("tool.ocr.error") + (err?.message || t("tool.ocr.failed"));
-      status.classList.remove("working");
+      setStatus(status, (t("tool.ocr.error") || "Error: ") + (err?.message || t("tool.ocr.failed") || "failed"), "error");
     } finally {
       btn.disabled = false;
     }
@@ -214,6 +304,10 @@ function initOcrTool() {
     const blob = await markdownToDocxBlob(text);
     downloadBlob(blob, "extracted-text.docx");
   });
+
+  document.getElementById("ocr-send-paul")?.addEventListener("click", () => {
+    sendTextToPaul(byId<HTMLTextAreaElement>("ocr-output").value);
+  });
 }
 
 // ---------- PDF to Word ----------
@@ -221,10 +315,19 @@ function initPdf2WordTool() {
   let currentFile: File | null = null;
 
   setupDropzone("pdf-drop", "pdf-file", (file) => {
+    if (file.type && file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+      setStatus(byId("pdf-status"), "Please choose a PDF file.", "error");
+      return;
+    }
+    const err = validateFileSize(file, MAX_PDF_BYTES, "PDF");
+    if (err) {
+      setStatus(byId("pdf-status"), err, "error");
+      return;
+    }
     currentFile = file;
-    byId("pdf-drop-text").textContent = file.name;
+    byId("pdf-drop-text").textContent = `${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`;
     byId("pdf-controls").style.display = "flex";
-    byId("pdf-status").textContent = "";
+    setStatus(byId("pdf-status"), "Ready — convert when you like.", "ok");
   });
 
   byId<HTMLButtonElement>("pdf-run").addEventListener("click", async () => {
@@ -232,19 +335,21 @@ function initPdf2WordTool() {
     const status = byId<HTMLDivElement>("pdf-status");
     const btn = byId<HTMLButtonElement>("pdf-run");
     btn.disabled = true;
-    status.classList.add("working");
-    status.textContent = t("tool.pdf.reading");
+    setStatus(status, t("tool.pdf.reading") || "Reading PDF…", "working");
 
     try {
       const markdown = await extractText(currentFile);
-      status.textContent = t("tool.pdf.building");
+      if (!markdown?.trim()) {
+        setStatus(status, "No text could be extracted from this PDF.", "error");
+        return;
+      }
+      setStatus(status, t("tool.pdf.building") || "Building Word document…", "working");
       const blob = await markdownToDocxBlob(markdown);
-      downloadBlob(blob, currentFile.name.replace(/\.pdf$/i, "") + ".docx");
-      status.textContent = t("tool.pdf.done");
-      status.classList.remove("working");
+      const name = currentFile.name.replace(/\.pdf$/i, "") + ".docx";
+      downloadBlob(blob, name);
+      setStatus(status, (t("tool.pdf.done") || "Downloaded") + ` — ${name}`, "ok");
     } catch (err: any) {
-      status.textContent = t("tool.pdf.error") + (err?.message || t("tool.pdf.failed"));
-      status.classList.remove("working");
+      setStatus(status, (t("tool.pdf.error") || "Error: ") + (err?.message || t("tool.pdf.failed") || "failed"), "error");
     } finally {
       btn.disabled = false;
     }
@@ -259,20 +364,30 @@ function initDocxTool() {
 
   runBtn.addEventListener("click", async () => {
     if (!input.value.trim()) {
-      status.textContent = t("tool.docx.pasteFirst");
+      setStatus(status, t("tool.docx.pasteFirst") || "Paste some text first.", "error");
       return;
     }
-    status.textContent = t("tool.docx.building");
+    setStatus(status, t("tool.docx.building") || "Building…", "working");
     runBtn.disabled = true;
     try {
-      const blob = await markdownToDocxBlob(input.value);
-      downloadBlob(blob, "document.docx");
-      status.textContent = t("tool.docx.downloaded");
+      const titleEl = document.getElementById("docx-title") as HTMLInputElement | null;
+      const title = titleEl?.value.trim();
+      const body = title ? `# ${title}
+
+${input.value}` : input.value;
+      const blob = await markdownToDocxBlob(body);
+      const fname = (title || "document").replace(/[^\w\-]+/g, "_").slice(0, 40) + ".docx";
+      downloadBlob(blob, fname);
+      setStatus(status, (t("tool.docx.downloaded") || "Downloaded") + ` — ${fname}`, "ok");
     } catch (e: any) {
-      status.textContent = e?.message || t("tool.docx.exportFailed");
+      setStatus(status, e?.message || t("tool.docx.exportFailed") || "Export failed.", "error");
     } finally {
       runBtn.disabled = false;
     }
+  });
+
+  document.getElementById("docx-send-paul")?.addEventListener("click", () => {
+    sendTextToPaul(input.value);
   });
 }
 
@@ -321,7 +436,40 @@ export function initToolsView() {
     if (e.target === overlay) close();
   });
   menu.querySelectorAll<HTMLButtonElement>(".tool-card").forEach((btn) => {
-    btn.addEventListener("click", () => switchTab(btn.dataset.toolTab!));
+    btn.addEventListener("click", () => {
+      const tab = btn.dataset.toolTab!;
+      const sub = btn.dataset.uconvertOpen;
+      switchTab(tab, sub);
+    });
+  });
+
+  // T4 — SVG icons on tool cards (quiet studio)
+  const toolIconSvg: Record<string, string> = {
+    image: (icons as any).image || icons.paperclip,
+    scissors: (icons as any).scissors || icons.close,
+    text: icons.copy,
+    doc: icons.paperclip,
+    ruler: (icons as any).ruler || icons.tools,
+    slab: (icons as any).slab || icons.tools,
+    calc: (icons as any).calc || icons.tools,
+    weather: (icons as any).weather || icons.tools,
+  };
+  // Prefer dedicated shapes where icons exist
+  menu.querySelectorAll<HTMLElement>("[data-tool-icon]").forEach((el) => {
+    const key = el.dataset.toolIcon || "";
+    const svg = toolIconSvg[key] || icons.tools;
+    el.innerHTML = svg;
+  });
+
+  // T3 — Send result text to Paul
+  document.querySelectorAll<HTMLButtonElement>(".tool-copy-paul").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.copyFrom;
+      const el = id ? document.getElementById(id) : null;
+      const text = (el?.textContent || "").trim();
+      if (!text || text === "—") return;
+      sendTextToPaul(text);
+    });
   });
   tabs.querySelectorAll<HTMLButtonElement>("button").forEach((btn) => {
     btn.addEventListener("click", () => switchTab(btn.dataset.toolTab!));
@@ -353,11 +501,17 @@ async function refreshToolsHealth() {
     if (data?.ocr && !data.ocr.ok) problems.push(data.ocr.detail || "OCR unavailable");
     if (data?.bg_remove && !data.bg_remove.ok) problems.push(data.bg_remove.detail || "Background removal unavailable");
     if (problems.length) {
-      el.textContent = problems.join(" · ");
+      el.textContent = "Some tools need setup: " + problems.join(" · ");
+      el.classList.add("tools-health-warn");
       el.style.display = "";
     } else {
-      el.style.display = "none";
-      el.textContent = "";
+      el.textContent = "File tools ready (convert is on-device; OCR & background removal OK).";
+      el.classList.remove("tools-health-warn");
+      el.classList.add("tools-health-ok");
+      el.style.display = "";
+      setTimeout(() => {
+        if (el.classList.contains("tools-health-ok")) el.style.display = "none";
+      }, 4000);
     }
   } catch {
     el.style.display = "none";

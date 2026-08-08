@@ -27,6 +27,21 @@ export const icons = {
   image: svg(
     `<rect x="2.5" y="3.5" width="15" height="13" rx="2"/><circle cx="7" cy="8" r="1.4"/><path d="M17 13.5 13 9.5 5.5 17"/>`
   ),
+  ruler: svg(
+    `<path d="M3 7h14v6H3z"/><path d="M6 7v3M9 7v2M12 7v3M15 7v2"/>`
+  ),
+  scissors: svg(
+    `<circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="14" r="2.2"/><path d="M8 7.5 16.5 16M8 12.5 16.5 4"/>`
+  ),
+  calc: svg(
+    `<rect x="3.5" y="2.5" width="13" height="15" rx="2"/><path d="M6.5 6h7M6.5 9.5h2M11.5 9.5h2M6.5 13h2M11.5 13h2"/>`
+  ),
+  weather: svg(
+    `<circle cx="8" cy="8" r="3"/><path d="M8 2.5v1.5M8 16v1.5M2.5 8H4M16 8h1.5M4.2 4.2l1 1M14.8 14.8l1 1M14.8 4.2l-1 1M4.2 14.8l1-1"/>`
+  ),
+  slab: svg(
+    `<rect x="2.5" y="5" width="15" height="10" rx="1.5"/><path d="M2.5 9h15"/>`
+  ),
   tools: svg(
     `<path d="M12.3 4.2a3.4 3.4 0 0 0-4.6 4l-6 6 2.2 2.2 6-6a3.4 3.4 0 0 0 4-4.6l-2.5 2.5-1.6-1.6z"/>`
   ),
@@ -82,9 +97,6 @@ export const icons = {
   ),
   monitor: svg(
     `<rect x="2.5" y="3.5" width="15" height="10" rx="1.5"/><line x1="7" y1="17" x2="13" y2="17"/><line x1="10" y1="13.5" x2="10" y2="17"/>`
-  ),
-  scissors: svg(
-    `<circle cx="5.5" cy="5.5" r="2"/><circle cx="5.5" cy="14.5" r="2"/><line x1="7" y1="6.8" x2="16.5" y2="15.5"/><line x1="7" y1="13.2" x2="16.5" y2="4.5"/>`
   ),
   textRecognize: svg(
     `<rect x="2.5" y="3.5" width="15" height="13" rx="2"/><line x1="5.5" y1="8" x2="14.5" y2="8"/><line x1="5.5" y1="11" x2="12" y2="11"/><line x1="5.5" y1="14" x2="10" y2="14"/>`

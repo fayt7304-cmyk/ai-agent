@@ -129,3 +129,16 @@ North star: *Paul should feel like a quiet studio for marble decisions — not a
 - Guest banner as a quiet text strip
 - Header slightly tighter; icons de-emphasized
 - Soft shadows on system banners
+
+
+## Tools T0–T2 (everyday)
+
+- **T0:** Size limits, status (working/ok/error), health strip on open
+- **T1:** Convert / BG remove (before·after) / OCR with **Send to Paul**
+- **T2:** PDF→Word with clear errors; Text→Word title + export / send
+
+
+## Tools T3–T4
+
+- **T3:** Separate Units / Material / Calculator / Weather cards; cm+m+ft; Send to Paul on results
+- **T4:** Quiet list-style tool cards with SVG icons

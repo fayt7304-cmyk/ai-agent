@@ -4595,6 +4595,21 @@ function startPresenceConnection() {
   }
 }
 
+
+/** Tools → “Send to Paul”: fill composer and focus */
+window.addEventListener("paul:tools-insert", ((e: CustomEvent<{ text: string }>) => {
+  const text = e.detail?.text?.trim();
+  if (!text) return;
+  const input = document.getElementById("chat-input") as HTMLTextAreaElement | null;
+  if (!input || input.disabled || input.readOnly) return;
+  input.value = input.value.trim() ? input.value.trimEnd() + "\n\n" + text : text;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.focus();
+  try {
+    input.scrollIntoView({ block: "nearest" });
+  } catch { /* ignore */ }
+}) as EventListener);
+
 export function initChatView(user: User) {
   wireConnectivityToasts();
   startPresenceConnection();
@@ -4728,6 +4743,7 @@ export function initChatView(user: User) {
   attachMenuTools.addEventListener("click", () => {
     closeAttachMenu();
     document.getElementById("tools-btn")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
   });
   document.addEventListener("click", (e) => {
     if (!attachMenu.contains(e.target as Node) && e.target !== attachBtn) closeAttachMenu();

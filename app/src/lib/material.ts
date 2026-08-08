@@ -14,8 +14,13 @@ export function initMaterialEstimate() {
     const l = parseFloat(lengthInput.value) || 0;
     const waste = parseFloat(wasteInput.value) || 0;
 
-    const wM = widthUnit.value === "ft" ? w * 0.3048 : w;
-    const lM = lengthUnit.value === "ft" ? l * 0.3048 : l;
+    const toM = (v: number, unit: string) => {
+      if (unit === "ft") return v * 0.3048;
+      if (unit === "cm") return v / 100;
+      return v; // m
+    };
+    const wM = toM(w, widthUnit.value);
+    const lM = toM(l, lengthUnit.value);
     const areaM2 = wM * lM;
     const withWaste = areaM2 * (1 + waste / 100);
 
