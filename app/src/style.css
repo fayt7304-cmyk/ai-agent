@@ -6917,3 +6917,159 @@ html.pwa-standalone .composer {
 
 .call-bar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .call-bar .primary, .call-bar .secondary-btn { min-height: 36px; }
+
+/* Media-only messages: no empty chat bubble */
+.msg-row.msg-media-only .msg { display: none; }
+.msg-row.msg-media-only .msg-attachments {
+  margin-top: 0;
+}
+.msg-row.msg-media-only .msg-image {
+  border-radius: 14px;
+  max-width: min(320px, 78vw);
+}
+.msg-quote-alone {
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-inline-start: 3px solid var(--accent);
+  padding: 4px 8px;
+  margin-bottom: 4px;
+  max-width: 280px;
+}
+
+/* Typing indicator — not a message bubble */
+.typing-indicator {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  margin: 4px 8px 12px;
+  padding: 6px 12px !important;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card) 88%, var(--border));
+  border: 1px solid var(--border);
+  font-style: normal !important;
+  font-size: 12px !important;
+  color: var(--text-secondary) !important;
+  max-width: fit-content;
+  pointer-events: none;
+}
+.typing-dots {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+.typing-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  opacity: 0.5;
+  animation: typing-bounce 1.2s infinite ease-in-out;
+  display: block;
+}
+.typing-dots i:nth-child(2) { animation-delay: 0.15s; }
+.typing-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
+.typing-label { font-weight: 500; }
+
+/* Reply always under the message / media */
+.msg-reply-btn {
+  order: 20;
+  margin-top: 2px;
+}
+.msg-own-actions {
+  order: 21;
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+.msg-row {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Install app card — never use mobile 3-col settings grid */
+#pwa-settings-card.settings-card,
+#pwa-settings-card.catalog-cms {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 10px !important;
+  grid-template-columns: none !important;
+}
+#pwa-settings-card .settings-card-title,
+#pwa-settings-card .settings-card-desc,
+#pwa-settings-card .pwa-howto,
+#pwa-settings-card .catalog-actions {
+  width: 100%;
+  max-width: 100%;
+  grid-column: auto !important;
+}
+#pwa-settings-card .settings-card-desc {
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+#pwa-settings-card .pwa-howto {
+  margin: 0;
+  padding-inline-start: 1.2em;
+}
+@media (max-width: 768px) {
+  #pwa-settings-card.settings-card {
+    display: flex !important;
+    flex-direction: column !important;
+    grid-template-columns: none !important;
+    padding: 16px !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-md) !important;
+    background: var(--card) !important;
+  }
+}
+
+
+/* Message action icons (reply / edit / delete) */
+.msg-reply-btn.msg-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 0;
+  line-height: 0;
+}
+.msg-reply-btn.msg-icon-btn svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.msg-own-actions .msg-icon-btn {
+  opacity: inherit;
+}
+
+
+.header-call-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.header-call-btn svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

@@ -120,6 +120,15 @@ export const icons = {
   archive: svg(`<rect x="2.5" y="3.5" width="15" height="3.5" rx="1"/><path d="M4 7v8.5a1.5 1.5 0 0 0 1.5 1.5h9a1.5 1.5 0 0 0 1.5-1.5V7"/><line x1="7.5" y1="11" x2="12.5" y2="11"/>`),
   link: svg(`<path d="M8 11.5a4.5 4.5 0 0 0 6.4 0l2-2a4.5 4.5 0 0 0-6.4-6.4l-1 1"/><path d="M12 8.5a4.5 4.5 0 0 0-6.4 0l-2 2a4.5 4.5 0 0 0 6.4 6.4l1-1"/>`),
   people: svg(`<circle cx="7" cy="7" r="3"/><path d="M1 17a6 6 0 0 1 12 0"/><circle cx="15" cy="7" r="2.5"/><path d="M13 17a4 4 0 0 1 6 0"/>`),
+  reply: svg(
+    `<path d="M7.5 12.5 3.5 8.5 7.5 4.5"/><path d="M3.5 8.5h8A4.5 4.5 0 0 1 16 13v2.5"/>`
+  ),
+  trash: svg(
+    `<path d="M4 6.5h12"/><path d="M8 6.5V4.5h4v2"/><path d="M6.5 6.5l.7 9.5h5.6l.7-9.5"/><path d="M9 9v5"/><path d="M11 9v5"/>`
+  ),
+  phone: svg(
+    `<path d="M6.2 3.5h2.2l1.1 3.2-1.4 1.4a11 11 0 0 0 4.8 4.8l1.4-1.4 3.2 1.1v2.2a1.6 1.6 0 0 1-1.7 1.6A13.5 13.5 0 0 1 3.5 5.2 1.6 1.6 0 0 1 5.1 3.5Z"/>`
+  ),
 };
 
 export function iconEl(name: keyof typeof icons, extraClass = ""): HTMLSpanElement {

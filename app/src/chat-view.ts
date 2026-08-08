@@ -451,8 +451,18 @@ function startCollabLive() {
       try {
         const data = JSON.parse(String(ev.data));
         if (data?.type === "messages" && Array.isArray(data.messages)) {
-          applyLiveMessages(data.messages, data.conversation || null);
-          updateTypingIndicator(Array.isArray(data.typing) ? data.typing : []);
+          const msgs = data.messages as any[];
+          applyLiveMessages(msgs, data.conversation || null);
+          // Drop typing entries for people who just sent a message in this snapshot
+          const justSent = new Set(
+            msgs
+              .filter((m) => m?.role === "user" && m?.sender?.id)
+              .map((m) => m.sender.id as string)
+          );
+          const typing = (Array.isArray(data.typing) ? data.typing : []).filter(
+            (t: any) => t?.user_id && !justSent.has(t.user_id)
+          );
+          updateTypingIndicator(typing);
         }
       } catch {
         /* ignore bad frames */
@@ -1300,6 +1310,8 @@ function createConvoItem(c: Conversation): HTMLDivElement {
     } else {
       isDmChat = false;
       currentDmPeer = null;
+      try { applyDmHeader(null); } catch { /* ignore */ }
+      document.getElementById("presence-chip")?.remove();
       syncUrlToConversation(c.id);
     }
     c.unread_count = 0;
@@ -1901,18 +1913,17 @@ function setComposerReadOnly(readOnly: boolean, reason = "") {
 function syncCollabComposerHint() {
   if (currentChatReadOnly) return;
   if (isCollabChat) {
-    chatInput.placeholder = "Message the group… @paul or @username";
+    chatInput.placeholder = "Message the group… @paul or @name";
     setHint("Collab: type @ to mention. Tag @paul when you want Paul to reply.");
   } else if (isDmChat) {
-    chatInput.placeholder = "Message your friend… Tag @paul to ask Paul";
-    setHint("Friend chat: talk freely. Tag @paul only when you want Paul to reply.");
+    chatInput.placeholder = "Message…";
+    setHint("Friend chat. Tag @paul only when you want Paul to reply.");
   } else {
-    chatInput.placeholder = t("chat.placeholder") || "Message the agent…";
-    hideMentionMenu();
-    // Don't clear error hints
-    if (!composerHint.classList.contains("error")) setHint("");
+    chatInput.placeholder = t("chat.placeholder") || "Message Paul…";
+    setHint("");
   }
 }
+
 
 /**
  * Opens a conversation from a `#conv=<id>` link. Unlike selectConversation, the
@@ -2345,9 +2356,19 @@ function showSenderPopup(sender: import("./api").MessageSender) {
  */
 function isMyUserMessage(kind: string, sender?: import("./api").MessageSender | null): boolean {
   if (kind !== "user") return false;
-  if (sender?.id && currentUser?.id && sender.id === currentUser.id) return true;
+  if (!currentUser) return false;
+  if (sender?.id && sender.id === currentUser.id) return true;
+  // Username fallback (some payloads omit id)
+  if (sender?.username && sender.username.toLowerCase() === (currentUser.username || "").toLowerCase()) {
+    return true;
+  }
   // Legacy messages without sender_user_id: treat as mine only if I own the chat
-  if (!sender?.id && isConversationOwner) return true;
+  // (not in group-style when sender is missing — avoids flashing peer layout)
+  if (!sender?.id && !sender?.username && isConversationOwner && !isGroupStyleChat()) return true;
+  if (!sender?.id && !sender?.username && isConversationOwner && isGroupStyleChat()) {
+    // Still own private-style ownership edge cases inside DM creator history
+    return true;
+  }
   return false;
 }
 
@@ -2493,11 +2514,23 @@ function notifyNewMessage(title: string, body: string) {
 
 function updateTypingIndicator(typing: { user_id: string; username: string }[]) {
   let el = document.getElementById("typing-indicator") as HTMLDivElement | null;
-  if (!typing.length) {
+  // Never show ourselves as typing; drop anyone who just posted a message (stale state)
+  const recentSenderIds = new Set<string>();
+  messagesEl.querySelectorAll<HTMLElement>(".msg-row[data-sender-id]").forEach((r) => {
+    const id = r.dataset.senderId;
+    if (id) recentSenderIds.add(id);
+  });
+  // Prefer: if we just received messages in the last live frame, callers pass filtered list.
+  const filtered = (typing || []).filter((x) => {
+    if (!x?.user_id) return false;
+    if (currentUser?.id && x.user_id === currentUser.id) return false;
+    return true;
+  });
+  if (!filtered.length) {
     el?.remove();
     return;
   }
-  const names = typing.map((x) => x.username).filter(Boolean);
+  const names = filtered.map((x) => x.username).filter(Boolean);
   if (!names.length) {
     el?.remove();
     return;
@@ -2506,10 +2539,20 @@ function updateTypingIndicator(typing: { user_id: string; username: string }[]) 
     el = document.createElement("div");
     el.id = "typing-indicator";
     el.className = "typing-indicator";
+    el.setAttribute("aria-live", "polite");
+    // Keep out of message list flow as a sibling footer inside messagesEl
     messagesEl.appendChild(el);
   }
-  const label = names.length === 1 ? `${names[0]} is typing…` : `${names.slice(0, 2).join(", ")} are typing…`;
-  el.textContent = label;
+  el.innerHTML = "";
+  const dots = document.createElement("span");
+  dots.className = "typing-dots";
+  dots.innerHTML = "<i></i><i></i><i></i>";
+  const label = document.createElement("span");
+  label.className = "typing-label";
+  label.textContent =
+    names.length === 1 ? `${names[0]} is typing` : `${names.slice(0, 2).join(", ")} are typing`;
+  el.appendChild(dots);
+  el.appendChild(label);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
@@ -2685,71 +2728,44 @@ function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: strin
     row.appendChild(head);
   }
 
+  const hasText = !!(content && String(content).trim());
+  const mediaOnly = !hasText && attachments.length > 0 && kind !== "thinking" && kind !== "error";
+  if (mediaOnly) row.classList.add("msg-media-only");
+
   const bubble = document.createElement("div");
   // Peer text is plain; Paul still gets markdown. In collab, highlight @mentions.
   bubble.className = "msg" + (otherUser ? " collab-peer-msg" : "");
-  if (kind === "agent") {
-    bubble.innerHTML = renderMarkdown(content);
-  } else if (isGroupStyleChat() && content.includes("@")) {
-    bubble.innerHTML = formatMentionsHtml(content);
-  } else {
-    bubble.textContent = content;
+  if (hasText || kind === "thinking" || kind === "error" || kind === "agent") {
+    if (kind === "agent") {
+      bubble.innerHTML = renderMarkdown(content || "");
+    } else if (isGroupStyleChat() && (content || "").includes("@")) {
+      bubble.innerHTML = formatMentionsHtml(content || "");
+    } else {
+      bubble.textContent = content || "";
+    }
+    if (row.dataset.replyPreview) {
+      const q = document.createElement("div");
+      q.className = "msg-quote";
+      q.textContent = row.dataset.replyPreview;
+      bubble.prepend(q);
+    }
+    if (hasText || kind === "thinking" || kind === "error" || kind === "agent") {
+      row.appendChild(bubble);
+    }
+  } else if (row.dataset.replyPreview) {
+    const q = document.createElement("div");
+    q.className = "msg-quote msg-quote-alone";
+    q.textContent = row.dataset.replyPreview;
+    row.appendChild(q);
   }
-  row.appendChild(bubble);
 
-  // Timestamp (callers may set data-created-at before/after)
+  // Timestamp
   const timeEl = document.createElement("div");
   timeEl.className = "msg-time";
   timeEl.textContent = formatMsgTime(row.dataset.createdAt) || (kind === "thinking" ? "" : formatMsgTime(new Date().toISOString()));
   if (timeEl.textContent) row.appendChild(timeEl);
 
-  // Quoted reply preview
-  if (row.dataset.replyPreview) {
-    const q = document.createElement("div");
-    q.className = "msg-quote";
-    q.textContent = row.dataset.replyPreview;
-    bubble.prepend(q);
-  }
-
-  // Reply action on group-style chats
-  if (isGroupStyleChat() && kind !== "thinking" && kind !== "error") {
-    const replyBtn = document.createElement("button");
-    replyBtn.type = "button";
-    replyBtn.className = "msg-reply-btn";
-    replyBtn.textContent = "Reply";
-    replyBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const author = sender?.display_name || sender?.username || (kind === "agent" ? "Paul" : "message");
-      const mid = row.dataset.msgId || crypto.randomUUID();
-      setReplyTarget(mid, content, author);
-    });
-    row.appendChild(replyBtn);
-  }
-
-  // Soft edit / delete own messages (any chat type)
-  if (kind === "user" && isMyUserMessage(kind, sender) && row.dataset.msgId && !row.classList.contains("msg-deleted")) {
-    const ownActions = document.createElement("div");
-    ownActions.className = "msg-own-actions";
-    const editBtn = document.createElement("button");
-    editBtn.type = "button";
-    editBtn.className = "msg-reply-btn";
-    editBtn.textContent = "Edit";
-    editBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      void startEditMessage(row);
-    });
-    const delBtn = document.createElement("button");
-    delBtn.type = "button";
-    delBtn.className = "msg-reply-btn msg-delete-btn";
-    delBtn.textContent = "Delete";
-    delBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      void softDeleteMessage(row);
-    });
-    ownActions.appendChild(editBtn);
-    ownActions.appendChild(delBtn);
-    row.appendChild(ownActions);
-  }
+  // Reply / edit / delete are added AFTER attachments (below images)
 
   if (attachments.length) {
     const chipsWrap = document.createElement("div");
@@ -2903,6 +2919,53 @@ function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: strin
     row.appendChild(actions);
   }
 
+  // Reply under media (not above images) — SVG icons
+  if (isGroupStyleChat() && kind !== "thinking" && kind !== "error") {
+    const replyBtn = document.createElement("button");
+    replyBtn.type = "button";
+    replyBtn.className = "msg-reply-btn msg-icon-btn";
+    replyBtn.title = "Reply";
+    replyBtn.setAttribute("aria-label", "Reply");
+    replyBtn.innerHTML = icons.reply;
+    replyBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const author = sender?.display_name || sender?.username || (kind === "agent" ? "Paul" : "message");
+      const mid = row.dataset.msgId || crypto.randomUUID();
+      const preview = (content && content.trim()) || (attachments[0]?.name ? `📎 ${attachments[0].name}` : "message");
+      setReplyTarget(mid, preview, author);
+    });
+    row.appendChild(replyBtn);
+  }
+
+  // Soft edit / delete own messages — under content/media (SVG icons)
+  if (kind === "user" && isMyUserMessage(kind, sender) && row.dataset.msgId && !row.classList.contains("msg-deleted")) {
+    const ownActions = document.createElement("div");
+    ownActions.className = "msg-own-actions";
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "msg-reply-btn msg-icon-btn";
+    editBtn.title = "Edit";
+    editBtn.setAttribute("aria-label", "Edit");
+    editBtn.innerHTML = icons.pencil;
+    editBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      void startEditMessage(row);
+    });
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "msg-reply-btn msg-icon-btn msg-delete-btn";
+    delBtn.title = "Delete";
+    delBtn.setAttribute("aria-label", "Delete");
+    delBtn.innerHTML = icons.trash;
+    delBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      void softDeleteMessage(row);
+    });
+    ownActions.appendChild(editBtn);
+    ownActions.appendChild(delBtn);
+    row.appendChild(ownActions);
+  }
+
   messagesEl.appendChild(row);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   return row;
@@ -3011,7 +3074,11 @@ async function selectConversation(id: string) {
   if (isDmChat) {
     applyDmHeader(currentDmPeer);
     applyPresence(data.conversation?.peer_last_seen);
-  } else chatTitle.textContent = data.conversation?.title || convo?.title || t("chat.newChat");
+  } else {
+    applyDmHeader(null);
+    document.getElementById("presence-chip")?.remove();
+    chatTitle.textContent = data.conversation?.title || convo?.title || t("chat.newChat");
+  }
   // after messages rendered below we apply peer_read
   (window as any).__peerRead = data.conversation?.peer_read || null;
   if (isDmChat && currentDmPeer?.username) {
@@ -3082,6 +3149,8 @@ function startNewConversation() {
   currentCollabCode = null;
   collabMembers = [];
   hideMentionMenu();
+  try { applyDmHeader(null); } catch { /* ignore */ }
+  document.getElementById("presence-chip")?.remove();
   setCurrentConversation(null);
   setComposerReadOnly(false);
   chatTitle.textContent = t("chat.newChat");
@@ -3442,13 +3511,22 @@ async function performSend(
 
   if (showUserBubble) {
     const attachmentsForDisplay: Attachment[] = attachments.map((a) => ({ name: a.name, mime: a.mime, size: a.size }));
-    addMsgRow("user", text, attachmentsForDisplay, isCollabChat && currentUser ? {
-      id: currentUser.id,
-      username: currentUser.username,
-      display_name: currentUser.display_name || currentUser.username,
-      email: currentUser.email || null,
-      avatar: currentUser.avatar || null,
-    } : null);
+    // Always attach currentUser for DMs + collab so the bubble is "mine" immediately
+    // (not left-side peer layout for a frame before the live refresh).
+    addMsgRow(
+      "user",
+      text,
+      attachmentsForDisplay,
+      currentUser
+        ? {
+            id: currentUser.id,
+            username: currentUser.username,
+            display_name: currentUser.display_name || currentUser.username,
+            email: currentUser.email || null,
+            avatar: currentUser.avatar || null,
+          }
+        : null
+    );
     // New user turn → reset version history
     replyVersions = [];
     replyVersionIndex = 0;
@@ -4010,12 +4088,15 @@ async function startCall() {
     return;
   }
   ensureCallSignaling();
-  // Wait briefly for WS open
-  for (let i = 0; i < 20 && callWs?.readyState !== WebSocket.OPEN; i++) {
-    await new Promise((r) => setTimeout(r, 100));
+  // Wait for WS open (mobile networks can be slow)
+  for (let i = 0; i < 40 && callWs?.readyState !== WebSocket.OPEN; i++) {
+    await new Promise((r) => setTimeout(r, 150));
   }
   if (!callWs || callWs.readyState !== WebSocket.OPEN) {
-    showToast("Call signaling unavailable — is CALLS Durable Object deployed?");
+    showToast("Call connection failed. Check mic permission, stay on this chat, and try again. (CALLS DO must be deployed.)");
+    // Retry signaling once
+    stopCallSignaling();
+    ensureCallSignaling();
     return;
   }
   try {
@@ -4200,10 +4281,17 @@ export function initChatView(user: User) {
     callBtn.id = "header-call-btn";
     callBtn.className = "icon-btn header-call-btn";
     callBtn.title = "Voice call";
-    callBtn.textContent = "📞";
+    callBtn.setAttribute("aria-label", "Voice call");
+    callBtn.innerHTML = icons.phone;
     callBtn.style.display = "none";
     callBtn.addEventListener("click", () => void startCall());
     chatTitle.parentElement?.appendChild(callBtn);
+  } else {
+    const existing = document.getElementById("header-call-btn") as HTMLButtonElement;
+    if (existing && !existing.querySelector("svg")) {
+      existing.innerHTML = icons.phone;
+      existing.setAttribute("aria-label", "Voice call");
+    }
   }
 
   currentUser = user;

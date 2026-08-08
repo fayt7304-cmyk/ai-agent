@@ -3792,6 +3792,13 @@ async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): P
     }
   }
 
+  // Clear typing indicator for this sender
+  try {
+    await env.DB.prepare("DELETE FROM typing_state WHERE conversation_id = ? AND user_id = ?")
+      .bind(convo.id, user.id)
+      .run();
+  } catch { /* table may not exist */ }
+
   // @all in collab — log audit notification
   if ((convo as any).visibility === "collab" && /(^|[^\w])@all\b/i.test(body.message || "")) {
     await writeAudit(env, convo.id, { id: user.id, username: user.username }, "at_all", (body.message || "").slice(0, 120));
