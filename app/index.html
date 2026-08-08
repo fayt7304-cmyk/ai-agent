@@ -729,9 +729,11 @@
             <h3 class="settings-subheading">Users</h3>
             <div class="settings-card catalog-cms">
               <div class="catalog-actions catalog-actions-top">
-                <p class="catalog-cms-intro" style="margin:0;flex:1;">Recent accounts (up to 200).</p>
+                <p class="catalog-cms-intro" style="margin:0;flex:1;">Accounts (guests &amp; registered). Tap a row for details.</p>
                 <button type="button" id="admin-users-refresh-btn" class="secondary-btn">Refresh</button>
               </div>
+              <input type="search" id="admin-users-search" class="catalog-input" placeholder="Search username, email, name…" autocomplete="off">
+              <div id="admin-user-detail" class="admin-user-detail" hidden></div>
               <div id="admin-users-list" class="admin-users-list"></div>
             </div>
           </div>

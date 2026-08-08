@@ -410,7 +410,7 @@ export const api = {
   reindexKnowledge: () =>
     request<{ ok: true; embedded: number; failed: number }>("/api/knowledge/reindex", { method: "POST" }),
 
-    listAdminUsers: () =>
+    listAdminUsers: (q?: string) =>
     request<{
       users: {
         id: string;
@@ -425,7 +425,44 @@ export const api = {
         banned?: boolean;
         online?: boolean;
       }[];
-    }>("/api/admin/users", { method: "GET" }),
+    }>(`/api/admin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`, { method: "GET" }),
+
+  adminUserDetail: (id: string) =>
+    request<{
+      user: {
+        id: string;
+        username: string;
+        email: string | null;
+        display_name: string | null;
+        is_guest: number;
+        created_at: string;
+        last_seen_at?: string | null;
+        banned_at?: string | null;
+        banned?: boolean;
+        avatar?: string | null;
+      };
+      stats: { conversations: number; messages: number; files: number };
+      conversations: {
+        id: string;
+        title: string;
+        visibility: string;
+        created_at: string;
+        updated_at: string;
+        relation: string;
+      }[];
+      files: {
+        name: string;
+        mime: string;
+        size: number;
+        created_at: string;
+        conversation_id: string;
+        conversation_title: string | null;
+        message_id: string;
+        has_data: boolean;
+      }[];
+    }>(`/api/admin/users/${id}`, { method: "GET" }),
+
+  adminUserExportUrl: (id: string) => `${API_BASE}/api/admin/users/${id}/export`,
 
   adminBanUser: (id: string, ban = true) =>
     request<{ ok: true; banned: boolean }>(`/api/admin/users/${id}/ban`, {

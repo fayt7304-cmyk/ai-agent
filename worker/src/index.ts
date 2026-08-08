@@ -1377,10 +1377,25 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
   } catch { /* presence optional */ }
 
   try {
-    const { results } = await env.DB.prepare(
-      `SELECT id, username, email, display_name, is_guest, created_at, last_seen_at, deletion_requested_at, banned_at
-       FROM users ORDER BY created_at DESC LIMIT 200`
-    ).all();
+    const url = new URL(request.url);
+    const q = (url.searchParams.get("q") || "").trim().toLowerCase();
+    let results: any[] = [];
+    if (q) {
+      const like = `%${q}%`;
+      const r = await env.DB.prepare(
+        `SELECT id, username, email, display_name, is_guest, created_at, last_seen_at, deletion_requested_at, banned_at
+         FROM users
+         WHERE lower(username) LIKE ? OR lower(COALESCE(email,'')) LIKE ? OR lower(COALESCE(display_name,'')) LIKE ?
+         ORDER BY created_at DESC LIMIT 200`
+      ).bind(like, like, like).all();
+      results = r.results || [];
+    } else {
+      const r = await env.DB.prepare(
+        `SELECT id, username, email, display_name, is_guest, created_at, last_seen_at, deletion_requested_at, banned_at
+         FROM users ORDER BY created_at DESC LIMIT 200`
+      ).all();
+      results = r.results || [];
+    }
     return json({
       users: (results || []).map((r: any) => ({
         ...r,
@@ -1414,6 +1429,212 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
       });
     }
   }
+}
+
+
+async function handleAdminUserDetail(request: Request, env: Env, targetId: string): Promise<Response> {
+  const admin = await getUserFromRequest(env, request);
+  if (!admin) return err("Not authenticated.", 401);
+  const staffRole = await getStaffRole(env, admin.id, admin.username);
+  if (!canManageUsers(staffRole)) return err("Forbidden.", 403);
+  await ensureConversationColumns(env);
+
+  const target = await env.DB.prepare(
+    `SELECT id, username, email, display_name, is_guest, created_at, last_seen_at, deletion_requested_at, banned_at, avatar
+     FROM users WHERE id = ?`
+  )
+    .bind(targetId)
+    .first<any>();
+  if (!target) return err("User not found.", 404);
+
+  // Conversations owned or member
+  let conversations: any[] = [];
+  try {
+    const owned = await env.DB.prepare(
+      `SELECT id, title, visibility, created_at, updated_at, 'owner' AS relation
+       FROM conversations WHERE user_id = ? ORDER BY updated_at DESC LIMIT 100`
+    )
+      .bind(targetId)
+      .all();
+    conversations = (owned.results || []).map((r: any) => r);
+    try {
+      const mem = await env.DB.prepare(
+        `SELECT c.id, c.title, c.visibility, c.created_at, c.updated_at, 'member' AS relation
+         FROM conversation_members m
+         JOIN conversations c ON c.id = m.conversation_id
+         WHERE m.user_id = ? AND c.user_id != ?
+         ORDER BY c.updated_at DESC LIMIT 50`
+      )
+        .bind(targetId, targetId)
+        .all();
+      for (const r of mem.results || []) conversations.push(r);
+    } catch { /* ignore */ }
+  } catch { conversations = []; }
+
+  // Messages sent by user
+  let message_count = 0;
+  try {
+    const row = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM messages WHERE sender_user_id = ?"
+    )
+      .bind(targetId)
+      .first<{ n: number }>();
+    message_count = Number(row?.n || 0);
+  } catch {
+    try {
+      const row = await env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM messages m
+         JOIN conversations c ON c.id = m.conversation_id
+         WHERE c.user_id = ? AND m.role = 'user'`
+      )
+        .bind(targetId)
+        .first<{ n: number }>();
+      message_count = Number(row?.n || 0);
+    } catch { message_count = 0; }
+  }
+
+  // Uploaded files (attachments on their messages)
+  const files: any[] = [];
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT m.id AS message_id, m.attachments, m.created_at, m.conversation_id, c.title AS conversation_title
+       FROM messages m
+       LEFT JOIN conversations c ON c.id = m.conversation_id
+       WHERE m.sender_user_id = ? AND m.attachments IS NOT NULL AND m.attachments != '' AND m.attachments != '[]'
+       ORDER BY m.created_at DESC LIMIT 200`
+    )
+      .bind(targetId)
+      .all();
+    for (const row of results || []) {
+      const r = row as any;
+      let atts: any[] = [];
+      try {
+        atts = JSON.parse(r.attachments);
+      } catch {
+        continue;
+      }
+      if (!Array.isArray(atts)) continue;
+      for (const a of atts) {
+        files.push({
+          name: a.name || "file",
+          mime: a.mime || "application/octet-stream",
+          size: a.size || 0,
+          created_at: r.created_at,
+          conversation_id: r.conversation_id,
+          conversation_title: r.conversation_title || null,
+          message_id: r.message_id,
+          has_data: !!(a.dataUrl && String(a.dataUrl).length > 32),
+        });
+      }
+    }
+  } catch { /* ignore */ }
+
+  return json({
+    user: {
+      ...target,
+      banned: !!target.banned_at,
+    },
+    stats: {
+      conversations: conversations.length,
+      messages: message_count,
+      files: files.length,
+    },
+    conversations,
+    files,
+  });
+}
+
+async function handleAdminUserExport(request: Request, env: Env, targetId: string): Promise<Response> {
+  const admin = await getUserFromRequest(env, request);
+  if (!admin) return err("Not authenticated.", 401);
+  const staffRole = await getStaffRole(env, admin.id, admin.username);
+  if (!canManageUsers(staffRole)) return err("Forbidden.", 403);
+  await ensureConversationColumns(env);
+
+  const target = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(targetId).first<any>();
+  if (!target) return err("User not found.", 404);
+
+  // Strip secrets
+  const safeUser = { ...target };
+  delete safeUser.password_hash;
+  delete safeUser.password_salt;
+
+  let conversations: any[] = [];
+  try {
+    const { results } = await env.DB.prepare(
+      "SELECT * FROM conversations WHERE user_id = ? ORDER BY updated_at DESC LIMIT 500"
+    )
+      .bind(targetId)
+      .all();
+    conversations = results || [];
+  } catch { conversations = []; }
+
+  const convoIds = conversations.map((c) => c.id);
+  // Also member convos
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT c.* FROM conversation_members m
+       JOIN conversations c ON c.id = m.conversation_id
+       WHERE m.user_id = ? LIMIT 200`
+    )
+      .bind(targetId)
+      .all();
+    for (const c of results || []) {
+      if (!convoIds.includes((c as any).id)) {
+        conversations.push(c);
+        convoIds.push((c as any).id);
+      }
+    }
+  } catch { /* ignore */ }
+
+  let messages: any[] = [];
+  if (convoIds.length) {
+    // Batch in chunks of 50
+    for (let i = 0; i < convoIds.length; i += 40) {
+      const chunk = convoIds.slice(i, i + 40);
+      const placeholders = chunk.map(() => "?").join(",");
+      try {
+        const { results } = await env.DB.prepare(
+          `SELECT id, conversation_id, role, content, attachments, created_at, sender_user_id, edited_at, deleted_at
+           FROM messages WHERE conversation_id IN (${placeholders}) ORDER BY created_at ASC LIMIT 5000`
+        )
+          .bind(...chunk)
+          .all();
+        messages = messages.concat(results || []);
+      } catch { /* ignore */ }
+    }
+  }
+
+  // Messages they sent even if not owner
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT id, conversation_id, role, content, attachments, created_at, sender_user_id, edited_at, deleted_at
+       FROM messages WHERE sender_user_id = ? ORDER BY created_at ASC LIMIT 5000`
+    )
+      .bind(targetId)
+      .all();
+    const seen = new Set(messages.map((m) => m.id));
+    for (const m of results || []) {
+      if (!seen.has((m as any).id)) messages.push(m);
+    }
+  } catch { /* ignore */ }
+
+  const payload = {
+    exported_at: new Date().toISOString(),
+    exported_by: admin.username,
+    user: safeUser,
+    conversations,
+    messages,
+  };
+
+  adminLog("info", "admin", "user export", { target: target.username, by: admin.username });
+  return new Response(JSON.stringify(payload, null, 2), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Content-Disposition": `attachment; filename="paul-user-${target.username || targetId}.json"`,
+    },
+  });
 }
 
 async function handleAdminBanUser(request: Request, env: Env, targetId: string): Promise<Response> {
@@ -4093,6 +4314,10 @@ export default {
         resp = await handleAdminLogsClear(request, env);
       } else if (path === "/api/admin/users" && request.method === "GET") {
         resp = await handleAdminUsers(request, env);
+      } else if (path.match(/^\/api\/admin\/users\/[^/]+\/export$/) && request.method === "GET") {
+        resp = await handleAdminUserExport(request, env, path.split("/")[4]);
+      } else if (path.match(/^\/api\/admin\/users\/[^/]+$/) && request.method === "GET") {
+        resp = await handleAdminUserDetail(request, env, path.split("/")[4]);
       } else if (path.match(/^\/api\/admin\/users\/[^/]+\/ban$/) && request.method === "POST") {
         resp = await handleAdminBanUser(request, env, path.split("/")[4]);
       } else if (path.match(/^\/api\/admin\/users\/[^/]+\/password$/) && request.method === "POST") {

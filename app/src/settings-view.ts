@@ -727,137 +727,290 @@ document.getElementById("staff-assign-btn")?.addEventListener("click", async () 
   }
 });
 
-async function loadAdminUsers() {
+let adminUsersCache: Awaited<ReturnType<typeof api.listAdminUsers>>["users"] = [];
+let adminUsersSearchTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function loadAdminUsers(query?: string) {
   const list = document.getElementById("admin-users-list");
   if (!list) return;
   list.innerHTML = `<p class="settings-muted">Loading…</p>`;
   try {
-    const { users } = await api.listAdminUsers();
-    if (!users.length) {
-      list.innerHTML = `<p class="settings-muted">No users.</p>`;
-      return;
-    }
-    list.innerHTML = "";
-    for (const u of users) {
-      const row = document.createElement("div");
-      row.className = "admin-user-row" + (u.banned ? " is-banned" : "");
-
-      const head = document.createElement("div");
-      head.className = "admin-user-head";
-
-      const left = document.createElement("div");
-      left.className = "admin-user-left";
-      const name = document.createElement("div");
-      name.className = "admin-user-name";
-      const dot = document.createElement("span");
-      dot.className = "admin-online-dot" + (u.online ? " is-online" : "");
-      dot.title = u.online ? "Online now" : "Offline";
-      name.appendChild(dot);
-      name.appendChild(document.createTextNode(` ${u.display_name || u.username}${u.is_guest ? " (guest)" : ""}${u.banned ? " · banned" : ""}`));
-      const meta = document.createElement("div");
-      meta.className = "admin-user-meta";
-      meta.textContent = `@${u.username} · ${u.email || "no email"} · ${u.created_at?.slice(0, 10) || ""}`;
-      left.appendChild(name);
-      left.appendChild(meta);
-
-      const menuWrap = document.createElement("div");
-      menuWrap.className = "admin-user-menu-wrap";
-      const menuBtn = document.createElement("button");
-      menuBtn.type = "button";
-      menuBtn.className = "admin-user-menu-btn";
-      menuBtn.setAttribute("aria-label", "User actions");
-      menuBtn.textContent = "⋯";
-      const menu = document.createElement("div");
-      menu.className = "admin-user-menu";
-      menu.style.display = "none";
-
-      const addAction = (label: string, danger: boolean, fn: () => void) => {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = "admin-user-menu-item" + (danger ? " danger" : "");
-        b.textContent = label;
-        b.addEventListener("click", (e) => {
-          e.stopPropagation();
-          menu.style.display = "none";
-          fn();
-        });
-        menu.appendChild(b);
-      };
-
-      addAction("Change password", false, async () => {
-        const pw = await showPrompt({
-          title: `New password for @${u.username}`,
-          message: "At least 8 characters.",
-          value: "",
-          confirmLabel: "Set password",
-        });
-        if (!pw) return;
-        try {
-          await api.adminSetPassword(u.id, pw);
-          settingsSuccess.textContent = `Password updated for @${u.username}`;
-          setTimeout(() => { settingsSuccess.textContent = ""; }, 2500);
-        } catch (e: any) {
-          settingsError.textContent = e?.message || "Failed";
-        }
-      });
-
-      addAction(u.banned ? "Unban user" : "Ban user", true, async () => {
-        const ok = await showConfirm({
-          title: u.banned ? `Unban @${u.username}?` : `Ban @${u.username}?`,
-          message: u.banned
-            ? "They will be able to sign in again."
-            : "They will be signed out and blocked from logging in.",
-          confirmLabel: u.banned ? "Unban" : "Ban",
-          danger: !u.banned,
-        });
-        if (!ok) return;
-        try {
-          await api.adminBanUser(u.id, !u.banned);
-          void loadAdminUsers();
-        } catch (e: any) {
-          settingsError.textContent = e?.message || "Failed";
-        }
-      });
-
-      addAction("Delete account", true, async () => {
-        const ok = await showConfirm({
-          title: `Delete @${u.username}?`,
-          message: "Permanently deletes this account and their data. This cannot be undone.",
-          confirmLabel: "Delete",
-          danger: true,
-        });
-        if (!ok) return;
-        try {
-          await api.adminDeleteUser(u.id);
-          row.remove();
-          settingsSuccess.textContent = `Deleted @${u.username}`;
-          setTimeout(() => { settingsSuccess.textContent = ""; }, 2500);
-        } catch (e: any) {
-          settingsError.textContent = e?.message || "Failed";
-        }
-      });
-
-      menuBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        document.querySelectorAll(".admin-user-menu").forEach((el) => {
-          if (el !== menu) (el as HTMLElement).style.display = "none";
-        });
-        menu.style.display = menu.style.display === "none" ? "block" : "none";
-      });
-      menuWrap.appendChild(menuBtn);
-      menuWrap.appendChild(menu);
-
-      head.appendChild(left);
-      head.appendChild(menuWrap);
-      row.appendChild(head);
-      list.appendChild(row);
-    }
+    const q = (query ?? (document.getElementById("admin-users-search") as HTMLInputElement | null)?.value ?? "").trim();
+    const { users } = await api.listAdminUsers(q || undefined);
+    adminUsersCache = users;
+    renderAdminUsersList(users);
   } catch (e: any) {
     list.innerHTML = `<p class="settings-muted">${e?.message || "Forbidden or failed"}</p>`;
   }
 }
 
+function renderAdminUsersList(users: typeof adminUsersCache) {
+  const list = document.getElementById("admin-users-list");
+  if (!list) return;
+  if (!users.length) {
+    list.innerHTML = `<p class="settings-muted">No users found.</p>`;
+    return;
+  }
+  list.innerHTML = "";
+  for (const u of users) {
+    const row = document.createElement("div");
+    row.className = "admin-user-row" + (u.banned ? " is-banned" : "");
+    row.style.cursor = "pointer";
+    row.title = "View details";
+
+    const head = document.createElement("div");
+    head.className = "admin-user-head";
+
+    const left = document.createElement("div");
+    left.className = "admin-user-left";
+    const name = document.createElement("div");
+    name.className = "admin-user-name";
+    const dot = document.createElement("span");
+    dot.className = "admin-online-dot" + (u.online ? " is-online" : "");
+    dot.title = u.online ? "Online now" : "Offline";
+    name.appendChild(dot);
+    name.appendChild(
+      document.createTextNode(
+        ` ${u.display_name || u.username}${u.is_guest ? " (guest)" : ""}${u.banned ? " · banned" : ""}`
+      )
+    );
+    const meta = document.createElement("div");
+    meta.className = "admin-user-meta";
+    meta.textContent = `@${u.username} · ${u.email || "no email"} · ${u.created_at?.slice(0, 10) || ""}`;
+    left.appendChild(name);
+    left.appendChild(meta);
+
+    const menuWrap = document.createElement("div");
+    menuWrap.className = "admin-user-menu-wrap";
+    const menuBtn = document.createElement("button");
+    menuBtn.type = "button";
+    menuBtn.className = "admin-user-menu-btn";
+    menuBtn.setAttribute("aria-label", "User actions");
+    menuBtn.textContent = "⋯";
+    const menu = document.createElement("div");
+    menu.className = "admin-user-menu";
+    menu.style.display = "none";
+
+    const addAction = (label: string, danger: boolean, fn: () => void) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "admin-user-menu-item" + (danger ? " danger" : "");
+      b.textContent = label;
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        menu.style.display = "none";
+        fn();
+      });
+      menu.appendChild(b);
+    };
+
+    addAction("View details", false, () => void openAdminUserDetail(u.id));
+
+    addAction("Change password", false, async () => {
+      const pw = await showPrompt({
+        title: `New password for @${u.username}`,
+        message: "At least 8 characters.",
+        value: "",
+        confirmLabel: "Set password",
+      });
+      if (!pw) return;
+      try {
+        await api.adminSetPassword(u.id, pw);
+        settingsSuccess.textContent = `Password updated for @${u.username}`;
+        setTimeout(() => {
+          settingsSuccess.textContent = "";
+        }, 2500);
+      } catch (e: any) {
+        settingsError.textContent = e?.message || "Failed";
+      }
+    });
+
+    addAction(u.banned ? "Unban user" : "Ban user", true, async () => {
+      const ok = await showConfirm({
+        title: u.banned ? `Unban @${u.username}?` : `Ban @${u.username}?`,
+        message: u.banned
+          ? "They will be able to sign in again."
+          : "They will be signed out and blocked from logging in.",
+        confirmLabel: u.banned ? "Unban" : "Ban",
+        danger: !u.banned,
+      });
+      if (!ok) return;
+      try {
+        await api.adminBanUser(u.id, !u.banned);
+        void loadAdminUsers();
+      } catch (e: any) {
+        settingsError.textContent = e?.message || "Failed";
+      }
+    });
+
+    addAction("Delete account", true, async () => {
+      const ok = await showConfirm({
+        title: `Delete @${u.username}?`,
+        message: "Permanently deletes this account and their data. This cannot be undone.",
+        confirmLabel: "Delete",
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        await api.adminDeleteUser(u.id);
+        row.remove();
+        document.getElementById("admin-user-detail")?.setAttribute("hidden", "");
+        settingsSuccess.textContent = `Deleted @${u.username}`;
+        setTimeout(() => {
+          settingsSuccess.textContent = "";
+        }, 2500);
+      } catch (e: any) {
+        settingsError.textContent = e?.message || "Failed";
+      }
+    });
+
+    menuBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      document.querySelectorAll(".admin-user-menu").forEach((el) => {
+        if (el !== menu) (el as HTMLElement).style.display = "none";
+      });
+      menu.style.display = menu.style.display === "none" ? "block" : "none";
+    });
+    menuWrap.appendChild(menuBtn);
+    menuWrap.appendChild(menu);
+
+    head.appendChild(left);
+    head.appendChild(menuWrap);
+    row.appendChild(head);
+    row.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).closest(".admin-user-menu-wrap")) return;
+      void openAdminUserDetail(u.id);
+    });
+    list.appendChild(row);
+  }
+}
+
+async function openAdminUserDetail(userId: string) {
+  const panel = document.getElementById("admin-user-detail");
+  if (!panel) return;
+  panel.hidden = false;
+  panel.innerHTML = `<p class="settings-muted">Loading details…</p>`;
+  panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  try {
+    const data = await api.adminUserDetail(userId);
+    const u = data.user;
+    const fmtSize = (n: number) => {
+      if (n < 1024) return `${n} B`;
+      if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+      return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+    };
+
+    panel.innerHTML = "";
+    const head = document.createElement("div");
+    head.className = "admin-detail-head";
+    head.innerHTML = `<div>
+      <div class="admin-user-name">${u.display_name || u.username}${u.is_guest ? " (guest)" : ""}${u.banned ? " · banned" : ""}</div>
+      <div class="admin-user-meta">@${u.username} · ${u.email || "no email"}</div>
+      <div class="admin-user-meta">Joined ${u.created_at?.slice(0, 10) || "—"} · Last seen ${u.last_seen_at?.slice(0, 16)?.replace("T", " ") || "—"}</div>
+    </div>`;
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "secondary-btn";
+    close.textContent = "Close";
+    close.addEventListener("click", () => {
+      panel.hidden = true;
+      panel.innerHTML = "";
+    });
+    head.appendChild(close);
+    panel.appendChild(head);
+
+    const stats = document.createElement("div");
+    stats.className = "admin-detail-stats";
+    stats.innerHTML = `
+      <span><strong>${data.stats.conversations}</strong> chats</span>
+      <span><strong>${data.stats.messages}</strong> messages</span>
+      <span><strong>${data.stats.files}</strong> files</span>`;
+    panel.appendChild(stats);
+
+    const dl = document.createElement("button");
+    dl.type = "button";
+    dl.className = "primary";
+    dl.textContent = "Download all data";
+    dl.addEventListener("click", async () => {
+      try {
+        dl.disabled = true;
+        dl.textContent = "Preparing…";
+        const res = await fetch(api.adminUserExportUrl(u.id), { credentials: "include" });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error((err as any).error || `Export failed (${res.status})`);
+        }
+        const blob = await res.blob();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `paul-user-${u.username}.json`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        settingsSuccess.textContent = `Exported @${u.username}`;
+        setTimeout(() => {
+          settingsSuccess.textContent = "";
+        }, 2500);
+      } catch (e: any) {
+        settingsError.textContent = e?.message || "Export failed";
+      } finally {
+        dl.disabled = false;
+        dl.textContent = "Download all data";
+      }
+    });
+    panel.appendChild(dl);
+
+    // Conversations
+    const convHead = document.createElement("div");
+    convHead.className = "catalog-list-head";
+    convHead.textContent = "Conversations";
+    panel.appendChild(convHead);
+    const convList = document.createElement("div");
+    convList.className = "admin-users-list";
+    if (!data.conversations.length) {
+      convList.innerHTML = `<p class="settings-muted">No conversations.</p>`;
+    } else {
+      for (const c of data.conversations) {
+        const row = document.createElement("div");
+        row.className = "admin-user-row";
+        row.innerHTML = `<div class="admin-user-name">${c.title || "Untitled"}</div>
+          <div class="admin-user-meta">${c.visibility || "private"} · ${c.relation} · ${c.updated_at?.slice(0, 10) || ""}</div>`;
+        convList.appendChild(row);
+      }
+    }
+    panel.appendChild(convList);
+
+    // Files
+    const fileHead = document.createElement("div");
+    fileHead.className = "catalog-list-head";
+    fileHead.textContent = "Uploaded files";
+    panel.appendChild(fileHead);
+    const fileList = document.createElement("div");
+    fileList.className = "admin-users-list";
+    if (!data.files.length) {
+      fileList.innerHTML = `<p class="settings-muted">No uploaded files.</p>`;
+    } else {
+      for (const f of data.files) {
+        const row = document.createElement("div");
+        row.className = "admin-user-row";
+        row.innerHTML = `<div class="admin-user-name">${f.name}</div>
+          <div class="admin-user-meta">${f.mime} · ${fmtSize(f.size || 0)} · ${f.conversation_title || "chat"} · ${f.created_at?.slice(0, 10) || ""}</div>`;
+        fileList.appendChild(row);
+      }
+    }
+    panel.appendChild(fileList);
+  } catch (e: any) {
+    panel.innerHTML = `<p class="settings-muted">${e?.message || "Failed to load details"}</p>`;
+  }
+}
+
 document.getElementById("admin-users-refresh-btn")?.addEventListener("click", () => void loadAdminUsers());
+document.getElementById("admin-users-search")?.addEventListener("input", () => {
+  if (adminUsersSearchTimer) clearTimeout(adminUsersSearchTimer);
+  adminUsersSearchTimer = setTimeout(() => {
+    const q = (document.getElementById("admin-users-search") as HTMLInputElement)?.value || "";
+    void loadAdminUsers(q);
+  }, 280);
+});
 
 /* Admin catalog + users load when Settings opens for admin accounts */
 

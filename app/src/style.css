@@ -7073,3 +7073,32 @@ html.pwa-standalone .composer {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
+.admin-user-detail {
+  margin: 8px 0 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface, var(--bg));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 60vh;
+  overflow: auto;
+}
+.admin-user-detail[hidden] { display: none !important; }
+.admin-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.admin-detail-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.admin-detail-stats strong { color: var(--text); font-weight: 650; }
+#admin-users-search { margin-top: 4px; }
