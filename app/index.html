@@ -368,7 +368,7 @@
     <div class="quick-actions" id="quick-actions"></div>
 
     <form id="chat-form" class="chat-form">
-      <div class="attachment-chips" id="attachment-chips"></div>
+      <div class="attachment-preview" id="attachment-chips"></div>
       <div class="composer-row">
         <div class="attach-wrap">
           <button type="button" id="attach-btn" class="composer-icon-btn" title="Add files or tools"></button>
@@ -377,17 +377,14 @@
               <span class="attach-menu-icon"></span>
               <span data-i18n="composer.addFiles">Add files or photos</span>
             </button>
-            <button type="button" id="attach-menu-voice" class="attach-menu-item">
-              <span class="attach-menu-icon"></span>
-              <span>Voice note</span>
-            </button>
             <button type="button" id="attach-menu-tools" class="attach-menu-item">
               <span class="attach-menu-icon"></span>
               <span data-i18n="composer.openTools">Tools</span>
             </button>
           </div>
         </div>
-        <input type="file" id="file-input" multiple style="display:none;">
+        <button type="button" id="voice-note-btn" class="composer-icon-btn" title="Voice note" aria-label="Voice note"></button>
+        <input type="file" id="file-input" multiple accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt" style="display:none;">
         <textarea id="chat-input" placeholder="Message the agent…" data-i18n-placeholder="chat.placeholder" rows="1" autofocus></textarea>
         <button type="button" id="mic-btn" class="composer-icon-btn" title="Hold to speak" data-i18n-title="composer.holdToSpeak"></button>
         <button type="submit" id="send-btn" title="Send">

@@ -223,6 +223,9 @@ function mountStaticIcons() {
   document.querySelector("#attach-menu-files .attach-menu-icon")!.innerHTML = icons.image;
   document.querySelector("#attach-menu-tools .attach-menu-icon")!.innerHTML = icons.tools;
   micBtn.innerHTML = icons.mic;
+  const voiceNoteBtnEl = document.getElementById("voice-note-btn");
+  if (voiceNoteBtnEl) voiceNoteBtnEl.innerHTML = icons.waveform || icons.mic;
+
   document.querySelector(".send-icon")!.innerHTML = icons.send;
   document.getElementById("header-usage-btn")!.innerHTML = icons.chart;
   document.getElementById("header-files-btn")!.innerHTML = icons.fileSearch;
@@ -353,6 +356,16 @@ function applyDmHeader(peer?: { id: string; username: string; display_name?: str
 }
 /** True when the current user owns the open conversation (for null-sender fallback). */
 let isConversationOwner = false;
+
+/** Fast switch: keep recent chat payloads in memory */
+const messageCache = new Map<
+  string,
+  { messages: Message[]; conversation: any; at: number }
+>();
+const MESSAGE_CACHE_TTL_MS = 5 * 60 * 1000;
+/** Ignore stale getMessages responses when user switches quickly */
+let selectGeneration = 0;
+
 let currentVisibility: Visibility = "private";
 let currentCollabCode: string | null = null;
 
@@ -1528,17 +1541,18 @@ function startFriendsPoll() {
 async function openFriendChat(friendshipId: string) {
   try {
     const dm = await api.openFriendDm(friendshipId);
-    await loadConversations();
     currentDmPeer = dm.peer;
     isDmChat = true;
-    await selectConversation(dm.conversation_id);
-    // Address bar: #user=username (never #conv=uuid for friend DMs)
+    applyDmHeader(dm.peer);
+    // Address bar immediately
     internalHashUpdate = true;
     history.replaceState(null, "", friendUserUrl(dm.peer.username));
     setTimeout(() => {
       internalHashUpdate = false;
     }, 0);
-    applyDmHeader(dm.peer);
+    // Open chat first; refresh sidebar list in background
+    void selectConversation(dm.conversation_id);
+    void loadConversations();
   } catch (e: any) {
     showToast(e?.message || "Could not open chat");
   }
@@ -2060,17 +2074,16 @@ async function openFriendByUsername(username: string) {
     }
     // Not friends yet — try server open-by-username (accepted only)
     const dm = await api.openFriendDmByUsername(clean);
-    await loadConversations();
     currentDmPeer = dm.peer;
     isDmChat = true;
-    setCurrentConversation(dm.conversation_id);
-    await selectConversation(dm.conversation_id);
-    // Force #user= in the bar
+    applyDmHeader(dm.peer);
     internalHashUpdate = true;
     history.replaceState(null, "", friendUserUrl(dm.peer.username));
     setTimeout(() => {
       internalHashUpdate = false;
     }, 0);
+    void selectConversation(dm.conversation_id);
+    void loadConversations();
   } catch (e: any) {
     showToast(e?.message || `Could not open chat with @${clean}`);
   }
@@ -2796,15 +2809,31 @@ function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: strin
         const objectUrl = dataUrlToObjectUrl(a.dataUrl);
         const wrap = document.createElement("div");
         wrap.className = "msg-audio-wrap";
+        const head = document.createElement("div");
+        head.className = "msg-audio-head";
+        const icon = document.createElement("span");
+        icon.className = "msg-audio-icon";
+        icon.innerHTML = icons.waveform || icons.mic;
         const label = document.createElement("div");
         label.className = "msg-audio-label";
-        label.textContent = a.name || "Voice note";
+        label.textContent = a.name?.startsWith("voice-") ? "Voice note" : (a.name || "Audio");
+        const dur = document.createElement("div");
+        dur.className = "msg-audio-duration";
+        head.appendChild(icon);
+        head.appendChild(label);
+        head.appendChild(dur);
         const audio = document.createElement("audio");
         audio.className = "msg-audio";
         audio.controls = true;
         audio.preload = "metadata";
         audio.src = objectUrl;
-        wrap.appendChild(label);
+        audio.addEventListener("loadedmetadata", () => {
+          if (Number.isFinite(audio.duration) && audio.duration > 0) {
+            const s = Math.round(audio.duration);
+            dur.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+          }
+        });
+        wrap.appendChild(head);
         wrap.appendChild(audio);
         chipsWrap.appendChild(wrap);
       } else if (a.mime.startsWith("video/") && a.dataUrl) {
@@ -3048,93 +3077,192 @@ function renderMessages(messages: Message[]) {
 }
 
 async function selectConversation(id: string) {
+  const gen = ++selectGeneration;
   stopCollabLive();
-  // Don't write #conv= yet — may be a friend DM (#user=)
-  // (Optimistic URL is written by the sidebar click handler when possible.)
   currentConversationId = id;
-  showMessagesSkeleton();
   setComposerReadOnly(false);
+
   const convo = conversations.find((c) => c.id === id);
   if (convo) convo.unread_count = 0;
-  chatTitle.textContent = convo?.title || t("chat.newChat");
+
+  // ── Optimistic UI from sidebar metadata (no network) ──────────────────
+  const localIsDm = !!(convo?.is_dm || convo?.visibility === "dm");
+  if (localIsDm) {
+    isDmChat = true;
+    isCollabChat = false;
+    if (currentDmPeer) {
+      applyDmHeader(currentDmPeer);
+    } else if (convo?.title?.startsWith("@")) {
+      const uname = convo.title.slice(1);
+      currentDmPeer = {
+        id: convo.dm_peer_id || "",
+        username: uname,
+        display_name: uname,
+        avatar: null,
+      };
+      applyDmHeader(currentDmPeer);
+    }
+    chatTitle.textContent = currentDmPeer ? `@${currentDmPeer.username}` : convo?.title || "Friend chat";
+  } else {
+    isDmChat = false;
+    currentDmPeer = null;
+    try {
+      applyDmHeader(null);
+    } catch {
+      /* ignore */
+    }
+    document.getElementById("presence-chip")?.remove();
+    chatTitle.textContent = convo?.title || t("chat.newChat");
+  }
   renderConvoList();
-  messagesEl.innerHTML = "";
-  const data = await api.getMessages(id);
-  const messages = data.messages;
+
+  // ── Instant paint from cache if available ─────────────────────────────
+  const cached = messageCache.get(id);
+  const cacheFresh = cached && Date.now() - cached.at < MESSAGE_CACHE_TTL_MS;
+  if (cacheFresh && cached) {
+    applyConversationPayload(id, cached.messages, cached.conversation, { fromCache: true });
+  } else {
+    showMessagesSkeleton();
+    messagesEl.innerHTML = "";
+  }
+
+  // ── Network refresh (abortable via generation) ────────────────────────
+  try {
+    const data = await api.getMessages(id);
+    if (gen !== selectGeneration || currentConversationId !== id) return; // user moved on
+    messageCache.set(id, {
+      messages: data.messages,
+      conversation: data.conversation,
+      at: Date.now(),
+    });
+    // Cap cache so memory stays bounded
+    if (messageCache.size > 40) {
+      const oldest = [...messageCache.entries()].sort((a, b) => a[1].at - b[1].at)[0];
+      if (oldest) messageCache.delete(oldest[0]);
+    }
+    applyConversationPayload(id, data.messages, data.conversation, { fromCache: false });
+  } catch (e: any) {
+    if (gen !== selectGeneration || currentConversationId !== id) return;
+    if (!cacheFresh) {
+      messagesEl.innerHTML = "";
+      const err = document.createElement("div");
+      err.className = "msg-row error";
+      err.textContent = e?.message || "Could not load chat";
+      messagesEl.appendChild(err);
+    } else {
+      showToast(e?.message || "Could not refresh chat");
+    }
+  }
+
+  // Live sockets after paint — don't block the switch
+  if (gen === selectGeneration && currentConversationId === id) {
+    queue Promise.resolve().then(() => {
+      if (gen !== selectGeneration || currentConversationId !== id) return;
+      try {
+        startCollabLive();
+      } catch {
+        /* ignore */
+      }
+      if (isDmChat) {
+        try {
+          ensureCallSignaling();
+        } catch {
+          /* ignore */
+        }
+      }
+    });
+  }
+
+  if (isMobileLayout()) toggleSidebar(true);
+}
+
+function applyConversationPayload(
+  id: string,
+  messages: Message[],
+  conversation: any,
+  opts?: { fromCache?: boolean }
+) {
   isCollabChat =
-    data.conversation?.visibility === "collab" ||
-    (!!data.conversation?.is_member && data.conversation?.visibility !== "dm");
-  isDmChat = data.conversation?.visibility === "dm" || !!(data.conversation as any)?.is_dm;
-  isConversationOwner = !!data.conversation?.owner;
-  currentVisibility = (data.conversation?.visibility as Visibility) || "private";
-  currentCollabCode = data.conversation?.collab_code || null;
-  collabMembers = data.conversation?.members || [];
+    conversation?.visibility === "collab" ||
+    (!!conversation?.is_member && conversation?.visibility !== "dm");
+  isDmChat = conversation?.visibility === "dm" || !!conversation?.is_dm;
+  isConversationOwner = !!conversation?.owner;
+  currentVisibility = (conversation?.visibility as Visibility) || "private";
+  currentCollabCode = conversation?.collab_code || null;
+  collabMembers = conversation?.members || [];
   renderCollabMembersChip(collabMembers);
-  currentDmPeer = data.conversation?.dm_peer || null;
+  currentDmPeer = conversation?.dm_peer || currentDmPeer || null;
+
   if (isDmChat) {
     applyDmHeader(currentDmPeer);
-    applyPresence(data.conversation?.peer_last_seen);
+    if (!opts?.fromCache) applyPresence(conversation?.peer_last_seen);
   } else {
     applyDmHeader(null);
     document.getElementById("presence-chip")?.remove();
-    chatTitle.textContent = data.conversation?.title || convo?.title || t("chat.newChat");
+    chatTitle.textContent = conversation?.title || t("chat.newChat");
   }
-  // after messages rendered below we apply peer_read
-  (window as any).__peerRead = data.conversation?.peer_read || null;
+
+  (window as any).__peerRead = conversation?.peer_read || null;
   if (isDmChat && currentDmPeer?.username) {
     syncUrlToConversation(id, currentDmPeer.username);
   } else if (!isDmChat) {
     syncUrlToConversation(id);
   }
 
-  // Keep sidebar/local convo in sync with server lock + visibility
-  if (data.conversation) {
+  if (conversation) {
     const local = conversations.find((c) => c.id === id);
     if (local) {
-      local.visibility = data.conversation.visibility;
-      local.collab_locked = !!data.conversation.collab_locked;
+      local.visibility = conversation.visibility;
+      local.collab_locked = !!conversation.collab_locked;
       local.is_collab_member =
-        !!data.conversation.is_member && !data.conversation.owner && data.conversation.visibility === "collab";
+        !!conversation.is_member && !conversation.owner && conversation.visibility === "collab";
       if (currentDmPeer) local.title = `@${currentDmPeer.username}`;
     }
   }
   syncManageChatPanel();
-  // Prompt for code if collab, not owner, cannot write yet.
-  // Declining still allows reading; typing requires the invite code.
-  if (data.conversation?.visibility === "collab" && !data.conversation?.owner && !data.conversation?.can_write) {
+
+  // Collab join gate — only on live network result, not cache
+  if (
+    !opts?.fromCache &&
+    conversation?.visibility === "collab" &&
+    !conversation?.owner &&
+    !conversation?.can_write
+  ) {
     renderMessages(messages);
     setComposerReadOnly(true, "Enter the invite code to reply — or just read.");
-    const code = await showCollabJoinModal(id);
-    if (code) {
-      try {
-        await api.joinCollab(id, code);
-        const again = await api.getMessages(id);
-        isCollabChat = true;
-        renderMessages(again.messages);
-        setComposerReadOnly(!again.conversation?.can_write, again.conversation?.can_write ? "" : "Enter the invite code to reply — or just read.");
-        await loadConversations();
-        showToast("Joined collaboration — you can reply.");
-        startCollabLive();
-        if (isMobileLayout()) toggleSidebar(true);
-        return;
-      } catch (e: any) {
-        showToast(e?.message || "Could not join collaboration");
+    void (async () => {
+      const code = await showCollabJoinModal(id);
+      if (code && currentConversationId === id) {
+        try {
+          await api.joinCollab(id, code);
+          const again = await api.getMessages(id);
+          if (currentConversationId !== id) return;
+          messageCache.set(id, { messages: again.messages, conversation: again.conversation, at: Date.now() });
+          isCollabChat = true;
+          renderMessages(again.messages);
+          setComposerReadOnly(
+            !again.conversation?.can_write,
+            again.conversation?.can_write ? "" : "Enter the invite code to reply — or just read."
+          );
+          showToast("Joined collaboration — you can reply.");
+          startCollabLive();
+        } catch (e: any) {
+          showToast(e?.message || "Could not join collaboration");
+        }
       }
-    }
-    startCollabLive();
-    if (isMobileLayout()) toggleSidebar(true);
+    })();
     return;
   }
+
   renderMessages(messages);
-  if (data.conversation && !data.conversation.can_write && !data.conversation.owner) {
+  if (conversation && !conversation.can_write && !conversation.owner) {
     setComposerReadOnly(true, "Enter the invite code to reply — or just read.");
+  } else {
+    setComposerReadOnly(false);
   }
-  startCollabLive();
-  // Use toggleSidebar() rather than touching the class directly: it also syncs
-  // the header "open sidebar" button, which otherwise stayed hidden on mobile
-  // after switching chats, leaving no way to reopen the sidebar.
-  if (isMobileLayout()) toggleSidebar(true);
+  syncCollabComposerHint();
 }
+
 
 function startNewConversation() {
   try { endCall(false); stopCallSignaling(); } catch { /* ignore */ }
@@ -3200,21 +3328,100 @@ document.addEventListener("langchange", renderQuickActions);
 
 function renderAttachmentChips() {
   attachmentChips.innerHTML = "";
+  if (!pendingAttachments.length) {
+    attachmentChips.classList.remove("has-items");
+    return;
+  }
+  attachmentChips.classList.add("has-items");
   pendingAttachments.forEach((att, idx) => {
-    const chip = document.createElement("div");
-    chip.className = "attachment-chip";
-    const label = document.createElement("span");
-    label.textContent = `${fileIcon(att.mime)} ${att.name} (${formatBytes(att.size)})`;
+    const card = document.createElement("div");
+    card.className = "attach-preview-card";
     const remove = document.createElement("button");
     remove.type = "button";
+    remove.className = "attach-preview-remove";
+    remove.title = "Remove";
+    remove.setAttribute("aria-label", "Remove attachment");
     remove.innerHTML = icons.close;
-    remove.addEventListener("click", () => {
+    remove.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       pendingAttachments.splice(idx, 1);
       renderAttachmentChips();
     });
-    chip.appendChild(label);
-    chip.appendChild(remove);
-    attachmentChips.appendChild(chip);
+
+    if (att.mime.startsWith("image/") && att.dataUrl) {
+      card.classList.add("is-image");
+      const img = document.createElement("img");
+      img.className = "attach-preview-img";
+      img.src = att.dataUrl;
+      img.alt = att.name;
+      card.appendChild(img);
+    } else if (att.mime.startsWith("video/") && att.dataUrl) {
+      card.classList.add("is-video");
+      const vid = document.createElement("video");
+      vid.className = "attach-preview-video";
+      vid.src = att.dataUrl;
+      vid.muted = true;
+      vid.playsInline = true;
+      vid.preload = "metadata";
+      card.appendChild(vid);
+      const badge = document.createElement("span");
+      badge.className = "attach-preview-badge";
+      badge.textContent = "Video";
+      card.appendChild(badge);
+    } else if (att.mime.startsWith("audio/") && att.dataUrl) {
+      card.classList.add("is-audio");
+      const wrap = document.createElement("div");
+      wrap.className = "attach-preview-audio";
+      const icon = document.createElement("div");
+      icon.className = "attach-preview-audio-icon";
+      icon.innerHTML = icons.waveform || icons.mic;
+      const meta = document.createElement("div");
+      meta.className = "attach-preview-audio-meta";
+      const title = document.createElement("div");
+      title.className = "attach-preview-audio-title";
+      title.textContent = att.name.startsWith("voice-") ? "Voice note" : att.name;
+      const sub = document.createElement("div");
+      sub.className = "attach-preview-audio-sub";
+      sub.textContent = formatBytes(att.size);
+      const audio = document.createElement("audio");
+      audio.className = "attach-preview-audio-el";
+      audio.controls = true;
+      audio.preload = "metadata";
+      audio.src = att.dataUrl;
+      audio.addEventListener("loadedmetadata", () => {
+        if (Number.isFinite(audio.duration) && audio.duration > 0) {
+          const s = Math.round(audio.duration);
+          sub.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} · ${formatBytes(att.size)}`;
+        }
+      });
+      meta.appendChild(title);
+      meta.appendChild(sub);
+      meta.appendChild(audio);
+      wrap.appendChild(icon);
+      wrap.appendChild(meta);
+      card.appendChild(wrap);
+    } else {
+      card.classList.add("is-file");
+      const icon = document.createElement("div");
+      icon.className = "attach-preview-file-icon";
+      icon.textContent = fileIcon(att.mime);
+      const meta = document.createElement("div");
+      meta.className = "attach-preview-file-meta";
+      const title = document.createElement("div");
+      title.className = "attach-preview-file-title";
+      title.textContent = att.name;
+      const sub = document.createElement("div");
+      sub.className = "attach-preview-file-sub";
+      sub.textContent = `${att.mime.split("/").pop() || "file"} · ${formatBytes(att.size)}`;
+      meta.appendChild(title);
+      meta.appendChild(sub);
+      card.appendChild(icon);
+      card.appendChild(meta);
+    }
+
+    card.appendChild(remove);
+    attachmentChips.appendChild(card);
   });
 }
 
@@ -3561,6 +3768,7 @@ async function performSend(
     clearReplyTarget();
     thinking?.remove();
 
+    if (result.conversation_id) messageCache.delete(result.conversation_id);
     const isNewConvo = !currentConversationId;
     setCurrentConversation(
       result.conversation_id,
@@ -3808,15 +4016,15 @@ async function startVoiceNoteRecording() {
       reader.readAsDataURL(blob);
     };
     voiceNoteRecorder.start();
-    showToast("Recording voice note… tap Voice note again to stop");
-    document.getElementById("attach-menu-voice")?.classList.add("recording");
+    showToast("Recording… tap mic again to stop");
+    document.getElementById("voice-note-btn")?.classList.add("recording");
   } catch {
     showToast("Microphone permission denied");
   }
 }
 
 function stopVoiceNoteRecording() {
-  document.getElementById("attach-menu-voice")?.classList.remove("recording");
+  document.getElementById("voice-note-btn")?.classList.remove("recording");
   if (voiceNoteRecorder && voiceNoteRecorder.state === "recording") {
     try {
       voiceNoteRecorder.stop();
@@ -4397,10 +4605,10 @@ export function initChatView(user: User) {
     closeAttachMenu();
     fileInput.click();
   });
-  document.getElementById("attach-menu-voice")?.addEventListener("click", () => {
-    closeAttachMenu();
-    void startVoiceNoteRecording();
-  });
+  document.getElementById("voice-note-btn")?.addEventListener("click", () => {
+  attachMenu.style.display = "none";
+  void startVoiceNoteRecording();
+});
   attachMenuTools.addEventListener("click", () => {
     closeAttachMenu();
     document.getElementById("tools-btn")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));

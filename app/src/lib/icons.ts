@@ -126,6 +126,9 @@ export const icons = {
   trash: svg(
     `<path d="M4 6.5h12"/><path d="M8 6.5V4.5h4v2"/><path d="M6.5 6.5l.7 9.5h5.6l.7-9.5"/><path d="M9 9v5"/><path d="M11 9v5"/>`
   ),
+  waveform: svg(
+    `<path d="M3.5 8v4M6.5 5v10M9.5 7v6M12.5 4v12M16.5 6.5v7"/>`
+  ),
   phone: svg(
     `<path d="M6.2 3.5h2.2l1.1 3.2-1.4 1.4a11 11 0 0 0 4.8 4.8l1.4-1.4 3.2 1.1v2.2a1.6 1.6 0 0 1-1.7 1.6A13.5 13.5 0 0 1 3.5 5.2 1.6 1.6 0 0 1 5.1 3.5Z"/>`
   ),

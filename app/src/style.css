@@ -7102,3 +7102,217 @@ html.pwa-standalone .composer {
 }
 .admin-detail-stats strong { color: var(--text); font-weight: 650; }
 #admin-users-search { margin-top: 4px; }
+
+/* ── Composer attachment previews (ChatGPT-style) ─────────────────────── */
+.attachment-preview,
+.attachment-chips {
+  display: none;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 0 4px 10px;
+  width: 100%;
+}
+.attachment-preview.has-items,
+.attachment-chips.has-items {
+  display: flex;
+}
+.attach-preview-card {
+  position: relative;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  overflow: hidden;
+  max-width: min(220px, 42vw);
+  min-width: 72px;
+}
+.attach-preview-card.is-image,
+.attach-preview-card.is-video {
+  width: 112px;
+  height: 112px;
+}
+.attach-preview-img,
+.attach-preview-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.attach-preview-badge {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+}
+.attach-preview-card.is-audio {
+  max-width: min(280px, 78vw);
+  min-width: 200px;
+  padding: 10px 12px;
+}
+.attach-preview-audio {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.attach-preview-audio-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.attach-preview-audio-icon svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+.attach-preview-audio-meta { flex: 1; min-width: 0; }
+.attach-preview-audio-title {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+}
+.attach-preview-audio-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.attach-preview-audio-el {
+  width: 100%;
+  margin-top: 6px;
+  height: 32px;
+}
+.attach-preview-card.is-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  max-width: min(260px, 70vw);
+}
+.attach-preview-file-icon {
+  font-size: 20px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--surface);
+}
+.attach-preview-file-title {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+.attach-preview-file-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.attach-preview-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  z-index: 2;
+}
+.attach-preview-remove svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+}
+.attach-preview-card.is-audio .attach-preview-remove,
+.attach-preview-card.is-file .attach-preview-remove {
+  background: var(--surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+/* Voice note button in composer */
+#voice-note-btn.recording {
+  color: #e55 !important;
+  background: color-mix(in srgb, #e55 16%, transparent) !important;
+  animation: voice-pulse 1.2s ease-in-out infinite;
+}
+@keyframes voice-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, #e55 40%, transparent); }
+  50% { box-shadow: 0 0 0 6px color-mix(in srgb, #e55 0%, transparent); }
+}
+
+/* In-chat voice note — clearer player */
+.msg-audio-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--card) 88%, var(--accent));
+  max-width: min(320px, 82vw);
+  min-width: 200px;
+}
+.msg-audio-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.msg-audio-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.msg-audio-icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+.msg-audio-label {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+  flex: 1;
+}
+.msg-audio-duration {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.msg-audio {
+  width: 100%;
+  height: 40px;
+  border-radius: 8px;
+}
