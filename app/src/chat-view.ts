@@ -2367,6 +2367,15 @@ function showSenderPopup(sender: import("./api").MessageSender) {
  * - Other people's messages → left side, with their avatar + name
  * - Paul → left side, favicon + "Paul"
  */
+/** True for Paul/agent UI rows only — NOT peer messages (they reuse .agent for left layout). */
+function isPaulAgentRow(el: HTMLElement | null): boolean {
+  if (!el) return false;
+  if (el.classList.contains("thinking") || el.classList.contains("error")) return true;
+  // Peer DMs/collab use "msg-row agent collab-peer" for left alignment — never cascade those
+  if (el.classList.contains("collab-peer")) return false;
+  return el.classList.contains("agent") && !el.classList.contains("user");
+}
+
 function isMyUserMessage(kind: string, sender?: import("./api").MessageSender | null): boolean {
   if (kind !== "user") return false;
   if (!currentUser) return false;
@@ -2395,7 +2404,10 @@ async function startEditMessage(row: HTMLDivElement) {
   const current = (bubble?.innerText || "").replace(quoteText, "").trim();
   const next = await showPrompt({
     title: "Edit message",
-    message: "Change your message text. Paul's reply will refresh.",
+    message:
+      isDmChat || isCollabChat
+        ? "Change your message. Friend messages are not affected. Tag @paul if you want Paul to answer again."
+        : "Change your message text. Paul's reply will refresh.",
     value: current,
     confirmLabel: "Save",
     maxLength: 20000,
@@ -2421,15 +2433,15 @@ async function startEditMessage(row: HTMLDivElement) {
       row.appendChild(mark);
     }
 
-    // Remove following Paul replies in the UI, then re-ask Paul with the new text
+    // Remove following Paul replies only (never friend/peer human messages)
     let sib = row.nextElementSibling as HTMLElement | null;
-    while (sib && (sib.classList.contains("agent") || sib.classList.contains("thinking") || sib.classList.contains("error"))) {
+    while (sib && isPaulAgentRow(sib)) {
       const n = sib.nextElementSibling as HTMLElement | null;
       sib.remove();
       sib = n;
     }
 
-    // Only re-run Paul outside pure peer DMs (or when @paul)
+    // Only re-run Paul outside pure peer DMs (or when @paul) — never affects friends
     const shouldPaul =
       !(isCollabChat || isDmChat) || messageMentionsPaul(content);
     if (shouldPaul) {
@@ -2449,7 +2461,10 @@ async function softDeleteMessage(row: HTMLDivElement) {
   if (!id) return;
   const ok = await showConfirm({
     title: "Delete message?",
-    message: "This removes your message and Paul's reply to it.",
+    message:
+      isDmChat || isCollabChat
+        ? "This removes your message. Friend messages are kept. Paul's reply (if any) is removed."
+        : "This removes your message and Paul's reply to it.",
     confirmLabel: "Delete",
     danger: true,
   });
@@ -2467,16 +2482,11 @@ async function softDeleteMessage(row: HTMLDivElement) {
       r.querySelector(".msg-quote")?.remove();
     };
     markDeleted(row);
-    // Remove following agent rows locally (matches server cascade)
+    // Only cascade Paul/agent rows — friend messages use .agent.collab-peer and must stay
     let sib = row.nextElementSibling as HTMLElement | null;
-    while (sib && (sib.classList.contains("agent") || sib.classList.contains("thinking") || sib.classList.contains("error"))) {
+    while (sib && isPaulAgentRow(sib)) {
       const n = sib.nextElementSibling as HTMLElement | null;
-      if (res.cascaded?.length && sib.dataset.msgId && res.cascaded.includes(sib.dataset.msgId)) {
-        markDeleted(sib);
-      } else {
-        // Always drop UI agent tail after this user msg
-        markDeleted(sib);
-      }
+      markDeleted(sib);
       sib = n;
     }
     if (currentConversationId) messageCache.delete(currentConversationId);
