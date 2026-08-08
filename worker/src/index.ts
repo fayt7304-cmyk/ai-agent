@@ -1356,6 +1356,223 @@ async function handleAdminLogsClear(request: Request, env: Env): Promise<Respons
 }
 
 /** GET /api/admin/users — list + online + ban flags (admin only) */
+
+/** App version shown in Settings / health */
+const APP_VERSION = "0.10.5";
+
+async function ensureDefaultAgent(env: Env): Promise<void> {
+  try {
+    const existing = await env.DB.prepare("SELECT id FROM agents WHERE is_default = 1 LIMIT 1").first();
+    if (existing) return;
+    const bySlug = await env.DB.prepare("SELECT id FROM agents WHERE slug = 'paul' LIMIT 1").first();
+    if (bySlug) {
+      await env.DB.prepare("UPDATE agents SET is_default = 1 WHERE slug = 'paul'").run();
+      return;
+    }
+    const id = crypto.randomUUID();
+    const ts = nowIso();
+    const mistralId = env.MISTRAL_AGENT_ID || "default";
+    await env.DB.prepare(
+      `INSERT INTO agents (id, slug, name, description, tagline, mistral_agent_id, category, is_public, is_featured, is_default, usage_count, created_at, updated_at)
+       VALUES (?, 'paul', 'Paul', 'A-F Marbre specialist — quotes, marble, and sales help.', 'Your marble expert', ?, 'business', 1, 1, 1, 0, ?, ?)`
+    )
+      .bind(id, mistralId, ts, ts)
+      .run();
+  } catch {
+    /* table may not exist yet */
+  }
+}
+
+async function resolveAgentMistralId(env: Env, agentId: string | null | undefined): Promise<string> {
+  await ensureConversationColumns(env);
+  await ensureDefaultAgent(env);
+  if (agentId) {
+    try {
+      const row = await env.DB.prepare("SELECT mistral_agent_id FROM agents WHERE id = ?").bind(agentId).first<{ mistral_agent_id: string }>();
+      if (row?.mistral_agent_id) return row.mistral_agent_id;
+    } catch { /* fall through */ }
+  }
+  try {
+    const def = await env.DB.prepare("SELECT mistral_agent_id FROM agents WHERE is_default = 1 LIMIT 1").first<{ mistral_agent_id: string }>();
+    if (def?.mistral_agent_id) return def.mistral_agent_id;
+  } catch { /* fall through */ }
+  return env.MISTRAL_AGENT_ID;
+}
+
+async function handleListAgents(request: Request, env: Env): Promise<Response> {
+  await ensureConversationColumns(env);
+  await ensureDefaultAgent(env);
+  const url = new URL(request.url);
+  const q = (url.searchParams.get("q") || "").trim().toLowerCase();
+  try {
+    let rows: any[] = [];
+    if (q) {
+      const like = `%${q}%`;
+      const r = await env.DB.prepare(
+        `SELECT id, slug, name, description, tagline, avatar_url, category, is_featured, is_default, usage_count, created_at
+         FROM agents WHERE is_public = 1 AND (lower(name) LIKE ? OR lower(description) LIKE ? OR lower(tagline) LIKE ? OR lower(category) LIKE ?)
+         ORDER BY is_featured DESC, usage_count DESC, name ASC LIMIT 100`
+      )
+        .bind(like, like, like, like)
+        .all();
+      rows = r.results || [];
+    } else {
+      const r = await env.DB.prepare(
+        `SELECT id, slug, name, description, tagline, avatar_url, category, is_featured, is_default, usage_count, created_at
+         FROM agents WHERE is_public = 1
+         ORDER BY is_featured DESC, usage_count DESC, name ASC LIMIT 100`
+      ).all();
+      rows = r.results || [];
+    }
+    return json({ agents: rows, version: APP_VERSION });
+  } catch (e: any) {
+    return err(e?.message || "Could not list agents", 500);
+  }
+}
+
+async function handleGetAgent(request: Request, env: Env, idOrSlug: string): Promise<Response> {
+  await ensureConversationColumns(env);
+  await ensureDefaultAgent(env);
+  const row = await env.DB.prepare(
+    `SELECT id, slug, name, description, tagline, avatar_url, category, is_featured, is_default, usage_count, created_at, mistral_agent_id
+     FROM agents WHERE id = ? OR slug = ? LIMIT 1`
+  )
+    .bind(idOrSlug, idOrSlug)
+    .first<any>();
+  if (!row) return err("Agent not found.", 404);
+  // Don't leak mistral id to non-admin
+  const user = await getUserFromRequest(env, request);
+  const staff = user ? await getStaffRole(env, user.id, user.username) : null;
+  const out = { ...row };
+  if (!canManageUsers(staff) && staff !== "owner") {
+    // catalog role shouldn't see either — only owner/moderator
+    if (!isAdminUser(user?.username || "") && staff !== "owner" && staff !== "moderator") {
+      delete out.mistral_agent_id;
+    }
+  }
+  return json({ agent: out });
+}
+
+async function handleAdminAgents(request: Request, env: Env): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  const staff = await getStaffRole(env, user.id, user.username);
+  if (!canManageUsers(staff) && !isAdminUser(user.username)) return err("Forbidden.", 403);
+  await ensureConversationColumns(env);
+  await ensureDefaultAgent(env);
+
+  if (request.method === "GET") {
+    const { results } = await env.DB.prepare(
+      `SELECT id, slug, name, description, tagline, mistral_agent_id, avatar_url, category, is_public, is_featured, is_default, usage_count, created_at, updated_at
+       FROM agents ORDER BY is_default DESC, is_featured DESC, name ASC`
+    ).all();
+    return json({ agents: results || [] });
+  }
+
+  if (request.method === "POST") {
+    const body = (await request.json().catch(() => null)) as any;
+    const name = String(body?.name || "").trim();
+    const slug = String(body?.slug || name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")).trim();
+    const mistral_agent_id = String(body?.mistral_agent_id || "").trim();
+    if (!name || !slug || !mistral_agent_id) return err("name, slug, and mistral_agent_id are required.", 400);
+    const id = crypto.randomUUID();
+    const ts = nowIso();
+    try {
+      await env.DB.prepare(
+        `INSERT INTO agents (id, slug, name, description, tagline, mistral_agent_id, avatar_url, category, is_public, is_featured, is_default, owner_user_id, usage_count, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0, ?, ?)`
+      )
+        .bind(
+          id,
+          slug,
+          name,
+          String(body?.description || "").slice(0, 2000),
+          String(body?.tagline || "").slice(0, 200),
+          mistral_agent_id,
+          body?.avatar_url || null,
+          String(body?.category || "general").slice(0, 40),
+          body?.is_public === false ? 0 : 1,
+          body?.is_featured ? 1 : 0,
+          user.id,
+          ts,
+          ts
+        )
+        .run();
+    } catch (e: any) {
+      return err(e?.message?.includes("UNIQUE") ? "Slug already exists." : "Could not create agent.", 400);
+    }
+    adminLog("info", "admin", "agent created", { slug, by: user.username });
+    return json({ ok: true, id, slug });
+  }
+
+  return err("Method not allowed", 405);
+}
+
+async function handleAdminAgentById(request: Request, env: Env, id: string): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  const staff = await getStaffRole(env, user.id, user.username);
+  if (!canManageUsers(staff) && !isAdminUser(user.username)) return err("Forbidden.", 403);
+  await ensureConversationColumns(env);
+
+  if (request.method === "DELETE") {
+    const row = await env.DB.prepare("SELECT is_default FROM agents WHERE id = ?").bind(id).first<{ is_default: number }>();
+    if (!row) return err("Not found.", 404);
+    if (row.is_default) return err("Cannot delete the default agent.", 400);
+    await env.DB.prepare("DELETE FROM agents WHERE id = ?").bind(id).run();
+    return json({ ok: true });
+  }
+
+  if (request.method === "PATCH") {
+    const body = (await request.json().catch(() => null)) as any;
+    const row = await env.DB.prepare("SELECT * FROM agents WHERE id = ?").bind(id).first<any>();
+    if (!row) return err("Not found.", 404);
+    const name = body?.name != null ? String(body.name).trim() : row.name;
+    const description = body?.description != null ? String(body.description).slice(0, 2000) : row.description;
+    const tagline = body?.tagline != null ? String(body.tagline).slice(0, 200) : row.tagline;
+    const mistral_agent_id = body?.mistral_agent_id != null ? String(body.mistral_agent_id).trim() : row.mistral_agent_id;
+    const category = body?.category != null ? String(body.category).slice(0, 40) : row.category;
+    const is_public = body?.is_public != null ? (body.is_public ? 1 : 0) : row.is_public;
+    const is_featured = body?.is_featured != null ? (body.is_featured ? 1 : 0) : row.is_featured;
+    const is_default = body?.is_default ? 1 : row.is_default;
+    if (is_default) {
+      await env.DB.prepare("UPDATE agents SET is_default = 0 WHERE is_default = 1").run();
+    }
+    await env.DB.prepare(
+      `UPDATE agents SET name = ?, description = ?, tagline = ?, mistral_agent_id = ?, category = ?, is_public = ?, is_featured = ?, is_default = ?, updated_at = ?
+       WHERE id = ?`
+    )
+      .bind(name, description, tagline, mistral_agent_id, category, is_public, is_featured, is_default, nowIso(), id)
+      .run();
+    return json({ ok: true });
+  }
+
+  return err("Method not allowed", 405);
+}
+
+async function handleSetConversationAgent(request: Request, env: Env, convoId: string): Promise<Response> {
+  const user = await getUserFromRequest(env, request);
+  if (!user) return err("Not authenticated.", 401);
+  await ensureConversationColumns(env);
+  const body = (await request.json().catch(() => null)) as { agent_id?: string | null } | null;
+  const agentId = body?.agent_id ? String(body.agent_id) : null;
+  if (agentId) {
+    const a = await env.DB.prepare("SELECT id FROM agents WHERE id = ? AND is_public = 1").bind(agentId).first();
+    if (!a) return err("Agent not found.", 404);
+  }
+  const convo = await env.DB.prepare("SELECT id, user_id FROM conversations WHERE id = ?").bind(convoId).first<any>();
+  if (!convo) return err("Conversation not found.", 404);
+  if (convo.user_id !== user.id) return err("Forbidden.", 403);
+  try {
+    await env.DB.prepare("UPDATE conversations SET agent_id = ?, updated_at = ? WHERE id = ?")
+      .bind(agentId, nowIso(), convoId)
+      .run();
+  } catch {
+    return err("Could not set agent (schema).", 500);
+  }
+  return json({ ok: true, agent_id: agentId });
+}
+
 async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
   const user = await getUserFromRequest(env, request);
   if (!user) return json({ error: "Not authenticated" }, 401);
@@ -2324,13 +2541,23 @@ async function handleCreateConversation(request: Request, env: Env): Promise<Res
 
   const id = crypto.randomUUID();
   const ts = nowIso();
-  await env.DB.prepare(
-    "INSERT INTO conversations (id, user_id, mistral_conversation_id, title, created_at, updated_at) VALUES (?, ?, NULL, 'New chat', ?, ?)"
-  )
-    .bind(id, user.id, ts, ts)
-    .run();
+  const body = (await request.json().catch(() => null)) as { agent_id?: string } | null;
+  const agentId = body?.agent_id || null;
+  try {
+    await env.DB.prepare(
+      "INSERT INTO conversations (id, user_id, mistral_conversation_id, title, agent_id, created_at, updated_at) VALUES (?, ?, NULL, 'New chat', ?, ?, ?)"
+    )
+      .bind(id, user.id, agentId, ts, ts)
+      .run();
+  } catch {
+    await env.DB.prepare(
+      "INSERT INTO conversations (id, user_id, mistral_conversation_id, title, created_at, updated_at) VALUES (?, ?, NULL, 'New chat', ?, ?)"
+    )
+      .bind(id, user.id, ts, ts)
+      .run();
+  }
 
-  return json({ conversation: { id, title: "New chat", starred: 0, archived: 0, created_at: ts, updated_at: ts } });
+  return json({ conversation: { id, title: "New chat", starred: 0, archived: 0, agent_id: agentId, created_at: ts, updated_at: ts } });
 }
 
 async function handleRenameConversation(request: Request, env: Env, id: string): Promise<Response> {
@@ -2394,6 +2621,25 @@ async function ensureConversationColumns(env: Env): Promise<void> {
     "ALTER TABLE conversations ADD COLUMN dm_peer_id TEXT",
     "ALTER TABLE messages ADD COLUMN reply_to_id TEXT",
     "ALTER TABLE messages ADD COLUMN reply_to_preview TEXT",
+    "ALTER TABLE conversations ADD COLUMN agent_id TEXT",
+    `CREATE TABLE IF NOT EXISTS agents (
+      id TEXT PRIMARY KEY,
+      slug TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      tagline TEXT NOT NULL DEFAULT '',
+      mistral_agent_id TEXT NOT NULL,
+      avatar_url TEXT,
+      category TEXT NOT NULL DEFAULT 'general',
+      is_public INTEGER NOT NULL DEFAULT 1,
+      is_featured INTEGER NOT NULL DEFAULT 0,
+      is_default INTEGER NOT NULL DEFAULT 0,
+      owner_user_id TEXT,
+      usage_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`,
+    "CREATE INDEX IF NOT EXISTS idx_agents_public ON agents(is_public, is_featured)",
     `CREATE TABLE IF NOT EXISTS user_blocks (
       blocker_id TEXT NOT NULL,
       blocked_id TEXT NOT NULL,
@@ -3876,6 +4122,7 @@ interface ChatRequestBody {
   attachments?: AttachmentIn[];
   reply_to_id?: string;
   reply_to_preview?: string;
+  agent_id?: string | null;
 }
 
 /** Extract unique @handles from text (lowercase, no @). Supports many in one message. */
@@ -4044,12 +4291,21 @@ async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): P
   } else {
     const id = crypto.randomUUID();
     const ts = nowIso();
-    await env.DB.prepare(
-      "INSERT INTO conversations (id, user_id, mistral_conversation_id, title, created_at, updated_at) VALUES (?, ?, NULL, 'New chat', ?, ?)"
-    )
-      .bind(id, user.id, ts, ts)
-      .run();
-    convo = { id, user_id: user.id, mistral_conversation_id: null, title: "New chat", starred: 0, archived: 0, visibility: "private", created_at: ts, updated_at: ts };
+    try {
+      await env.DB.prepare(
+        "INSERT INTO conversations (id, user_id, mistral_conversation_id, title, agent_id, created_at, updated_at) VALUES (?, ?, NULL, 'New chat', ?, ?, ?)"
+      )
+        .bind(id, user.id, body.agent_id || null, ts, ts)
+        .run();
+      convo = { id, user_id: user.id, mistral_conversation_id: null, title: "New chat", starred: 0, archived: 0, visibility: "private", agent_id: body.agent_id || null, created_at: ts, updated_at: ts };
+    } catch {
+      await env.DB.prepare(
+        "INSERT INTO conversations (id, user_id, mistral_conversation_id, title, created_at, updated_at) VALUES (?, ?, NULL, 'New chat', ?, ?)"
+      )
+        .bind(id, user.id, ts, ts)
+        .run();
+      convo = { id, user_id: user.id, mistral_conversation_id: null, title: "New chat", starred: 0, archived: 0, visibility: "private", created_at: ts, updated_at: ts };
+    }
   }
 
   // Save the user's message first so it's never lost even if Mistral errors out.
@@ -4150,9 +4406,16 @@ async function handleChat(request: Request, env: Env, ctx?: ExecutionContext): P
   knowledgeSources = rag.sources;
 
   try {
+    const resolvedAgentId = await resolveAgentMistralId(env, (convo as any).agent_id);
+    // Bump marketplace usage (best-effort)
+    if ((convo as any).agent_id) {
+      try {
+        await env.DB.prepare("UPDATE agents SET usage_count = usage_count + 1 WHERE id = ?").bind((convo as any).agent_id).run();
+      } catch { /* ignore */ }
+    }
     const result = await callMistral({
       apiKey: env.MISTRAL_API_KEY,
-      agentId: env.MISTRAL_AGENT_ID,
+      agentId: resolvedAgentId,
       mistralConversationId: convo.mistral_conversation_id,
       message: outgoingMessage,
       attachments,
@@ -4388,6 +4651,18 @@ export default {
         resp = await handleAdminLogsGet(request, env);
       } else if (path === "/api/admin/logs" && request.method === "DELETE") {
         resp = await handleAdminLogsClear(request, env);
+      } else if (path === "/api/agents" && request.method === "GET") {
+        resp = await handleListAgents(request, env);
+      } else if (path.match(/^\/api\/agents\/[^/]+$/) && request.method === "GET") {
+        resp = await handleGetAgent(request, env, path.split("/")[3]);
+      } else if (path === "/api/admin/agents" && (request.method === "GET" || request.method === "POST")) {
+        resp = await handleAdminAgents(request, env);
+      } else if (path.match(/^\/api\/admin\/agents\/[^/]+$/) && (request.method === "PATCH" || request.method === "DELETE")) {
+        resp = await handleAdminAgentById(request, env, path.split("/")[4]);
+      } else if (path.match(/^\/api\/conversations\/[^/]+\/agent$/) && request.method === "POST") {
+        resp = await handleSetConversationAgent(request, env, path.split("/")[3]);
+      } else if (path === "/api/version" && request.method === "GET") {
+        resp = json({ version: APP_VERSION, name: "Paul" });
       } else if (path === "/api/admin/users" && request.method === "GET") {
         resp = await handleAdminUsers(request, env);
       } else if (path.match(/^\/api\/admin\/users\/[^/]+\/export$/) && request.method === "GET") {

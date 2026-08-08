@@ -53,6 +53,22 @@ export interface User {
  */
 export type Visibility = "private" | "shared" | "collab" | "dm";
 
+export interface AgentCard {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string;
+  tagline?: string;
+  avatar_url?: string | null;
+  category?: string;
+  is_featured?: number | boolean;
+  is_default?: number | boolean;
+  is_public?: number | boolean;
+  usage_count?: number;
+  mistral_agent_id?: string;
+  created_at?: string;
+}
+
 export interface Conversation {
   id: string;
   title: string;
@@ -410,7 +426,34 @@ export const api = {
   reindexKnowledge: () =>
     request<{ ok: true; embedded: number; failed: number }>("/api/knowledge/reindex", { method: "POST" }),
 
-    listAdminUsers: (q?: string) =>
+    listAgents: (q?: string) =>
+    request<{ agents: AgentCard[]; version?: string }>(
+      `/api/agents${q ? `?q=${encodeURIComponent(q)}` : ""}`,
+      { method: "GET" }
+    ),
+  getAgent: (idOrSlug: string) =>
+    request<{ agent: AgentCard }>(`/api/agents/${encodeURIComponent(idOrSlug)}`, { method: "GET" }),
+  setConversationAgent: (conversationId: string, agent_id: string | null) =>
+    request<{ ok: true; agent_id: string | null }>(`/api/conversations/${conversationId}/agent`, {
+      method: "POST",
+      body: JSON.stringify({ agent_id }),
+    }),
+  listAdminAgents: () =>
+    request<{ agents: AgentCard[] }>("/api/admin/agents", { method: "GET" }),
+  createAdminAgent: (body: {
+    name: string;
+    slug?: string;
+    mistral_agent_id: string;
+    description?: string;
+    tagline?: string;
+    category?: string;
+    is_featured?: boolean;
+  }) => request<{ ok: true; id: string; slug: string }>("/api/admin/agents", { method: "POST", body: JSON.stringify(body) }),
+  deleteAdminAgent: (id: string) =>
+    request<{ ok: true }>(`/api/admin/agents/${id}`, { method: "DELETE" }),
+  getVersion: () => request<{ version: string; name: string }>("/api/version", { method: "GET" }),
+
+  listAdminUsers: (q?: string) =>
     request<{
       users: {
         id: string;
@@ -610,7 +653,7 @@ getMessages: (id: string) =>
       };
     }>(`/api/conversations/${id}/messages`, { method: "GET" }),
 
-  sendMessage: (payload: { conversation_id?: string; message: string; attachments?: Attachment[]; reply_to_id?: string; reply_to_preview?: string }) =>
+  sendMessage: (payload: { conversation_id?: string; message: string; attachments?: Attachment[]; reply_to_id?: string; reply_to_preview?: string; agent_id?: string | null }) =>
     request<{
       conversation_id: string;
       title: string;

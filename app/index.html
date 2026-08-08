@@ -567,6 +567,12 @@
             </div>
           </div>
 
+          <h3 class="settings-subheading">About</h3>
+          <div class="settings-card">
+            <div class="settings-card-title">Paul</div>
+            <div class="settings-card-desc">Version <strong id="app-version-label">0.10.5</strong> · Multi-agent marketplace</div>
+          </div>
+
           <h3 class="settings-subheading">Install app</h3>
           <div class="settings-card catalog-cms" id="pwa-settings-card">
             <div class="settings-card-title">Paul on your phone or desktop</div>
@@ -675,6 +681,25 @@
                   <button type="button" id="admin-logs-download-btn" class="secondary-btn" data-i18n="settings.adminLogsDownload">Download logs</button>
                   <button type="button" id="admin-logs-clear-btn" class="secondary-btn" data-i18n="settings.adminLogsClear">Clear buffer</button>
                 </div>
+              </div>
+            </div>
+
+            <h3 class="settings-subheading">Agent marketplace</h3>
+            <div class="settings-card catalog-cms" id="marketplace-section">
+              <p class="catalog-cms-intro">Browse agents and pick one for new chats. Paul is the default for A-F Marbre.</p>
+              <input type="search" id="marketplace-search" class="catalog-input" placeholder="Search agents…" autocomplete="off">
+              <div id="marketplace-list" class="marketplace-list"></div>
+              <div id="marketplace-admin" class="marketplace-admin" hidden>
+                <div class="catalog-list-head">Publish agent (admin)</div>
+                <input type="text" id="agent-name" class="catalog-input" placeholder="Name">
+                <input type="text" id="agent-slug" class="catalog-input" placeholder="slug (optional)">
+                <input type="text" id="agent-mistral-id" class="catalog-input" placeholder="Mistral agent id (ag_…)">
+                <input type="text" id="agent-tagline" class="catalog-input" placeholder="Short tagline">
+                <textarea id="agent-description" class="catalog-textarea" rows="3" placeholder="Description"></textarea>
+                <div class="catalog-actions">
+                  <button type="button" id="agent-publish-btn" class="primary">Publish to marketplace</button>
+                </div>
+                <div id="admin-agents-list" class="admin-users-list" style="margin-top:12px;"></div>
               </div>
             </div>
 

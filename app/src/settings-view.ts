@@ -1025,6 +1025,135 @@ function coerceLanguageIfIncomplete() {
   } catch { /* ignore */ }
 }
 
+
+
+/* ── Agent marketplace (0.10.5) ─────────────────────────────────────────── */
+let marketplaceSearchTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function loadMarketplace(query?: string) {
+  const list = document.getElementById("marketplace-list");
+  if (!list) return;
+  list.innerHTML = `<p class="settings-muted">Loading…</p>`;
+  try {
+    const q = (query ?? (document.getElementById("marketplace-search") as HTMLInputElement | null)?.value ?? "").trim();
+    const { agents, version } = await api.listAgents(q || undefined);
+    if (version) {
+      const lab = document.getElementById("app-version-label");
+      if (lab) lab.textContent = version.startsWith("v") ? version : version;
+    }
+    if (!agents.length) {
+      list.innerHTML = `<p class="settings-muted">No agents yet.</p>`;
+      return;
+    }
+    list.innerHTML = "";
+    for (const a of agents) {
+      const card = document.createElement("div");
+      card.className = "marketplace-card" + (a.is_featured ? " is-featured" : "");
+      const title = document.createElement("div");
+      title.className = "marketplace-card-title";
+      title.textContent = a.name + (a.is_default ? " · default" : "");
+      const tag = document.createElement("div");
+      tag.className = "marketplace-card-tagline";
+      tag.textContent = a.tagline || a.description || "";
+      const meta = document.createElement("div");
+      meta.className = "marketplace-card-meta";
+      meta.textContent = `${a.category || "general"} · ${a.usage_count || 0} uses`;
+      const useBtn = document.createElement("button");
+      useBtn.type = "button";
+      useBtn.className = "secondary-btn";
+      useBtn.textContent = "Use for new chats";
+      useBtn.addEventListener("click", () => {
+        try {
+          localStorage.setItem("paul_preferred_agent_id", a.id);
+          localStorage.setItem("paul_preferred_agent_name", a.name);
+        } catch { /* ignore */ }
+        useBtn.textContent = "Selected ✓";
+        setTimeout(() => {
+          useBtn.textContent = "Use for new chats";
+        }, 1500);
+      });
+      card.appendChild(title);
+      card.appendChild(tag);
+      card.appendChild(meta);
+      card.appendChild(useBtn);
+      list.appendChild(card);
+    }
+  } catch (e: any) {
+    list.innerHTML = `<p class="settings-muted">${e?.message || "Could not load marketplace"}</p>`;
+  }
+}
+
+async function loadAdminAgentsPanel() {
+  const wrap = document.getElementById("marketplace-admin");
+  const list = document.getElementById("admin-agents-list");
+  if (!wrap || !list) return;
+  wrap.hidden = false;
+  try {
+    const { agents } = await api.listAdminAgents();
+    list.innerHTML = "";
+    for (const a of agents) {
+      const row = document.createElement("div");
+      row.className = "admin-user-row";
+      row.innerHTML = `<div class="admin-user-name">${a.name} <span class="settings-muted">@${a.slug}</span></div>
+        <div class="admin-user-meta">${a.mistral_agent_id || ""} · ${a.is_default ? "default · " : ""}${a.is_featured ? "featured · " : ""}${a.usage_count || 0} uses</div>`;
+      if (!a.is_default) {
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "link-btn";
+        del.textContent = "Remove";
+        del.style.color = "#e55";
+        del.addEventListener("click", async () => {
+          try {
+            await api.deleteAdminAgent(a.id);
+            void loadAdminAgentsPanel();
+            void loadMarketplace();
+          } catch (e: any) {
+            settingsError.textContent = e?.message || "Delete failed";
+          }
+        });
+        row.appendChild(del);
+      }
+      list.appendChild(row);
+    }
+  } catch {
+    wrap.hidden = true;
+  }
+}
+
+document.getElementById("marketplace-search")?.addEventListener("input", () => {
+  if (marketplaceSearchTimer) clearTimeout(marketplaceSearchTimer);
+  marketplaceSearchTimer = setTimeout(() => {
+    const q = (document.getElementById("marketplace-search") as HTMLInputElement)?.value || "";
+    void loadMarketplace(q);
+  }, 280);
+});
+
+document.getElementById("agent-publish-btn")?.addEventListener("click", async () => {
+  const name = (document.getElementById("agent-name") as HTMLInputElement)?.value.trim();
+  const slug = (document.getElementById("agent-slug") as HTMLInputElement)?.value.trim();
+  const mistral_agent_id = (document.getElementById("agent-mistral-id") as HTMLInputElement)?.value.trim();
+  const tagline = (document.getElementById("agent-tagline") as HTMLInputElement)?.value.trim();
+  const description = (document.getElementById("agent-description") as HTMLTextAreaElement)?.value.trim();
+  if (!name || !mistral_agent_id) {
+    settingsError.textContent = "Name and Mistral agent id are required.";
+    return;
+  }
+  try {
+    await api.createAdminAgent({ name, slug: slug || undefined, mistral_agent_id, tagline, description });
+    settingsSuccess.textContent = `Published ${name}`;
+    (document.getElementById("agent-name") as HTMLInputElement).value = "";
+    (document.getElementById("agent-slug") as HTMLInputElement).value = "";
+    (document.getElementById("agent-mistral-id") as HTMLInputElement).value = "";
+    void loadMarketplace();
+    void loadAdminAgentsPanel();
+    setTimeout(() => {
+      settingsSuccess.textContent = "";
+    }, 2500);
+  } catch (e: any) {
+    settingsError.textContent = e?.message || "Publish failed";
+  }
+});
+
 export function openSettings(tabOrUser: string | User = "general", userOrMessage?: User | string, message?: string) {
   coerceLanguageIfIncomplete();
 

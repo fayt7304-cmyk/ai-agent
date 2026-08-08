@@ -3859,12 +3859,17 @@ async function performSend(
   const thinking = expectPaul ? addMsgRow("thinking", "…") : null;
 
   try {
+    let preferredAgent: string | null = null;
+    try {
+      preferredAgent = localStorage.getItem("paul_preferred_agent_id");
+    } catch { /* ignore */ }
     const result = await api.sendMessage({
       conversation_id: currentConversationId || undefined,
       message: text,
       attachments,
       reply_to_id: replyTarget?.id,
       reply_to_preview: replyTarget ? `${replyTarget.author ? replyTarget.author + ": " : ""}${replyTarget.preview}` : undefined,
+      agent_id: currentConversationId ? undefined : preferredAgent,
     });
     clearReplyTarget();
     thinking?.remove();
