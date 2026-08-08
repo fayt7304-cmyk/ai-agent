@@ -7316,3 +7316,30 @@ html.pwa-standalone .composer {
   height: 40px;
   border-radius: 8px;
 }
+
+.msg-quote-clickable {
+  cursor: pointer;
+}
+.msg-quote-clickable:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.msg-row.msg-highlight {
+  animation: msg-flash 1.4s ease;
+}
+@keyframes msg-flash {
+  0%, 100% { background: transparent; }
+  30% { background: color-mix(in srgb, var(--accent) 18%, transparent); border-radius: 12px; }
+}
+.msg-actions {
+  opacity: 1;
+}
+.msg-action-btn.msg-delete-action:hover {
+  color: #e55;
+  background: color-mix(in srgb, #e55 12%, transparent);
+}
+.msg-row.user .msg-actions {
+  align-self: flex-end;
+}
+.msg-row.agent .msg-actions {
+  align-self: flex-start;
+}

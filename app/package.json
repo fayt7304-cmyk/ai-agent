@@ -1,6 +1,6 @@
 {
   "name": "mistral-agent-chat",
-  "version": "10.4.7",
+  "version": "10.4.9",
   "type": "module",
   "scripts": {
     "dev": "vite",

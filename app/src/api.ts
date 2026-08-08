@@ -563,7 +563,7 @@ export const api = {
     }),
 
   deleteMessage: (id: string) =>
-    request<{ ok: true; id: string; deleted: boolean; deleted_at?: string }>(`/api/messages/${id}`, {
+    request<{ ok: true; id: string; deleted: boolean; deleted_at?: string; cascaded?: string[] }>(`/api/messages/${id}`, {
       method: "DELETE",
     }),
 

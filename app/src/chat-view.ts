@@ -2389,10 +2389,13 @@ async function startEditMessage(row: HTMLDivElement) {
   const id = row.dataset.msgId;
   if (!id) return;
   const bubble = row.querySelector(".msg") as HTMLElement | null;
-  const current = (bubble?.innerText || "").trim();
+  // Prefer plain text without the quote block
+  const quoteEl = bubble?.querySelector(".msg-quote");
+  const quoteText = quoteEl?.textContent || "";
+  const current = (bubble?.innerText || "").replace(quoteText, "").trim();
   const next = await showPrompt({
     title: "Edit message",
-    message: "Change your message text.",
+    message: "Change your message text. Paul's reply will refresh.",
     value: current,
     confirmLabel: "Save",
     maxLength: 20000,
@@ -2403,8 +2406,11 @@ async function startEditMessage(row: HTMLDivElement) {
   try {
     const res = await api.editMessage(id, content);
     if (bubble) {
-      // Keep markdown/render simple for user text
-      bubble.textContent = res.content;
+      // Rebuild bubble preserving quote
+      const q = bubble.querySelector(".msg-quote");
+      bubble.textContent = "";
+      if (q) bubble.appendChild(q);
+      bubble.appendChild(document.createTextNode(res.content));
     }
     row.dataset.editedAt = res.edited_at;
     let mark = row.querySelector(".msg-edited-mark") as HTMLElement | null;
@@ -2414,7 +2420,25 @@ async function startEditMessage(row: HTMLDivElement) {
       mark.textContent = "edited";
       row.appendChild(mark);
     }
-    showToast("Message updated");
+
+    // Remove following Paul replies in the UI, then re-ask Paul with the new text
+    let sib = row.nextElementSibling as HTMLElement | null;
+    while (sib && (sib.classList.contains("agent") || sib.classList.contains("thinking") || sib.classList.contains("error"))) {
+      const n = sib.nextElementSibling as HTMLElement | null;
+      sib.remove();
+      sib = n;
+    }
+
+    // Only re-run Paul outside pure peer DMs (or when @paul)
+    const shouldPaul =
+      !(isCollabChat || isDmChat) || messageMentionsPaul(content);
+    if (shouldPaul) {
+      lastUserText = content;
+      lastUserAttachments = [];
+      await performSend(content, [], false, { regenerate: true });
+    } else {
+      showToast("Message updated");
+    }
   } catch (e: any) {
     showToast(e?.message || "Could not edit message");
   }
@@ -2425,19 +2449,37 @@ async function softDeleteMessage(row: HTMLDivElement) {
   if (!id) return;
   const ok = await showConfirm({
     title: "Delete message?",
-    message: "This removes the message for everyone in the chat.",
+    message: "This removes your message and Paul's reply to it.",
     confirmLabel: "Delete",
     danger: true,
   });
   if (!ok) return;
   try {
-    await api.deleteMessage(id);
-    row.classList.add("msg-deleted");
-    const bubble = row.querySelector(".msg") as HTMLElement | null;
-    if (bubble) bubble.textContent = "Message deleted";
-    row.querySelector(".msg-attachments")?.remove();
-    row.querySelector(".msg-own-actions")?.remove();
-    row.querySelector(".msg-edited-mark")?.remove();
+    const res = await api.deleteMessage(id);
+    const markDeleted = (r: HTMLElement) => {
+      r.classList.add("msg-deleted");
+      const bubble = r.querySelector(".msg") as HTMLElement | null;
+      if (bubble) bubble.textContent = "Message deleted";
+      r.querySelector(".msg-attachments")?.remove();
+      r.querySelector(".msg-own-actions")?.remove();
+      r.querySelector(".msg-actions")?.remove();
+      r.querySelector(".msg-edited-mark")?.remove();
+      r.querySelector(".msg-quote")?.remove();
+    };
+    markDeleted(row);
+    // Remove following agent rows locally (matches server cascade)
+    let sib = row.nextElementSibling as HTMLElement | null;
+    while (sib && (sib.classList.contains("agent") || sib.classList.contains("thinking") || sib.classList.contains("error"))) {
+      const n = sib.nextElementSibling as HTMLElement | null;
+      if (res.cascaded?.length && sib.dataset.msgId && res.cascaded.includes(sib.dataset.msgId)) {
+        markDeleted(sib);
+      } else {
+        // Always drop UI agent tail after this user msg
+        markDeleted(sib);
+      }
+      sib = n;
+    }
+    if (currentConversationId) messageCache.delete(currentConversationId);
     showToast("Message deleted");
   } catch (e: any) {
     showToast(e?.message || "Could not delete message");
@@ -2591,7 +2633,20 @@ function formatMsgTime(iso?: string | null): string {
   }
 }
 
+function scrollToMessage(msgId: string) {
+  if (!msgId) return;
+  const target = messagesEl.querySelector(`.msg-row[data-msg-id="${CSS.escape(msgId)}"]`) as HTMLElement | null;
+  if (!target) {
+    showToast("Original message not found");
+    return;
+  }
+  target.scrollIntoView({ behavior: "smooth", block: "center" });
+  target.classList.add("msg-highlight");
+  setTimeout(() => target.classList.remove("msg-highlight"), 1600);
+}
+
 function setReplyTarget(id: string, preview: string, author?: string) {
+
   replyTarget = { id, preview: preview.slice(0, 120), author };
   let bar = document.getElementById("reply-bar") as HTMLDivElement | null;
   if (!bar) {
@@ -2758,8 +2813,15 @@ function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: strin
     }
     if (row.dataset.replyPreview) {
       const q = document.createElement("div");
-      q.className = "msg-quote";
+      q.className = "msg-quote" + (row.dataset.replyToId ? " msg-quote-clickable" : "");
       q.textContent = row.dataset.replyPreview;
+      if (row.dataset.replyToId) {
+        q.title = "Jump to message";
+        q.onclick = (e) => {
+          e.stopPropagation();
+          scrollToMessage(row.dataset.replyToId!);
+        };
+      }
       bubble.prepend(q);
     }
     if (hasText || kind === "thinking" || kind === "error" || kind === "agent") {
@@ -2948,51 +3010,64 @@ function addMsgRow(kind: "user" | "agent" | "error" | "thinking", content: strin
     row.appendChild(actions);
   }
 
-  // Reply under media (not above images) — SVG icons
-  if (isGroupStyleChat() && kind !== "thinking" && kind !== "error") {
+  // Shared action row: reply (+ edit/delete for own user msgs) next to Paul's tools
+  if (kind !== "thinking" && kind !== "error") {
+    let actions = row.querySelector(".msg-actions") as HTMLDivElement | null;
+    if (!actions) {
+      actions = document.createElement("div");
+      actions.className = "msg-actions";
+      row.appendChild(actions);
+    }
+
     const replyBtn = document.createElement("button");
     replyBtn.type = "button";
-    replyBtn.className = "msg-reply-btn msg-icon-btn";
+    replyBtn.className = "msg-action-btn msg-reply-action";
     replyBtn.title = "Reply";
     replyBtn.setAttribute("aria-label", "Reply");
     replyBtn.innerHTML = icons.reply;
     replyBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      const author = sender?.display_name || sender?.username || (kind === "agent" ? "Paul" : "message");
+      const author =
+        sender?.display_name || sender?.username || (kind === "agent" ? "Paul" : currentUser?.display_name || "You");
       const mid = row.dataset.msgId || crypto.randomUUID();
-      const preview = (content && content.trim()) || (attachments[0]?.name ? `📎 ${attachments[0].name}` : "message");
-      setReplyTarget(mid, preview, author);
+      if (!row.dataset.msgId) row.dataset.msgId = mid;
+      const preview =
+        (content && content.trim()) ||
+        (attachments[0]?.name ? `📎 ${attachments[0].name}` : "message");
+      setReplyTarget(mid, preview.slice(0, 120), author);
     });
-    row.appendChild(replyBtn);
-  }
+    actions.appendChild(replyBtn);
 
-  // Soft edit / delete own messages — under content/media (SVG icons)
-  if (kind === "user" && isMyUserMessage(kind, sender) && row.dataset.msgId && !row.classList.contains("msg-deleted")) {
-    const ownActions = document.createElement("div");
-    ownActions.className = "msg-own-actions";
-    const editBtn = document.createElement("button");
-    editBtn.type = "button";
-    editBtn.className = "msg-reply-btn msg-icon-btn";
-    editBtn.title = "Edit";
-    editBtn.setAttribute("aria-label", "Edit");
-    editBtn.innerHTML = icons.pencil;
-    editBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      void startEditMessage(row);
-    });
-    const delBtn = document.createElement("button");
-    delBtn.type = "button";
-    delBtn.className = "msg-reply-btn msg-icon-btn msg-delete-btn";
-    delBtn.title = "Delete";
-    delBtn.setAttribute("aria-label", "Delete");
-    delBtn.innerHTML = icons.trash;
-    delBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      void softDeleteMessage(row);
-    });
-    ownActions.appendChild(editBtn);
-    ownActions.appendChild(delBtn);
-    row.appendChild(ownActions);
+    // Edit / Delete on my user messages (all chat types)
+    const mine = kind === "user" && isMyUserMessage(kind, sender);
+    if (mine && !row.classList.contains("msg-deleted")) {
+      // Ensure an id so actions work even before server id is assigned
+      if (!row.dataset.msgId) row.dataset.msgId = crypto.randomUUID();
+
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.className = "msg-action-btn msg-edit-action";
+      editBtn.title = "Edit";
+      editBtn.setAttribute("aria-label", "Edit");
+      editBtn.innerHTML = icons.pencil;
+      editBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        void startEditMessage(row);
+      });
+      actions.appendChild(editBtn);
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "msg-action-btn msg-delete-action";
+      delBtn.title = "Delete";
+      delBtn.setAttribute("aria-label", "Delete");
+      delBtn.innerHTML = icons.trash;
+      delBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        void softDeleteMessage(row);
+      });
+      actions.appendChild(delBtn);
+    }
   }
 
   messagesEl.appendChild(row);
@@ -3057,13 +3132,23 @@ function renderMessages(messages: Message[]) {
       const te = row.querySelector(".msg-time");
       if (te) te.textContent = formatMsgTime(m.created_at);
     }
+    if (m.reply_to_id) row.dataset.replyToId = m.reply_to_id;
     if (m.reply_to_preview && !isDeleted) {
       row.dataset.replyPreview = m.reply_to_preview;
-      if (!row.querySelector(".msg-quote")) {
-        const q = document.createElement("div");
+      let q = row.querySelector(".msg-quote") as HTMLElement | null;
+      if (!q) {
+        q = document.createElement("div");
         q.className = "msg-quote";
         q.textContent = m.reply_to_preview;
         row.querySelector(".msg")?.prepend(q);
+      }
+      if (m.reply_to_id) {
+        q.classList.add("msg-quote-clickable");
+        q.title = "Jump to message";
+        q.onclick = (e) => {
+          e.stopPropagation();
+          scrollToMessage(m.reply_to_id!);
+        };
       }
     }
     if (m.role === "user" && !isDeleted) {
@@ -3156,7 +3241,7 @@ async function selectConversation(id: string) {
 
   // Live sockets after paint — don't block the switch
   if (gen === selectGeneration && currentConversationId === id) {
-    queue Promise.resolve().then(() => {
+    void Promise.resolve().then(() => {
       if (gen !== selectGeneration || currentConversationId !== id) return;
       try {
         startCollabLive();
@@ -3720,7 +3805,7 @@ async function performSend(
     const attachmentsForDisplay: Attachment[] = attachments.map((a) => ({ name: a.name, mime: a.mime, size: a.size }));
     // Always attach currentUser for DMs + collab so the bubble is "mine" immediately
     // (not left-side peer layout for a frame before the live refresh).
-    addMsgRow(
+    const optRow = addMsgRow(
       "user",
       text,
       attachmentsForDisplay,
@@ -3734,6 +3819,22 @@ async function performSend(
           }
         : null
     );
+    if (replyTarget) {
+      optRow.dataset.replyToId = replyTarget.id;
+      optRow.dataset.replyPreview = `${replyTarget.author ? replyTarget.author + ": " : ""}${replyTarget.preview}`;
+      const bubble = optRow.querySelector(".msg");
+      if (bubble && !bubble.querySelector(".msg-quote")) {
+        const q = document.createElement("div");
+        q.className = "msg-quote msg-quote-clickable";
+        q.textContent = optRow.dataset.replyPreview;
+        q.title = "Jump to message";
+        q.onclick = (e) => {
+          e.stopPropagation();
+          scrollToMessage(replyTarget!.id);
+        };
+        bubble.prepend(q);
+      }
+    }
     // New user turn → reset version history
     replyVersions = [];
     replyVersionIndex = 0;

@@ -3267,6 +3267,41 @@ async function handleEditMessage(request: Request, env: Env, messageId: string):
   } catch {
     return err("Could not edit message (schema).", 500);
   }
+
+  // Soft-delete consecutive agent replies so a refresh doesn't resurrect the old answer
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT id, role FROM messages
+       WHERE conversation_id = ? AND deleted_at IS NULL
+       ORDER BY created_at ASC`
+    )
+      .bind(msg.conversation_id)
+      .all();
+    let hit = false;
+    for (const r of (results || []) as any[]) {
+      if (r.id === messageId) {
+        hit = true;
+        continue;
+      }
+      if (!hit) continue;
+      if (r.role === "agent" || r.role === "error") {
+        try {
+          await env.DB.prepare(
+            "UPDATE messages SET deleted_at = ?, content = '', attachments = NULL WHERE id = ?"
+          )
+            .bind(ts, r.id)
+            .run();
+        } catch {
+          await env.DB.prepare("UPDATE messages SET deleted_at = ?, content = '' WHERE id = ?")
+            .bind(ts, r.id)
+            .run();
+        }
+      } else break;
+    }
+  } catch {
+    /* best-effort */
+  }
+
   await env.DB.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?")
     .bind(ts, msg.conversation_id)
     .run();
@@ -3295,7 +3330,6 @@ async function handleDeleteMessage(request: Request, env: Env, messageId: string
       .bind(ts, messageId)
       .run();
   } catch {
-    // Fallback without attachments clear
     try {
       await env.DB.prepare("UPDATE messages SET deleted_at = ?, content = '' WHERE id = ?")
         .bind(ts, messageId)
@@ -3304,10 +3338,52 @@ async function handleDeleteMessage(request: Request, env: Env, messageId: string
       return err("Could not delete message (schema).", 500);
     }
   }
+
+  // Soft-delete consecutive agent/error replies that followed this user message
+  const cascadeIds: string[] = [];
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT id, role, created_at FROM messages
+       WHERE conversation_id = ? AND deleted_at IS NULL
+       ORDER BY created_at ASC`
+    )
+      .bind(msg.conversation_id)
+      .all();
+    const list = results || [];
+    let hit = false;
+    for (const r of list as any[]) {
+      if (r.id === messageId) {
+        hit = true;
+        continue;
+      }
+      if (!hit) continue;
+      if (r.role === "agent" || r.role === "error") {
+        cascadeIds.push(r.id);
+      } else {
+        break; // next user turn
+      }
+    }
+    for (const cid of cascadeIds) {
+      try {
+        await env.DB.prepare(
+          "UPDATE messages SET deleted_at = ?, content = '', attachments = NULL WHERE id = ?"
+        )
+          .bind(ts, cid)
+          .run();
+      } catch {
+        await env.DB.prepare("UPDATE messages SET deleted_at = ?, content = '' WHERE id = ?")
+          .bind(ts, cid)
+          .run();
+      }
+    }
+  } catch {
+    /* cascade best-effort */
+  }
+
   await env.DB.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?")
     .bind(ts, msg.conversation_id)
     .run();
-  return json({ ok: true, id: messageId, deleted: true, deleted_at: ts });
+  return json({ ok: true, id: messageId, deleted: true, deleted_at: ts, cascaded: cascadeIds });
 }
 
 // ---------------------------------------------------------------------------
