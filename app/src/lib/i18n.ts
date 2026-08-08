@@ -90,7 +90,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "convo.actionFailed": "That action didn't go through. Please try again.",
 
     "chat.newChat": "New chat",
-    "chat.emptyState": "Start a conversation. You can also attach images or documents.",
+    "chat.emptyState": "What are we working on?",
     "chat.placeholder": "Message Paul…",
     "chat.send": "Send",
     "guest.banner": "Browsing as a guest — chats last 30 days unless you save an account.",

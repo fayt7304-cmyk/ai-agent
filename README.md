@@ -93,3 +93,39 @@ North star: *Paul should feel like a quiet studio for marble decisions — not a
 - Soft stone user bubbles (not loud gold pills)
 - Slightly larger reading type (15.5px)
 - Low-contrast borders, softer shadows
+
+
+## Design R2 — Reading column
+
+- More vertical space between messages
+- Message actions (reply / edit / delete / speak) **on hover** (always on touch)
+- Quieter quick-action chips
+- Softer empty state
+- Image-only messages without bubble chrome
+
+
+## Design R3 — Composer
+
+- Single calm rounded strip aligned with the reading column
+- No hard top border on the form; soft fade into the page
+- Attachment chips in neutral stone (not gold)
+- Focus ring muted; send is the only strong accent
+- Hint text hidden when empty
+
+
+## Design R4 — Sidebar & empty state
+
+- Section labels in sentence case, not loud uppercase
+- Active chat uses soft surface (not gold wash)
+- Unread as a small accent dot (numeric pill when count present)
+- New chat / search: transparent, quiet borders
+- Empty state: short studio line + secondary hint
+
+
+## Design R5 — Motion & density
+
+- Messages fade in (no slide/bounce)
+- Transitions limited to color/opacity (no `transition: all`)
+- Guest banner as a quiet text strip
+- Header slightly tighter; icons de-emphasized
+- Soft shadows on system banners
