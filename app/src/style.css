@@ -1,66 +1,70 @@
 :root {
-  --transition-duration: 0.2s;
+  /* R1 — Quiet studio for marble decisions */
+  --transition-duration: 0.18s;
   --anim-level: normal;
-  --font-family: "Inter", system-ui, -apple-system, sans-serif;
+  --font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
-  --base-font-size: 14px;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 18px;
+  --base-font-size: 15.5px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
 }
 
+/* Light: warm paper, low-contrast borders, muted brass accent */
 [data-theme="light"] {
-  --bg: #faf9f5;
-  --card: #ffffff;
+  --bg: #f7f5f0;
+  --card: #fbfaf7;
   --card-elevated: #ffffff;
-  --sidebar: #f4f1e9;
-  --surface-hover: #efeade;
-  --text: #2a2721;
-  --text-secondary: #75705f;
-  --border: #e7e1d2;
-  --border-strong: #d8cfb7;
-  --ring: rgba(176, 132, 40, 0.35);
-  --accent: #b08428;
-  --accent-bg: #f3e7c9;
-  --accent-text: #fffdf8;
-  --accent-strong: #8c6720;
-  --accent-hover: #9c7423;
-  --bubble-user: #b08428;
-  --bubble-user-text: #fffdf8;
+  --sidebar: #f1eee6;
+  --surface-hover: #ebe6db;
+  --text: #1c1b19;
+  --text-secondary: #6b665c;
+  --border: rgba(28, 27, 25, 0.08);
+  --border-strong: rgba(28, 27, 25, 0.14);
+  --ring: rgba(140, 110, 55, 0.28);
+  --accent: #8c6e37;
+  --accent-bg: rgba(140, 110, 55, 0.1);
+  --accent-text: #fbfaf7;
+  --accent-strong: #6f5629;
+  --accent-hover: #7a5f2f;
+  /* Soft stone pill — not loud gold */
+  --bubble-user: #e8e2d6;
+  --bubble-user-text: #1c1b19;
   --bubble-agent: transparent;
-  --bubble-agent-text: #2a2721;
+  --bubble-agent-text: #1c1b19;
   --danger: #b3261e;
   --danger-bg: #fbe6e2;
-  --shadow-sm: 0 1px 3px rgba(41, 34, 14, 0.06);
-  --shadow: 0 8px 30px rgba(41, 34, 14, 0.08);
-  --shadow-lg: 0 20px 60px rgba(41, 34, 14, 0.16);
+  --shadow-sm: 0 1px 2px rgba(28, 27, 25, 0.04);
+  --shadow: 0 6px 24px rgba(28, 27, 25, 0.06);
+  --shadow-lg: 0 18px 48px rgba(28, 27, 25, 0.1);
 }
 
+/* Dark: warm charcoal studio, quiet brass */
 [data-theme="dark"] {
-  --bg: #16140f;
-  --card: #211e17;
-  --card-elevated: #29251c;
-  --sidebar: #1b1811;
-  --surface-hover: #2c2820;
-  --text: #f2ede1;
-  --text-secondary: #a89e88;
-  --border: #38321f;
-  --border-strong: #4a4228;
-  --ring: rgba(216, 175, 96, 0.35);
-  --accent: #d8af60;
-  --accent-bg: #3a2f16;
-  --accent-text: #201803;
-  --accent-strong: #e8c37f;
-  --accent-hover: #e2bb70;
-  --bubble-user: #d8af60;
-  --bubble-user-text: #201803;
+  --bg: #141311;
+  --card: #1c1b18;
+  --card-elevated: #242320;
+  --sidebar: #181714;
+  --surface-hover: #2a2925;
+  --text: #f0ebe3;
+  --text-secondary: #9a9488;
+  --border: rgba(240, 235, 227, 0.08);
+  --border-strong: rgba(240, 235, 227, 0.14);
+  --ring: rgba(196, 162, 98, 0.28);
+  --accent: #c4a262;
+  --accent-bg: rgba(196, 162, 98, 0.12);
+  --accent-text: #1a160f;
+  --accent-strong: #d4b678;
+  --accent-hover: #d0b06e;
+  --bubble-user: #2a2823;
+  --bubble-user-text: #f0ebe3;
   --bubble-agent: transparent;
-  --bubble-agent-text: #f2ede1;
+  --bubble-agent-text: #f0ebe3;
   --danger: #ff8a80;
   --danger-bg: #3a201d;
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 24px 70px rgba(0, 0, 0, 0.55);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 22px 60px rgba(0, 0, 0, 0.5);
 }
 
 * { box-sizing: border-box; }
@@ -1076,7 +1080,7 @@ select:focus-visible,
   display: flex;
   flex-direction: column;
   gap: 20px;
-  max-width: 46rem;
+  max-width: 44rem;
   width: 100%;
   margin: 0 auto;
 }
@@ -1146,9 +1150,7 @@ select:focus-visible,
   font-size: var(--base-font-size);
 }
 
-/* Claude-style user bubble: filled, high-contrast gold pill.
-   width: fit-content so short messages ("hello") stay on one line;
-   max-width caps long messages. Avoid per-letter wrap from flex min-width. */
+/* Quiet studio: soft stone user pill (not loud gold). */
 .msg-row.user {
   width: fit-content;
   max-width: min(88%, 560px);
@@ -1157,13 +1159,16 @@ select:focus-visible,
 .msg-row.user .msg {
   background: var(--bubble-user);
   color: var(--bubble-user-text);
-  border-bottom-right-radius: 6px;
-  box-shadow: var(--shadow-sm);
+  border-bottom-right-radius: 8px;
+  box-shadow: none;
+  border: 1px solid var(--border);
   width: fit-content;
   max-width: 100%;
   min-width: 2.5em;
   overflow-wrap: break-word;
   word-break: normal;
+  padding: 11px 16px;
+  line-height: 1.65;
 }
 
 html[dir="rtl"] .msg-row.user .msg {
@@ -1171,14 +1176,15 @@ html[dir="rtl"] .msg-row.user .msg {
   border-bottom-left-radius: 6px;
 }
 
-/* Claude-style assistant reply: plain text on the page, no bubble chrome. */
+/* Assistant: plain text on the page — specialist in the room, no chrome. */
 .msg-row.agent .msg {
   background: var(--bubble-agent);
   color: var(--bubble-agent-text);
   border: none;
   border-radius: 0;
-  padding: 4px 0;
+  padding: 6px 0;
   line-height: 1.7;
+  font-size: calc(var(--base-font-size) + 0.5px);
 }
 
 .msg-row.error .msg {
@@ -1422,6 +1428,10 @@ html[dir="rtl"] .msg-row.user .msg {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
+.composer-row {
+  border-color: var(--border);
+  background: var(--card);
+}
 .composer-row:focus-within {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--ring);

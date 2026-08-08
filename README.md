@@ -1,4 +1,4 @@
-# Paul — Your Personal AI Agent (v0.10.5)
+# Paul — Your Personal AI Agent (v0.10.5 · R1 quiet studio)
 
 A comprehensive chat web application powered by Mistral AI agents, designed to run on your own Cloudflare account for privacy and control.
 
@@ -80,3 +80,16 @@ Migrations include `0018_v105_agents.sql` (agents table). Columns are also ensur
 **Current: 0.10.5** — multi-agent marketplace.
 
 Shown in Settings → General → About, and via `GET /api/version`.
+
+
+---
+
+## Design R1 — Quiet studio
+
+North star: *Paul should feel like a quiet studio for marble decisions — not a busy control panel that happens to chat.*
+
+- Warmer paper / charcoal backgrounds
+- Muted brass accent (used sparingly)
+- Soft stone user bubbles (not loud gold pills)
+- Slightly larger reading type (15.5px)
+- Low-contrast borders, softer shadows
