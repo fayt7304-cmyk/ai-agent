@@ -208,3 +208,15 @@ Optional override:
 npx wrangler secret put TTS_MODEL
 # value: elevenlabs/eleven-multilingual-v2
 ```
+
+## Migrations (D1)
+
+If you see `duplicate column name: email`, pull this build — early migrations
+no longer run `ALTER TABLE ... ADD COLUMN` for fields already in `schema.sql`.
+
+```bash
+cd worker
+npx wrangler d1 migrations apply mistral-agent-chat-db --remote
+```
+
+Missing columns are still added at runtime by `ensureConversationColumns`.

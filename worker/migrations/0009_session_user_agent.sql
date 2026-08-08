@@ -1,2 +1,2 @@
--- Store User-Agent on sessions for the Account → Active sessions table.
-ALTER TABLE sessions ADD COLUMN user_agent TEXT;
+-- user_agent on sessions: schema / runtime ensure.
+SELECT 1;

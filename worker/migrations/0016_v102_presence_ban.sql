@@ -1,1 +1,2 @@
-ALTER TABLE users ADD COLUMN banned_at TEXT;
+-- banned_at via runtime ensureConversationColumns / ensure on ban path.
+SELECT 1;

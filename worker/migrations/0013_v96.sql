@@ -1,6 +1,4 @@
--- v9.6: read receipts, presence, audit, lightweight knowledge
-ALTER TABLE users ADD COLUMN last_seen_at TEXT;
-
+-- Read receipts, audit, knowledge docs (last_seen_at via runtime ensure).
 CREATE TABLE IF NOT EXISTS conversation_reads (
   conversation_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
